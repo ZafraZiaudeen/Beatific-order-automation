@@ -1,38 +1,33 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { gsap } from 'gsap'
 import AuthLayout from '../../components/auth/AuthLayout'
+import EyeOpenIcon from '../../assets/icons/auth/eye-open.svg?react'
+import EyeOffIcon from '../../assets/icons/auth/eye-off.svg?react'
+import Spinner15Icon from '../../assets/icons/auth/spinner-15.svg?react'
+import ArrowRightIcon from '../../assets/icons/auth/arrow-right.svg?react'
+import ArrowLeftIcon from '../../assets/icons/auth/arrow-left.svg?react'
+import AlertCircleIcon from '../../assets/icons/auth/alert-circle.svg?react'
+import AlertCircleGreenIcon from '../../assets/icons/auth/alert-circle-green.svg?react'
+import AlertCircleRedIcon from '../../assets/icons/auth/alert-circle-red.svg?react'
+import CheckIcon from '../../assets/icons/auth/check.svg?react'
+import BookOutlineBoldIcon from '../../assets/icons/auth/book-outline-bold.svg?react'
 
-/* ── Icons ─────────────────────────────────────────────────── */
 const EyeOpen = () => (
-  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-    <circle cx="12" cy="12" r="3"/>
-  </svg>
+  <EyeOpenIcon width={15} height={15} aria-hidden="true" />
 )
 const EyeOff = () => (
-  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/>
-    <line x1="1" y1="1" x2="23" y2="23"/>
-  </svg>
+  <EyeOffIcon width={15} height={15} aria-hidden="true" />
 )
 const Spinner = () => (
-  <svg className="spin" width="15" height="15" viewBox="0 0 24 24" fill="none">
-    <circle cx="12" cy="12" r="10" stroke="rgba(255,255,255,0.3)" strokeWidth="3.5"/>
-    <path d="M12 2a10 10 0 0 1 10 10" stroke="white" strokeWidth="3.5" strokeLinecap="round"/>
-  </svg>
+  <Spinner15Icon className="spin" width={15} height={15} aria-hidden="true" />
 )
 const ArrowRight = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-    <path d="M5 12h14M12 5l7 7-7 7"/>
-  </svg>
+  <ArrowRightIcon width={14} height={14} aria-hidden="true" />
 )
 const ArrowLeft = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-    <path d="M19 12H5M12 19l-7-7 7-7"/>
-  </svg>
+  <ArrowLeftIcon width={14} height={14} aria-hidden="true" />
 )
 
-/* ── Reusable link-button ───────────────────────────────────── */
 const LinkBtn = ({ onClick, children, style }) => (
   <button type="button" onClick={onClick}
     style={{ background: 'none', border: 'none', padding: 0, font: 'inherit', cursor: 'pointer', ...style }}
@@ -41,7 +36,6 @@ const LinkBtn = ({ onClick, children, style }) => (
   </button>
 )
 
-/* ── Input Field ────────────────────────────────────────────── */
 function Field({ label, type = 'text', placeholder, value, onChange, hint, error, right }) {
   const [showPw, setShowPw] = useState(false)
   const isPass = type === 'password'
@@ -74,10 +68,7 @@ function Field({ label, type = 'text', placeholder, value, onChange, hint, error
       </div>
       {error && (
         <p style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.75rem', color: 'var(--c-error)', margin: 0 }}>
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-            <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/>
-            <line x1="12" y1="16" x2="12.01" y2="16"/>
-          </svg>
+          <AlertCircleIcon width={11} height={11} aria-hidden="true" />
           {error}
         </p>
       )}
@@ -115,7 +106,6 @@ function StrengthBar({ password }) {
   )
 }
 
-/* ── Inline info note ───────────────────────────────────────── */
 function InfoNote({ children }) {
   return (
     <div style={{
@@ -124,18 +114,12 @@ function InfoNote({ children }) {
       background: 'rgba(0,167,111,0.07)', border: '1px solid rgba(0,167,111,0.16)',
       fontSize: '0.8rem', color: '#065f46', lineHeight: 1.55
     }}>
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#00a76f" strokeWidth="2.5"
-           style={{ flexShrink: 0, marginTop: '1px' }}>
-        <circle cx="12" cy="12" r="10"/>
-        <line x1="12" y1="8" x2="12" y2="12"/>
-        <line x1="12" y1="16" x2="12.01" y2="16"/>
-      </svg>
+      <AlertCircleGreenIcon width={14} height={14} style={{ flexShrink: 0, marginTop: '1px' }} aria-hidden="true" />
       <span>{children}</span>
     </div>
   )
 }
 
-/* ── Error alert ────────────────────────────────────────────── */
 function ErrorAlert({ message }) {
   if (!message) return null
   return (
@@ -145,18 +129,12 @@ function ErrorAlert({ message }) {
       background: 'rgba(239,68,68,0.07)', border: '1px solid rgba(239,68,68,0.2)',
       fontSize: '0.82rem', color: '#991b1b', lineHeight: 1.55
     }}>
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.5"
-           style={{ flexShrink: 0, marginTop: '1px' }}>
-        <circle cx="12" cy="12" r="10"/>
-        <line x1="12" y1="8" x2="12" y2="12"/>
-        <line x1="12" y1="16" x2="12.01" y2="16"/>
-      </svg>
+      <AlertCircleRedIcon width={14} height={14} style={{ flexShrink: 0, marginTop: '1px' }} aria-hidden="true" />
       {message}
     </div>
   )
 }
 
-/* ── Card wrapper with generous padding ─────────────────────── */
 function Card({ children }) {
   return (
     <div style={{
@@ -170,7 +148,6 @@ function Card({ children }) {
   )
 }
 
-/* ── Switch link row ────────────────────────────────────────── */
 function SwitchRow({ text, linkText, onClick }) {
   return (
     <p style={{ textAlign: 'center', fontSize: '0.875rem', color: 'var(--c-text-2)', margin: 0 }}>
@@ -180,7 +157,6 @@ function SwitchRow({ text, linkText, onClick }) {
   )
 }
 
-/* ══════════════════════ LOGIN ══════════════════════════════ */
 function LoginView({ onSwitch }) {
   const [form, setForm]   = useState({ email: '', password: '' })
   const [remember, setRem] = useState(false)
@@ -248,9 +224,7 @@ function LoginView({ onSwitch }) {
             transition: 'background 0.2s, border-color 0.2s'
           }}>
             {remember && (
-              <svg width="8" height="8" viewBox="0 0 12 12" fill="none">
-                <path d="M2 6l3 3 5-5" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
+              <CheckIcon width={8} height={8} style={{ color: '#ffffff' }} aria-hidden="true" />
             )}
           </div>
           <span style={{ fontSize: '0.85rem', color: 'var(--c-text-2)' }}>Keep me signed in for 30 days</span>
@@ -279,7 +253,6 @@ function LoginView({ onSwitch }) {
   )
 }
 
-/* ══════════════════════ REGISTER STEP 1 ═══════════════════ */
 function RegisterStep1({ data, setData, onNext, onSwitch }) {
   const [errors, setErrors] = useState({})
   const ref = useRef(null)
@@ -351,7 +324,6 @@ function RegisterStep1({ data, setData, onNext, onSwitch }) {
   )
 }
 
-/* ══════════════════════ REGISTER STEP 2 ═══════════════════ */
 function RegisterStep2({ data, setData, onBack, onSwitch }) {
   const [errors, setErrors] = useState({})
   const [loading, setLoad]  = useState(false)
@@ -404,9 +376,7 @@ function RegisterStep2({ data, setData, onBack, onSwitch }) {
           Set up your account
         </h2>
         <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', padding: '0.3rem 0.75rem', borderRadius: '999px', background: 'var(--c-surface-2)', border: '1px solid var(--c-border)', marginTop: '0.25rem' }}>
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--c-accent)" strokeWidth="2.5">
-            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
-          </svg>
+          <BookOutlineBoldIcon width={11} height={11} style={{ color: 'var(--c-accent)' }} aria-hidden="true" />
           <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--c-text-2)' }}>{data.company}</span>
         </div>
       </div>
@@ -477,7 +447,6 @@ function RegisterView({ onSwitch }) {
   )
 }
 
-/* ══════════════════════ PAGE ROOT ═════════════════════════ */
 export default function AuthPage({ defaultTab = 'login' }) {
   const [view, setView] = useState(defaultTab)
   const cardRef = useRef(null)

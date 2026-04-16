@@ -1,6 +1,8 @@
 import { useEffect, useRef } from 'react'
 import { gsap } from 'gsap'
 import ThreeBackground from './ThreeBackground'
+import BookBrandIcon from '../../assets/icons/auth/book-brand.svg?react'
+import CheckIcon from '../../assets/icons/auth/check.svg?react'
 
 const STATS = [
   { value: '6 Steps', label: 'Fully automated' },
@@ -21,10 +23,7 @@ function BrandMark({ dark = true }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: '0.875rem' }}>
       <div className="auth-brand-icon">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" stroke="white" strokeWidth="2" strokeLinecap="round"/>
-          <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" stroke="white" strokeWidth="2"/>
-        </svg>
+        <BookBrandIcon width={18} height={18} style={{ color: '#ffffff' }} aria-hidden="true" />
       </div>
       <div>
         <span style={{ display: 'block', fontSize: '0.78rem', fontWeight: 800, letterSpacing: '0.18em', textTransform: 'uppercase', color: textColor }}>
@@ -50,7 +49,6 @@ export default function AuthLayout({ children }) {
   return (
     <div className="auth-shell" style={{ minHeight: '100vh' }}>
 
-      {/* ── Dark Left Panel ─────────────────────────────────── */}
       <div className="auth-left">
         <ThreeBackground />
         <div className="auth-left-glow" />
@@ -72,16 +70,14 @@ export default function AuthLayout({ children }) {
             <span>automated.</span>
           </h1>
           <p className="auth-hero-sub">
-            From Etsy import to Lulu dispatch — manage your team,
+            From Etsy import to Lulu dispatch, manage your team,
             track every order, ship with zero manual steps.
           </p>
           <ul className="auth-features">
             {FEATURES.map(f => (
               <li key={f} className="auth-feature">
                 <span className="auth-feature-check">
-                  <svg width="8" height="8" viewBox="0 0 12 12" fill="none">
-                    <path d="M2 6l3 3 5-5" stroke="#00a76f" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-                  </svg>
+                  <CheckIcon width={8} height={8} style={{ color: '#00a76f' }} aria-hidden="true" />
                 </span>
                 {f}
               </li>
@@ -100,7 +96,6 @@ export default function AuthLayout({ children }) {
         </div>
       </div>
 
-      {/* ── Right Form Panel ────────────────────────────────── */}
       <div ref={rightRef} className="auth-right">
         <div className="auth-right-inner">
 

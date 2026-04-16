@@ -2,6 +2,11 @@ import { useState, useRef, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { gsap } from 'gsap'
 import AuthLayout from '../../components/auth/AuthLayout'
+import EyeOpenIcon from '../../assets/icons/auth/eye-open.svg?react'
+import EyeOffIcon from '../../assets/icons/auth/eye-off.svg?react'
+import AlertCircleIcon from '../../assets/icons/auth/alert-circle.svg?react'
+import CheckIcon from '../../assets/icons/auth/check.svg?react'
+import Spinner14Icon from '../../assets/icons/auth/spinner-14.svg?react'
 
 function Field({ label, type = 'text', placeholder, value, onChange, suffix }) {
   const [show, setShow] = useState(false)
@@ -31,15 +36,9 @@ function Field({ label, type = 'text', placeholder, value, onChange, suffix }) {
             aria-label={show ? 'Hide password' : 'Show password'}
           >
             {show ? (
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
-                <line x1="1" y1="1" x2="23" y2="23" />
-              </svg>
+              <EyeOffIcon width={16} height={16} aria-hidden="true" />
             ) : (
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                <circle cx="12" cy="12" r="3" />
-              </svg>
+              <EyeOpenIcon width={16} height={16} aria-hidden="true" />
             )}
           </button>
         )}
@@ -94,19 +93,7 @@ export default function LoginPage() {
 
         {error && (
           <div className="error-box auth-alert mb-5">
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.5"
-              className="mt-0.5 shrink-0 text-[#ff5630]"
-            >
-              <circle cx="12" cy="12" r="10" />
-              <line x1="12" y1="8" x2="12" y2="12" />
-              <line x1="12" y1="16" x2="12.01" y2="16" />
-            </svg>
+            <AlertCircleIcon width={14} height={14} className="mt-0.5 shrink-0 text-[#ff5630]" aria-hidden="true" />
             <p className="auth-alert-text">{error}</p>
           </div>
         )}
@@ -146,9 +133,7 @@ export default function LoginPage() {
               aria-pressed={remember}
             >
               {remember && (
-                <svg width="9" height="9" viewBox="0 0 12 12" fill="none">
-                  <path d="M2 6l3 3 5-5" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
+                <CheckIcon width={9} height={9} style={{ color: '#ffffff' }} aria-hidden="true" />
               )}
             </button>
             <span className="auth-meta">Keep me signed in for 30 days</span>
@@ -158,10 +143,7 @@ export default function LoginPage() {
             <button type="submit" disabled={loading} className="auth-primary-button relative overflow-hidden">
               {loading ? (
                 <span className="flex items-center justify-center gap-2">
-                  <svg className="animate-spin" width="14" height="14" viewBox="0 0 24 24" fill="none">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="white" strokeWidth="4" />
-                    <path className="opacity-75" fill="white" d="M4 12a8 8 0 018-8v8H4z" />
-                  </svg>
+                  <Spinner14Icon className="animate-spin" width={14} height={14} aria-hidden="true" />
                   Signing in...
                 </span>
               ) : (
