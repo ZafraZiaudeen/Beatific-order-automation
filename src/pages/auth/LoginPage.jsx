@@ -133,7 +133,7 @@ export default function LoginPage() {
               aria-pressed={remember}
             >
               {remember && (
-                <CheckIcon width={9} height={9} style={{ color: '#ffffff' }} aria-hidden="true" />
+                <CheckIcon className="text-white" width={9} height={9} aria-hidden="true" />
               )}
             </button>
             <span className="auth-meta">Keep me signed in for 30 days</span>
