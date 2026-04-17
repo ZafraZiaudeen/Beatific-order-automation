@@ -7,29 +7,35 @@ import CheckIcon from '../../assets/icons/auth/check.svg?react'
 const STATS = [
   { value: '6 Steps', label: 'Fully automated' },
   { value: '300 DPI', label: 'Zero compression' },
-  { value: '6 hrs',   label: 'Lulu sync cycle' },
+  { value: '6 hrs', label: 'Lulu sync cycle' },
 ]
 
 const FEATURES = [
-  'Etsy CSV → orders in seconds',
+  'Etsy CSV -> orders in seconds',
   'AI flags missing or conflicting data',
   'One-click send to Lulu Print API',
-  'Real-time tracking & Slack alerts',
+  'Real-time tracking and Slack alerts',
 ]
 
+const cn = (...classes) => classes.filter(Boolean).join(' ')
+
 function BrandMark({ dark = true }) {
-  const textColor = dark ? '#f8fafc' : '#0f172a'
-  const subColor  = dark ? 'rgba(148,163,184,0.75)' : '#64748b'
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '0.875rem' }}>
+    <div className="flex items-center gap-3.5">
       <div className="auth-brand-icon">
-        <BookBrandIcon width={18} height={18} style={{ color: '#ffffff' }} aria-hidden="true" />
+        <BookBrandIcon className="text-white" width={18} height={18} aria-hidden="true" />
       </div>
-      <div>
-        <span style={{ display: 'block', fontSize: '0.78rem', fontWeight: 800, letterSpacing: '0.18em', textTransform: 'uppercase', color: textColor }}>
+
+      <div className="flex flex-col gap-[0.1rem]">
+        <span
+          className={cn(
+            'block text-[0.78rem] font-extrabold uppercase tracking-[0.18em]',
+            dark ? 'text-slate-50' : 'text-slate-900'
+          )}
+        >
           Beatific.co
         </span>
-        <span style={{ display: 'block', fontSize: '0.7rem', color: subColor, marginTop: '0.1rem' }}>
+        <span className={cn('mt-[0.1rem] block text-[0.7rem]', dark ? 'text-slate-400/75' : 'text-slate-500')}>
           Order Automation
         </span>
       </div>
@@ -41,51 +47,49 @@ export default function AuthLayout({ children }) {
   const rightRef = useRef(null)
 
   useEffect(() => {
-    const el = rightRef.current
-    if (!el) return
-    gsap.fromTo(el, { opacity: 0, x: 28 }, { opacity: 1, x: 0, duration: 0.85, ease: 'power3.out' })
+    const element = rightRef.current
+    if (!element) return
+
+    gsap.fromTo(element, { opacity: 0, x: 28 }, { opacity: 1, x: 0, duration: 0.85, ease: 'power3.out' })
   }, [])
 
   return (
-    <div className="auth-shell" style={{ minHeight: '100vh' }}>
-
+    <div className="auth-shell min-h-screen">
       <div className="auth-left">
         <ThreeBackground />
         <div className="auth-left-glow" />
         <div className="auth-left-overlay" />
 
-        {/* Brand */}
-        <div style={{ position: 'relative', zIndex: 10 }}>
+        <div className="relative z-10">
           <BrandMark dark />
         </div>
 
-        {/* Hero */}
         <div className="auth-hero">
           <div className="auth-hero-badge">
             <span className="auth-hero-badge-dot" />
             Order Automation System
           </div>
           <h1 className="auth-hero-title">
-            Print orders,<br />
+            Print orders,
+            <br />
             <span>automated.</span>
           </h1>
           <p className="auth-hero-sub">
-            From Etsy import to Lulu dispatch, manage your team,
-            track every order, ship with zero manual steps.
+            From Etsy import to Lulu dispatch, manage your team, track every order, and ship with zero manual steps.
           </p>
+
           <ul className="auth-features">
-            {FEATURES.map(f => (
-              <li key={f} className="auth-feature">
+            {FEATURES.map((feature) => (
+              <li key={feature} className="auth-feature">
                 <span className="auth-feature-check">
-                  <CheckIcon width={8} height={8} style={{ color: '#00a76f' }} aria-hidden="true" />
+                  <CheckIcon className="text-[var(--c-accent)]" width={8} height={8} aria-hidden="true" />
                 </span>
-                {f}
+                {feature}
               </li>
             ))}
           </ul>
         </div>
 
-        {/* Stats */}
         <div className="auth-stats">
           {STATS.map(({ value, label }) => (
             <div key={label} className="auth-stat">
@@ -98,17 +102,13 @@ export default function AuthLayout({ children }) {
 
       <div ref={rightRef} className="auth-right">
         <div className="auth-right-inner">
-
-          {/* Mobile logo */}
-          <div className="auth-mobile-brand" style={{ justifyContent: 'center', marginBottom: '0.5rem' }}>
+          <div className="auth-mobile-brand mb-2 justify-center">
             <BrandMark dark={false} />
           </div>
 
           {children}
 
-          <p className="auth-footer-text">
-            © 2026 Beatific.co · All rights reserved
-          </p>
+          <p className="auth-footer-text">Copyright 2026 Beatific.co. All rights reserved.</p>
         </div>
       </div>
     </div>
