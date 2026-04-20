@@ -5,7 +5,6 @@ import Box from '@mui/material/Box'
 import IconButton from '@mui/material/IconButton'
 import Typography from '@mui/material/Typography'
 import Avatar from '@mui/material/Avatar'
-import Badge from '@mui/material/Badge'
 import Menu from '@mui/material/Menu'
 import MenuItem from '@mui/material/MenuItem'
 import ListItemIcon from '@mui/material/ListItemIcon'
@@ -16,7 +15,6 @@ import FormControl from '@mui/material/FormControl'
 import { alpha } from '@mui/material/styles'
 import MenuIcon from '@mui/icons-material/Menu'
 import SearchIcon from '@mui/icons-material/SearchOutlined'
-import NotificationsNoneIcon from '@mui/icons-material/NotificationsNoneOutlined'
 import PersonOutlineIcon from '@mui/icons-material/PersonOutlined'
 import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined'
 import LogoutIcon from '@mui/icons-material/LogoutOutlined'
@@ -24,9 +22,10 @@ import StorefrontOutlinedIcon from '@mui/icons-material/StorefrontOutlined'
 import useAuthStore from '../../stores/authStore'
 import { useNavigate } from 'react-router-dom'
 import { HEADER_HEIGHT } from '../../lib/constants'
+import NotificationCenter from '../common/NotificationCenter'
 
 export default function Header({ onMenuToggle }) {
-  const { user, company, stores, activeStore, setActiveStore, logout } = useAuthStore()
+  const { user, stores, activeStore, setActiveStore, logout } = useAuthStore()
   const navigate = useNavigate()
   const [anchorEl, setAnchorEl] = useState(null)
   const profileOpen = Boolean(anchorEl)
@@ -78,20 +77,14 @@ export default function Header({ onMenuToggle }) {
               sx={{
                 fontSize: '0.875rem',
                 fontWeight: 600,
-                '& .MuiOutlinedInput-notchedOutline': {
-                  borderColor: 'transparent',
-                },
-                '&:hover .MuiOutlinedInput-notchedOutline': {
-                  borderColor: (t) => t.palette.divider,
-                },
+                '& .MuiOutlinedInput-notchedOutline': { borderColor: 'transparent' },
+                '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: (t) => t.palette.divider },
                 bgcolor: (t) => alpha(t.palette.grey[500], 0.08),
                 borderRadius: 1,
               }}
             >
               {stores.map((store) => (
-                <MenuItem key={store._id} value={store._id}>
-                  {store.name}
-                </MenuItem>
+                <MenuItem key={store._id} value={store._id}>{store.name}</MenuItem>
               ))}
             </Select>
           </FormControl>
@@ -100,36 +93,19 @@ export default function Header({ onMenuToggle }) {
         <Box sx={{ flex: 1 }} />
 
         {/* Search */}
-        <Tooltip title="Search (⌘K)">
+        <Tooltip title="Search">
           <IconButton sx={{ color: 'text.secondary' }}>
             <SearchIcon />
           </IconButton>
         </Tooltip>
 
         {/* Notifications */}
-        <Tooltip title="Notifications">
-          <IconButton sx={{ color: 'text.secondary' }}>
-            <Badge badgeContent={3} color="error" variant="dot">
-              <NotificationsNoneIcon />
-            </Badge>
-          </IconButton>
-        </Tooltip>
+        <NotificationCenter />
 
         {/* Profile */}
         <Tooltip title={user?.name || 'Profile'}>
-          <IconButton
-            onClick={(e) => setAnchorEl(e.currentTarget)}
-            sx={{ ml: 0.5 }}
-          >
-            <Avatar
-              sx={{
-                width: 36,
-                height: 36,
-                fontSize: '0.875rem',
-                fontWeight: 700,
-                bgcolor: 'primary.main',
-              }}
-            >
+          <IconButton onClick={(e) => setAnchorEl(e.currentTarget)} sx={{ ml: 0.5 }}>
+            <Avatar sx={{ width: 36, height: 36, fontSize: '0.875rem', fontWeight: 700, bgcolor: 'primary.main' }}>
               {initials}
             </Avatar>
           </IconButton>
@@ -147,17 +123,14 @@ export default function Header({ onMenuToggle }) {
                 minWidth: 200,
                 mt: 1,
                 borderRadius: 2,
-                boxShadow: (t) =>
-                  `0 20px 40px -4px ${alpha(t.palette.grey[500], 0.24)}`,
+                boxShadow: (t) => `0 20px 40px -4px ${alpha(t.palette.grey[500], 0.24)}`,
               },
             },
           }}
         >
           <Box sx={{ px: 2, py: 1.5 }}>
             <Typography variant="subtitle2">{user?.name}</Typography>
-            <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-              {user?.email}
-            </Typography>
+            <Typography variant="caption" sx={{ color: 'text.secondary' }}>{user?.email}</Typography>
           </Box>
           <Divider sx={{ my: 0.5 }} />
           <MenuItem onClick={() => { setAnchorEl(null); navigate('/settings/profile') }}>
