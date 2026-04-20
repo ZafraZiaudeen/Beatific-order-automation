@@ -602,3 +602,665 @@ a { color: inherit; text-decoration: none; }
 .spin { animation: spin 0.8s linear infinite; }
 
 .stagger-item { opacity: 0; }
+
+.lulu-review-paper {
+  border: 1px solid var(--c-border);
+  border-radius: 1.75rem !important;
+  background: var(--c-card);
+  box-shadow: 0 36px 96px rgba(15, 23, 42, 0.18) !important;
+  overflow: hidden;
+}
+
+.lulu-review-title {
+  padding: 0 !important;
+}
+
+.lulu-review-hero {
+  position: relative;
+  padding: 1.75rem 2rem 1.9rem;
+  border-bottom: 1px solid var(--c-border);
+  background:
+    radial-gradient(circle at top left, rgba(0, 167, 111, 0.16), transparent 34%),
+    radial-gradient(circle at right center, rgba(14, 165, 233, 0.12), transparent 32%),
+    linear-gradient(135deg, #ffffff 0%, #f8fafc 58%, #eefbf6 100%);
+}
+
+.lulu-review-close {
+  position: absolute !important;
+  top: 1rem;
+  right: 1rem;
+  border: 1px solid rgba(148, 163, 184, 0.24) !important;
+  background: rgba(255, 255, 255, 0.78) !important;
+  color: var(--c-text-2) !important;
+  backdrop-filter: blur(12px);
+}
+
+.lulu-review-close:hover {
+  background: rgba(255, 255, 255, 0.96) !important;
+}
+
+.lulu-review-kicker-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.9rem;
+  padding-right: 2.75rem;
+}
+
+.lulu-review-kicker-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.55rem 0.9rem;
+  border-radius: 999px;
+  border: 1px solid rgba(0, 167, 111, 0.18);
+  background: rgba(255, 255, 255, 0.84);
+  color: var(--c-accent-2);
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.06);
+}
+
+.lulu-review-hero-chip {
+  font-weight: 700 !important;
+}
+
+.lulu-review-heading {
+  margin: 1rem 0 0 !important;
+  color: var(--c-text);
+  font-size: clamp(2rem, 3vw, 2.55rem) !important;
+  font-weight: 800 !important;
+  letter-spacing: -0.04em !important;
+  line-height: 1.05 !important;
+}
+
+.lulu-review-product {
+  margin: 0.45rem 0 0 !important;
+  color: var(--c-text-2);
+  font-size: 1rem !important;
+  font-weight: 600 !important;
+  line-height: 1.45 !important;
+}
+
+.lulu-review-subtitle {
+  max-width: 46rem;
+  margin: 0.75rem 0 0 !important;
+  color: var(--c-text-2);
+  font-size: 0.92rem !important;
+  line-height: 1.7 !important;
+}
+
+.lulu-review-customer-row {
+  margin-top: 1.35rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.lulu-review-customer-card {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  min-width: 0;
+  padding: 0.85rem 1rem;
+  border-radius: 1.2rem;
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  background: rgba(255, 255, 255, 0.85);
+  box-shadow: 0 16px 36px rgba(15, 23, 42, 0.08);
+  backdrop-filter: blur(10px);
+}
+
+.lulu-review-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.8rem;
+  height: 2.8rem;
+  border-radius: 1rem;
+  background: linear-gradient(135deg, #00b877 0%, #00a76f 55%, #009a65 100%);
+  box-shadow: 0 12px 28px rgba(0, 167, 111, 0.22);
+  color: #fff;
+  font-size: 0.92rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  flex-shrink: 0;
+}
+
+.lulu-review-customer-copy {
+  min-width: 0;
+}
+
+.lulu-review-customer-name {
+  margin: 0 !important;
+  color: var(--c-text);
+  font-size: 0.96rem !important;
+  font-weight: 700 !important;
+  line-height: 1.35 !important;
+}
+
+.lulu-review-customer-meta {
+  margin: 0.18rem 0 0 !important;
+  color: var(--c-text-3);
+  font-size: 0.8rem !important;
+  line-height: 1.45 !important;
+  word-break: break-word;
+}
+
+.lulu-review-chip-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.lulu-review-status-chip {
+  border-color: rgba(148, 163, 184, 0.28) !important;
+  background: rgba(255, 255, 255, 0.72) !important;
+  font-weight: 700 !important;
+  color: var(--c-text-2) !important;
+}
+
+.lulu-review-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.85rem;
+  margin-top: 1.4rem;
+}
+
+.lulu-review-stat {
+  padding: 1rem;
+  border-radius: 1.25rem;
+  border: 1px solid rgba(255, 255, 255, 0.75);
+  background: rgba(255, 255, 255, 0.84);
+  box-shadow: 0 16px 32px rgba(15, 23, 42, 0.07);
+  backdrop-filter: blur(12px);
+}
+
+.lulu-review-stat-label {
+  margin: 0 0 0.45rem !important;
+  color: var(--c-text-3);
+  font-size: 0.7rem !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.12em !important;
+  text-transform: uppercase;
+}
+
+.lulu-review-stat-value {
+  margin: 0 !important;
+  color: var(--c-text);
+  font-size: 0.92rem !important;
+  font-weight: 700 !important;
+  line-height: 1.45 !important;
+}
+
+.lulu-review-stat-value.is-mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.82rem !important;
+}
+
+.lulu-review-stat-value.is-warning {
+  color: #b45309;
+}
+
+.lulu-review-content {
+  padding: 1.75rem 2rem 2rem !important;
+  background: linear-gradient(180deg, rgba(248, 250, 252, 0.88) 0%, #f8fafc 100%);
+}
+
+.lulu-review-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.lulu-review-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.12fr) minmax(20rem, 0.88fr);
+  gap: 1rem;
+}
+
+.lulu-review-column {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.lulu-review-card {
+  border: 1px solid var(--c-border);
+  border-radius: 1.5rem;
+  background: linear-gradient(180deg, #ffffff 0%, #fcfdff 100%);
+  padding: 1.35rem;
+  box-shadow: 0 18px 44px rgba(15, 23, 42, 0.05);
+}
+
+.lulu-review-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.1rem;
+}
+
+.lulu-review-card-copy {
+  min-width: 0;
+}
+
+.lulu-review-card-eyebrow {
+  margin: 0 0 0.45rem !important;
+  color: var(--c-accent);
+  font-size: 0.7rem !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.14em !important;
+  text-transform: uppercase;
+}
+
+.lulu-review-card-title {
+  margin: 0 !important;
+  color: var(--c-text);
+  font-size: 1rem !important;
+  font-weight: 800 !important;
+  line-height: 1.25 !important;
+}
+
+.lulu-review-card-subtitle {
+  margin: 0.38rem 0 0 !important;
+  color: var(--c-text-3);
+  font-size: 0.82rem !important;
+  line-height: 1.6 !important;
+}
+
+.lulu-review-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.8rem;
+}
+
+.lulu-review-detail {
+  padding: 0.95rem 1rem;
+  border-radius: 1.15rem;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  background: var(--c-surface);
+}
+
+.lulu-review-detail.is-danger {
+  border-color: rgba(239, 68, 68, 0.18);
+  background: rgba(239, 68, 68, 0.05);
+}
+
+.lulu-review-detail-label {
+  margin: 0 0 0.4rem !important;
+  color: var(--c-text-3);
+  font-size: 0.72rem !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.04em !important;
+}
+
+.lulu-review-detail-value {
+  margin: 0 !important;
+  color: var(--c-text);
+  font-size: 0.88rem !important;
+  font-weight: 700 !important;
+  line-height: 1.45 !important;
+  word-break: break-word;
+}
+
+.lulu-review-detail-value.is-mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.8rem !important;
+}
+
+.lulu-review-address-wrap {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.9rem;
+}
+
+.lulu-review-icon-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.8rem;
+  height: 2.8rem;
+  border-radius: 1rem;
+  background: rgba(0, 167, 111, 0.09);
+  color: var(--c-accent);
+  flex-shrink: 0;
+}
+
+.lulu-review-address-block {
+  min-width: 0;
+}
+
+.lulu-review-address-line {
+  margin: 0 !important;
+  color: var(--c-text);
+  font-size: 0.9rem !important;
+  line-height: 1.55 !important;
+}
+
+.lulu-review-inline-note,
+.lulu-review-muted-note {
+  margin: 0.7rem 0 0 !important;
+  color: var(--c-text-3);
+  font-size: 0.8rem !important;
+  line-height: 1.55 !important;
+}
+
+.lulu-review-checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+
+.lulu-review-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.9rem;
+  padding: 1rem;
+  border-radius: 1.2rem;
+  border: 1px solid var(--c-border);
+  background: var(--c-surface);
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+
+.lulu-review-check:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 16px 28px rgba(15, 23, 42, 0.08);
+}
+
+.lulu-review-check.is-ready {
+  border-color: rgba(0, 167, 111, 0.18);
+  background: rgba(0, 167, 111, 0.06);
+}
+
+.lulu-review-check.is-warning {
+  border-color: rgba(245, 158, 11, 0.22);
+  background: rgba(245, 158, 11, 0.08);
+}
+
+.lulu-review-check-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.55rem;
+  height: 2.55rem;
+  border-radius: 0.95rem;
+  background: rgba(255, 255, 255, 0.78);
+  color: var(--c-text-2);
+  flex-shrink: 0;
+}
+
+.lulu-review-check.is-ready .lulu-review-check-icon {
+  background: rgba(0, 167, 111, 0.13);
+  color: var(--c-accent-2);
+}
+
+.lulu-review-check.is-warning .lulu-review-check-icon {
+  background: rgba(245, 158, 11, 0.16);
+  color: #b45309;
+}
+
+.lulu-review-check-body {
+  min-width: 0;
+  flex: 1;
+}
+
+.lulu-review-check-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.lulu-review-check-title {
+  margin: 0 !important;
+  color: var(--c-text);
+  font-size: 0.92rem !important;
+  font-weight: 700 !important;
+  line-height: 1.4 !important;
+}
+
+.lulu-review-check-description {
+  margin: 0.32rem 0 0 !important;
+  color: var(--c-text-2);
+  font-size: 0.82rem !important;
+  line-height: 1.6 !important;
+}
+
+.lulu-review-check-chip {
+  font-weight: 700 !important;
+}
+
+.lulu-review-link-button,
+.lulu-review-file-button {
+  margin-top: 0.7rem !important;
+  align-self: flex-start;
+  border-radius: 999px !important;
+  padding-inline: 0.95rem !important;
+  font-size: 0.76rem !important;
+  font-weight: 700 !important;
+  text-transform: none !important;
+}
+
+.lulu-review-file-button {
+  width: 100%;
+  margin-top: 0 !important;
+  justify-content: space-between !important;
+  border-color: rgba(148, 163, 184, 0.24) !important;
+  color: var(--c-text) !important;
+  background: rgba(248, 250, 252, 0.78) !important;
+}
+
+.lulu-review-cover-frame {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 21rem;
+  padding: 1rem;
+  border-radius: 1.35rem;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  background:
+    radial-gradient(circle at top, rgba(0, 167, 111, 0.08), transparent 38%),
+    linear-gradient(180deg, #eef2f7 0%, #f8fafc 100%);
+  overflow: hidden;
+}
+
+.lulu-review-cover-image {
+  display: block;
+  max-width: 100%;
+  max-height: 19rem;
+  border-radius: 1rem;
+  background: #fff;
+  box-shadow: 0 22px 40px rgba(15, 23, 42, 0.18);
+  object-fit: contain;
+}
+
+.lulu-review-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  text-align: center;
+  color: var(--c-text-3);
+}
+
+.lulu-review-empty-title {
+  margin: 0 !important;
+  color: var(--c-text);
+  font-size: 0.92rem !important;
+  font-weight: 700 !important;
+}
+
+.lulu-review-empty-copy {
+  margin: 0 !important;
+  color: var(--c-text-3);
+  font-size: 0.8rem !important;
+  line-height: 1.55 !important;
+}
+
+.lulu-review-link-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.lulu-review-link-missing {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.85rem 1rem;
+  border-radius: 1rem;
+  border: 1px dashed rgba(148, 163, 184, 0.4);
+  background: rgba(248, 250, 252, 0.88);
+  color: var(--c-text-3);
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-align: center;
+}
+
+.lulu-review-copy {
+  border: 1px solid rgba(148, 163, 184, 0.24) !important;
+  background: var(--c-surface) !important;
+  color: var(--c-text-2) !important;
+}
+
+.lulu-review-payload-note {
+  margin: -0.25rem 0 0.85rem !important;
+  color: var(--c-text-3);
+  font-size: 0.8rem !important;
+  line-height: 1.55 !important;
+}
+
+.lulu-review-code {
+  margin: 0;
+  max-height: 19rem;
+  overflow: auto;
+  padding: 1rem 1.05rem;
+  border-radius: 1.25rem;
+  background: #0f172a;
+  color: #dbeafe;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.74rem;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.lulu-review-code::-webkit-scrollbar {
+  width: 0.45rem;
+  height: 0.45rem;
+}
+
+.lulu-review-code::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(191, 219, 254, 0.26);
+}
+
+.lulu-review-alert {
+  margin: 0 !important;
+  border-radius: 1.25rem !important;
+}
+
+.lulu-review-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.15rem 2rem 1.5rem !important;
+  border-top: 1px solid var(--c-border);
+  background: rgba(255, 255, 255, 0.94);
+}
+
+.lulu-review-actions-note {
+  margin: 0 !important;
+  color: var(--c-text-3);
+  font-size: 0.82rem !important;
+  line-height: 1.5 !important;
+}
+
+.lulu-review-actions-buttons {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.lulu-review-cancel-btn,
+.lulu-review-submit-btn {
+  border-radius: 1rem !important;
+  padding: 0.72rem 1.25rem !important;
+  font-size: 0.84rem !important;
+  font-weight: 700 !important;
+  text-transform: none !important;
+}
+
+.lulu-review-cancel-btn {
+  color: var(--c-text-2) !important;
+}
+
+.lulu-review-submit-btn {
+  background: linear-gradient(135deg, #00b877 0%, #00a76f 50%, #009a65 100%) !important;
+  box-shadow: 0 12px 28px rgba(0, 167, 111, 0.3);
+}
+
+.lulu-review-submit-btn:hover:not(.Mui-disabled) {
+  box-shadow: 0 16px 36px rgba(0, 167, 111, 0.34);
+}
+
+.lulu-review-submit-btn.Mui-disabled {
+  box-shadow: none;
+}
+
+@media (max-width: 960px) {
+  .lulu-review-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .lulu-review-hero,
+  .lulu-review-content,
+  .lulu-review-actions {
+    padding-left: 1rem !important;
+    padding-right: 1rem !important;
+  }
+
+  .lulu-review-kicker-row,
+  .lulu-review-customer-row,
+  .lulu-review-actions {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .lulu-review-kicker-row {
+    padding-right: 0;
+  }
+
+  .lulu-review-close {
+    top: 0.85rem;
+    right: 0.85rem;
+  }
+
+  .lulu-review-stat-grid,
+  .lulu-review-detail-grid,
+  .lulu-review-link-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .lulu-review-actions-buttons {
+    width: 100%;
+    flex-direction: column-reverse;
+  }
+
+  .lulu-review-actions-buttons > * {
+    width: 100%;
+  }
+}
