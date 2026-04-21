@@ -16,8 +16,34 @@ import Visibility from '@mui/icons-material/Visibility'
 import VisibilityOff from '@mui/icons-material/VisibilityOff'
 import GroupAddOutlinedIcon from '@mui/icons-material/GroupAddOutlined'
 import BusinessOutlinedIcon from '@mui/icons-material/BusinessOutlined'
+import ScheduleOutlinedIcon from '@mui/icons-material/ScheduleOutlined'
+import ShieldOutlinedIcon from '@mui/icons-material/ShieldOutlined'
 import api from '../../lib/api'
 import useAuthStore from '../../stores/authStore'
+
+const ROLE_META = {
+  admin: {
+    label: 'Admin access',
+    bg: '#D6E4FF',
+    color: '#1939B7',
+  },
+  member: {
+    label: 'Member access',
+    bg: '#E9FCD4',
+    color: '#3F6212',
+  },
+}
+
+const formatExpiry = (value) =>
+  value
+    ? new Date(value).toLocaleString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+      })
+    : ''
 
 export default function AcceptInvitePage() {
   const { token } = useParams()
@@ -144,6 +170,40 @@ export default function AcceptInvitePage() {
           </Box>
 
           {error && <Alert className="fade-item" severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+
+          <Box
+            className="fade-item"
+            sx={{
+              mb: 3,
+              p: 2,
+              borderRadius: 2.5,
+              bgcolor: '#f7faf8',
+              border: '1px solid #dbe7df',
+            }}
+          >
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mb: 1.5 }}>
+              <Chip
+                icon={<ShieldOutlinedIcon sx={{ fontSize: 16 }} />}
+                label={ROLE_META[invite?.role]?.label || invite?.role || 'Invited access'}
+                sx={{
+                  fontWeight: 700,
+                  bgcolor: ROLE_META[invite?.role]?.bg || '#F4F6F8',
+                  color: ROLE_META[invite?.role]?.color || '#44525f',
+                }}
+              />
+              {invite?.expiresAt && (
+                <Chip
+                  icon={<ScheduleOutlinedIcon sx={{ fontSize: 16 }} />}
+                  label={`Expires ${formatExpiry(invite.expiresAt)}`}
+                  variant="outlined"
+                  sx={{ fontWeight: 600 }}
+                />
+              )}
+            </Box>
+            <Typography variant="body2" color="text.secondary">
+              This invitation is tied to <strong>{invite?.email}</strong> and includes <strong>{invite?.role}</strong> permissions.
+            </Typography>
+          </Box>
 
           <form onSubmit={handleSubmit}>
             <Box className="fade-item" sx={{ mb: 2 }}>

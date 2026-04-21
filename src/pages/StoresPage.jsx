@@ -14,42 +14,95 @@ import DialogTitle from '@mui/material/DialogTitle'
 import DialogContent from '@mui/material/DialogContent'
 import DialogActions from '@mui/material/DialogActions'
 import TextField from '@mui/material/TextField'
+import Select from '@mui/material/Select'
+import MenuItem from '@mui/material/MenuItem'
+import FormControl from '@mui/material/FormControl'
+import InputLabel from '@mui/material/InputLabel'
 import Alert from '@mui/material/Alert'
 import Skeleton from '@mui/material/Skeleton'
 import Chip from '@mui/material/Chip'
+import Divider from '@mui/material/Divider'
 import CircularProgress from '@mui/material/CircularProgress'
+import Collapse from '@mui/material/Collapse'
 import { alpha } from '@mui/material/styles'
 import AddIcon from '@mui/icons-material/Add'
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined'
 import StorefrontOutlinedIcon from '@mui/icons-material/StorefrontOutlined'
+import LocalPrintshopOutlinedIcon from '@mui/icons-material/LocalPrintshopOutlined'
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
+import ExpandLessIcon from '@mui/icons-material/ExpandLess'
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
 import api from '../lib/api'
 import useAuthStore from '../stores/authStore'
 
+const SHIPPING_LEVELS = [
+  { value: 'MAIL', label: 'Standard Mail' },
+  { value: 'PRIORITY_MAIL', label: 'Priority Mail' },
+  { value: 'GROUND_HD', label: 'Ground Home Delivery' },
+  { value: 'GROUND_BUS', label: 'Ground Business' },
+  { value: 'EXPEDITED', label: 'Expedited' },
+  { value: 'EXPRESS_OVERNIGHT', label: 'Express Overnight' },
+]
+
 function StoreFormDialog({ open, onClose, store, onSaved }) {
-  const [form, setForm] = useState({ name: '', etsyShopId: '' })
+  const [form, setForm] = useState({
+    name: '',
+    etsyShopId: '',
+    luluApiKey: '',
+    luluApiSecret: '',
+    luluApiBaseUrl: '',
+    luluSandboxMode: true,
+    shippingLevel: 'MAIL',
+    contactEmail: '',
+  })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [luluExpanded, setLuluExpanded] = useState(false)
 
   useEffect(() => {
     if (store) {
-      setForm({ name: store.name || '', etsyShopId: store.etsyShopId || '' })
+      setForm({
+        name: store.name || '',
+        etsyShopId: store.etsyShopId || '',
+        luluApiKey: '',
+        luluApiSecret: '',       // Never pre-fill secret — must be re-entered
+        luluApiBaseUrl: store.luluApiBaseUrl || '',
+        luluSandboxMode: store.luluSandboxMode ?? true,
+        shippingLevel: store.shippingLevel || 'MAIL',
+        contactEmail: store.contactEmail || '',
+      })
+      setLuluExpanded(Boolean(store.luluApiKeyConfigured))
     } else {
-      setForm({ name: '', etsyShopId: '' })
+      setForm({ name: '', etsyShopId: '', luluApiKey: '', luluApiSecret: '', luluApiBaseUrl: '', luluSandboxMode: true, shippingLevel: 'MAIL', contactEmail: '' })
+      setLuluExpanded(false)
     }
     setError('')
   }, [store, open])
+
+  const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }))
+  const setBool = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.checked }))
 
   const handleSubmit = async (e) => {
     e.preventDefault()
     if (!form.name.trim()) { setError('Store name is required'); return }
     setLoading(true); setError('')
     try {
+      const body = {
+        name: form.name,
+        etsyShopId: form.etsyShopId || null,
+        luluSandboxMode: form.luluSandboxMode,
+        shippingLevel: form.shippingLevel,
+        contactEmail: form.contactEmail || null,
+      }
+      if (form.luluApiKey) body.luluApiKey = form.luluApiKey
+      if (form.luluApiSecret) body.luluApiSecret = form.luluApiSecret
+      if (form.luluApiBaseUrl) body.luluApiBaseUrl = form.luluApiBaseUrl || null
+
       if (store) {
-        await api.patch(`/company/stores/${store._id}`, { name: form.name, etsyShopId: form.etsyShopId || null })
+        await api.patch(`/company/stores/${store._id}`, body)
       } else {
-        await api.post('/company/stores', { name: form.name, etsyShopId: form.etsyShopId || null })
+        await api.post('/company/stores', body)
       }
       onSaved()
       onClose()
@@ -60,6 +113,10 @@ function StoreFormDialog({ open, onClose, store, onSaved }) {
     }
   }
 
+  const sandboxBaseUrl = 'https://api.sandbox.lulu.com'
+  const productionBaseUrl = 'https://api.lulu.com'
+  const derivedBaseUrl = form.luluApiBaseUrl || (form.luluSandboxMode ? sandboxBaseUrl : productionBaseUrl)
+
   return (
     <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
       <DialogTitle sx={{ fontWeight: 700 }}>{store ? 'Edit Store' : 'Add Store'}</DialogTitle>
@@ -67,27 +124,158 @@ function StoreFormDialog({ open, onClose, store, onSaved }) {
         {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
         <Alert severity="info" sx={{ mb: 2, fontSize: '0.82rem' }}>
           <InfoOutlinedIcon sx={{ fontSize: 16, mr: 0.5, verticalAlign: 'middle' }} />
-          The store name will appear on Lulu shipping labels as the sender name.
+          The store name appears on Lulu shipping labels as the sender — make sure it matches your Lulu account name.
         </Alert>
         <form onSubmit={handleSubmit} id="store-form">
           <TextField
             label="Store Name"
             fullWidth
             value={form.name}
-            onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+            onChange={set('name')}
             sx={{ mb: 2 }}
             required
             autoFocus
-            helperText="This name appears on Lulu shipping labels"
+            helperText="Must match the sender name configured in your Lulu account"
           />
           <TextField
             label="Etsy Shop ID (optional)"
             fullWidth
             value={form.etsyShopId}
-            onChange={(e) => setForm((f) => ({ ...f, etsyShopId: e.target.value }))}
+            onChange={set('etsyShopId')}
             placeholder="e.g. BeatificDotCo"
             helperText="Your Etsy shop identifier for reference"
+            sx={{ mb: 2 }}
           />
+
+          {/* Lulu settings collapsible */}
+          <Box
+            sx={{
+              border: '1px solid',
+              borderColor: luluExpanded ? 'primary.light' : 'divider',
+              borderRadius: 2,
+              overflow: 'hidden',
+            }}
+          >
+            <Box
+              onClick={() => setLuluExpanded((v) => !v)}
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 1,
+                px: 2,
+                py: 1.5,
+                cursor: 'pointer',
+                bgcolor: luluExpanded ? alpha('#00A76F', 0.04) : 'transparent',
+                '&:hover': { bgcolor: alpha('#00A76F', 0.06) },
+              }}
+            >
+              <LocalPrintshopOutlinedIcon sx={{ fontSize: 18, color: 'primary.main' }} />
+              <Typography variant="subtitle2" sx={{ flex: 1, fontWeight: 700 }}>
+                Lulu Print API Settings
+              </Typography>
+              {store?.luluApiKeyConfigured && (
+                <Chip label="Configured" size="small" color="success" variant="outlined" />
+              )}
+              {luluExpanded ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
+            </Box>
+
+            <Collapse in={luluExpanded}>
+              <Box sx={{ px: 2, pb: 2, pt: 1 }}>
+                <Alert severity="info" sx={{ mb: 2, fontSize: '0.79rem' }}>
+                  Per-store API keys override the global keys in <code>.env</code>. Leave blank to use the global keys.
+                  Get keys from <strong>lulu.com → Account → API</strong>.
+                </Alert>
+
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={form.luluSandboxMode}
+                      onChange={setBool('luluSandboxMode')}
+                      color="warning"
+                    />
+                  }
+                  label={
+                    <Box>
+                      <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                        Sandbox mode {form.luluSandboxMode ? '(testing)' : '(production — live orders)'}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        API URL: <code>{derivedBaseUrl}</code>
+                      </Typography>
+                    </Box>
+                  }
+                  sx={{ mb: 2, alignItems: 'flex-start' }}
+                />
+
+                <Divider sx={{ mb: 2 }} />
+
+                <TextField
+                  label="Lulu API Key (Client ID)"
+                  fullWidth
+                  value={form.luluApiKey}
+                  onChange={set('luluApiKey')}
+                  placeholder={store?.luluApiKeyConfigured ? 'Enter a new key to replace the saved one' : 'Paste your Lulu client ID'}
+                  helperText={store?.luluApiKeyConfigured ? 'A key is already saved — leave blank to keep existing key' : ''}
+                  sx={{ mb: 2 }}
+                  size="small"
+                />
+                <TextField
+                  label="Lulu API Secret (Client Secret)"
+                  fullWidth
+                  type="password"
+                  value={form.luluApiSecret}
+                  onChange={set('luluApiSecret')}
+                  placeholder={store?.luluApiSecretConfigured ? 'Enter a new secret to replace the saved one' : 'Paste your Lulu client secret'}
+                  helperText={store?.luluApiSecretConfigured ? 'A secret is already saved — leave blank to keep existing secret' : 'It is never shown after saving'}
+                  sx={{ mb: 2 }}
+                  size="small"
+                />
+                <TextField
+                  label="Custom API Base URL (optional)"
+                  fullWidth
+                  value={form.luluApiBaseUrl}
+                  onChange={set('luluApiBaseUrl')}
+                  placeholder={derivedBaseUrl}
+                  helperText="Override only if Lulu gives you a different endpoint"
+                  sx={{ mb: 2 }}
+                  size="small"
+                />
+
+                <Divider sx={{ mb: 2 }} />
+
+                <FormControl fullWidth size="small">
+                  <InputLabel>Default Shipping Level</InputLabel>
+                  <Select
+                    value={form.shippingLevel}
+                    label="Default Shipping Level"
+                    onChange={set('shippingLevel')}
+                  >
+                    {SHIPPING_LEVELS.map((opt) => (
+                      <MenuItem key={opt.value} value={opt.value}>
+                        {opt.label} ({opt.value})
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+                <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block', mb: 2 }}>
+                  Can be overridden per order in the Lulu review dialog.
+                </Typography>
+
+                <Divider sx={{ mb: 2 }} />
+
+                <TextField
+                  label="Contact Email"
+                  fullWidth
+                  type="email"
+                  value={form.contactEmail}
+                  onChange={set('contactEmail')}
+                  placeholder="orders@yourcompany.com"
+                  helperText="Sent to Lulu as the order contact email. Overrides the customer's email."
+                  size="small"
+                />
+              </Box>
+            </Collapse>
+          </Box>
         </form>
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 3 }}>
@@ -102,7 +290,7 @@ function StoreFormDialog({ open, onClose, store, onSaved }) {
 }
 
 export default function StoresPage() {
-  const { user, stores: authStores, setActiveStore } = useAuthStore()
+  const { user } = useAuthStore()
   const [stores, setStores] = useState([])
   const [loading, setLoading] = useState(true)
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -155,7 +343,7 @@ export default function StoresPage() {
         <Box>
           <Typography variant="h4" sx={{ fontWeight: 800, mb: 0.5 }}>Stores</Typography>
           <Typography variant="body2" color="text.secondary">
-            Manage your Etsy shops. Orders are scoped by store.
+            Manage your Etsy shops and per-store Lulu API settings.
           </Typography>
         </Box>
         {canManage && (
@@ -224,7 +412,7 @@ export default function StoresPage() {
 
                     {canManage && (
                       <Box sx={{ display: 'flex', gap: 0.5 }}>
-                        <Tooltip title="Edit">
+                        <Tooltip title="Edit store & Lulu settings">
                           <IconButton size="small" onClick={() => { setEditStore(store); setDialogOpen(true) }}>
                             <EditOutlinedIcon fontSize="small" />
                           </IconButton>
@@ -245,10 +433,35 @@ export default function StoresPage() {
                   </Typography>
 
                   {store.etsyShopId && (
-                    <Typography variant="caption" sx={{ fontFamily: 'monospace', color: 'text.secondary' }}>
+                    <Typography variant="caption" sx={{ fontFamily: 'monospace', color: 'text.secondary', display: 'block' }}>
                       Etsy: {store.etsyShopId}
                     </Typography>
                   )}
+                  {store.contactEmail && (
+                    <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block' }}>
+                      Contact: {store.contactEmail}
+                    </Typography>
+                  )}
+
+                  {/* Lulu status badges */}
+                  <Box sx={{ display: 'flex', gap: 0.75, flexWrap: 'wrap', mt: 1 }}>
+                    <Chip
+                      size="small"
+                      icon={<LocalPrintshopOutlinedIcon sx={{ fontSize: '13px !important' }} />}
+                      label={store.luluApiKeyConfigured ? (store.luluSandboxMode ? 'Lulu sandbox' : 'Lulu production') : 'Lulu (global key)'}
+                      color={store.luluApiKeyConfigured ? (store.luluSandboxMode ? 'warning' : 'success') : 'default'}
+                      variant="outlined"
+                      sx={{ fontWeight: 600, fontSize: '0.7rem' }}
+                    />
+                    {store.shippingLevel && store.shippingLevel !== 'MAIL' && (
+                      <Chip
+                        size="small"
+                        label={store.shippingLevel}
+                        variant="outlined"
+                        sx={{ fontWeight: 600, fontSize: '0.7rem', fontFamily: 'monospace' }}
+                      />
+                    )}
+                  </Box>
 
                   <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mt: 2 }}>
                     <Chip

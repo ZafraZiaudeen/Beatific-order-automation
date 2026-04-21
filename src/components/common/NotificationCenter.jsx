@@ -8,6 +8,7 @@ import Button from '@mui/material/Button'
 import Divider from '@mui/material/Divider'
 import List from '@mui/material/List'
 import ListItem from '@mui/material/ListItem'
+import ListItemButton from '@mui/material/ListItemButton'
 import ListItemText from '@mui/material/ListItemText'
 import CircularProgress from '@mui/material/CircularProgress'
 import Tooltip from '@mui/material/Tooltip'
@@ -175,52 +176,57 @@ export default function NotificationCenter() {
               return (
                 <ListItem
                   key={notification._id}
-                  button
-                  alignItems="flex-start"
-                  onClick={() => handleMarkRead(notification)}
+                  disablePadding
                   sx={{
-                    px: 2,
-                    py: 1.25,
-                    gap: 1.5,
                     bgcolor: notification.read ? 'transparent' : alpha('#00A76F', 0.04),
                     borderLeft: notification.read ? '3px solid transparent' : '3px solid',
                     borderLeftColor: notification.read ? 'transparent' : 'primary.main',
-                    '&:hover': { bgcolor: 'action.hover' },
-                    cursor: 'pointer',
                   }}
                 >
-                  <Box
+                  <ListItemButton
+                    onClick={() => handleMarkRead(notification)}
                     sx={{
-                      width: 36,
-                      height: 36,
-                      borderRadius: '10px',
-                      bgcolor: alpha(color, 0.1),
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      flexShrink: 0,
-                      mt: 0.25,
+                      px: 2,
+                      py: 1.25,
+                      gap: 1.5,
+                      alignItems: 'flex-start',
+                      '&:hover': { bgcolor: 'action.hover' },
                     }}
                   >
-                    <IconComponent sx={{ fontSize: 18, color }} />
-                  </Box>
-                  <ListItemText
-                    primary={
-                      <Typography variant="subtitle2" sx={{ fontSize: '0.82rem', fontWeight: notification.read ? 500 : 700, lineHeight: 1.3 }}>
-                        {notification.title}
-                      </Typography>
-                    }
-                    secondary={
-                      <Box>
-                        <Typography variant="body2" sx={{ fontSize: '0.76rem', color: 'text.secondary', mt: 0.25 }}>
-                          {notification.message}
+                    <Box
+                      sx={{
+                        width: 36,
+                        height: 36,
+                        borderRadius: '10px',
+                        bgcolor: alpha(color, 0.1),
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0,
+                        mt: 0.25,
+                      }}
+                    >
+                      <IconComponent sx={{ fontSize: 18, color }} />
+                    </Box>
+                    <ListItemText
+                      primary={
+                        <Typography variant="subtitle2" sx={{ fontSize: '0.82rem', fontWeight: notification.read ? 500 : 700, lineHeight: 1.3 }}>
+                          {notification.title}
                         </Typography>
-                        <Typography variant="caption" sx={{ fontSize: '0.7rem', color: 'text.disabled', mt: 0.5, display: 'block' }}>
-                          {formatTime(notification.createdAt)}
-                        </Typography>
-                      </Box>
-                    }
-                  />
+                      }
+                      secondaryTypographyProps={{ component: 'span' }}
+                      secondary={
+                        <>
+                          <Typography component="span" variant="body2" sx={{ display: 'block', fontSize: '0.76rem', color: 'text.secondary', mt: 0.25 }}>
+                            {notification.message}
+                          </Typography>
+                          <Typography component="span" variant="caption" sx={{ display: 'block', fontSize: '0.7rem', color: 'text.disabled', mt: 0.5 }}>
+                            {formatTime(notification.createdAt)}
+                          </Typography>
+                        </>
+                      }
+                    />
+                  </ListItemButton>
                 </ListItem>
               )
             })}

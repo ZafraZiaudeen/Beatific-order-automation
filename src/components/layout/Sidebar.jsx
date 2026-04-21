@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import Box from '@mui/material/Box'
 import Drawer from '@mui/material/Drawer'
@@ -7,7 +6,6 @@ import ListSubheader from '@mui/material/ListSubheader'
 import ListItemButton from '@mui/material/ListItemButton'
 import ListItemIcon from '@mui/material/ListItemIcon'
 import ListItemText from '@mui/material/ListItemText'
-import Collapse from '@mui/material/Collapse'
 import IconButton from '@mui/material/IconButton'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
@@ -21,9 +19,6 @@ import UploadFileIcon from '@mui/icons-material/UploadFileOutlined'
 import GroupIcon from '@mui/icons-material/GroupOutlined'
 import StoreIcon from '@mui/icons-material/StorefrontOutlined'
 import PersonIcon from '@mui/icons-material/PersonOutlined'
-import SettingsIcon from '@mui/icons-material/SettingsOutlined'
-import ExpandLessIcon from '@mui/icons-material/ExpandLess'
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft'
 import ChevronRightIcon from '@mui/icons-material/ChevronRight'
 import BookOutlinedIcon from '@mui/icons-material/AutoStoriesOutlined'
@@ -129,6 +124,7 @@ export default function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose
         flexDirection: 'column',
         bgcolor: SIDEBAR_BG,
         overflow: 'hidden',
+        minHeight: 0,
       }}
     >
       {/* Logo */}
@@ -181,7 +177,22 @@ export default function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose
       <Divider sx={{ borderColor: alpha('#fff', 0.08) }} />
 
       {/* Navigation */}
-      <Box sx={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', py: 1 }}>
+      <Box
+        sx={{
+          flex: 1,
+          minHeight: 0,
+          overflowY: 'auto',
+          overflowX: 'hidden',
+          py: 1,
+          overscrollBehavior: 'contain',
+          scrollbarWidth: 'none',
+          msOverflowStyle: 'none',
+          '&::-webkit-scrollbar': {
+            width: 0,
+            height: 0,
+          },
+        }}
+      >
         {NAV_SECTIONS.map((section) => (
           <List
             key={section.title}
@@ -253,6 +264,9 @@ export default function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose
             left: 0,
             width: collapsed ? SIDEBAR_COLLAPSED_WIDTH : SIDEBAR_WIDTH,
             height: '100vh',
+            '@supports (height: 100dvh)': {
+              height: '100dvh',
+            },
             transition: 'width 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
             zIndex: 1200,
           }}
