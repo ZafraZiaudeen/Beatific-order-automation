@@ -57,8 +57,8 @@ function InviteDialog({ open, onClose, onInvited }) {
     if (!form.email.trim()) { setError('Email is required'); return }
     setLoading(true); setError('')
     try {
-      await api.post('/team/invite', form)
-      onInvited()
+      const { data } = await api.post('/team/invite', form)
+      await onInvited(data)
       onClose()
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to send invitation')
@@ -73,7 +73,7 @@ function InviteDialog({ open, onClose, onInvited }) {
       <DialogContent sx={{ pt: '16px !important' }}>
         {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
         <Alert severity="info" sx={{ mb: 2, fontSize: '0.82rem' }}>
-          They'll receive an email with a link to create their account.
+          We&apos;ll email them an invite link. If delivery fails, you&apos;ll get a copyable link here right away.
         </Alert>
         <form onSubmit={handleSubmit} id="invite-form">
           <TextField
@@ -118,14 +118,14 @@ export default function TeamPage() {
   const [menuAnchor, setMenuAnchor] = useState(null)
   const [menuMember, setMenuMember] = useState(null)
   const [deleteConfirm, setDeleteConfirm] = useState(null)
-  const [roleEdit, setRoleEdit] = useState(null) // { member, newRole }
   const [actionLoading, setActionLoading] = useState(false)
   const [error, setError] = useState('')
+  const [inviteStatus, setInviteStatus] = useState(null)
 
   const fetchTeam = useCallback(async () => {
     setLoading(true)
     try {
-      const { data } = await api.get('/team/members')
+      const { data } = await api.get('/team')
       setMembers(data.members || [])
       setPendingInvites(data.pendingInvites || [])
     } catch {
@@ -139,10 +139,45 @@ export default function TeamPage() {
 
   const canManage = user?.role === 'owner' || user?.role === 'admin'
 
+  const handleInviteCreated = async (result) => {
+    await fetchTeam()
+
+    if (result?.emailSent === false) {
+      setInviteStatus({
+        severity: 'warning',
+        message: result.message || 'Invitation created, but the email could not be delivered.',
+        inviteLink: result.inviteLink || '',
+        deliveryError: result.deliveryError || '',
+      })
+      return
+    }
+
+    setInviteStatus({
+      severity: 'success',
+      message: result?.message || 'Invitation sent successfully.',
+      inviteLink: '',
+      deliveryError: '',
+    })
+  }
+
+  const handleCopyInviteLink = async () => {
+    if (!inviteStatus?.inviteLink) return
+
+    try {
+      await navigator.clipboard.writeText(inviteStatus.inviteLink)
+      setInviteStatus((current) => current ? {
+        ...current,
+        message: 'Invite link copied. Share it with your teammate to let them join.',
+      } : current)
+    } catch {
+      setError('Failed to copy the invite link. You can still copy it from the field below.')
+    }
+  }
+
   const handleRoleChange = async (memberId, newRole) => {
     setActionLoading(true)
     try {
-      await api.patch(`/team/members/${memberId}/role`, { role: newRole })
+      await api.patch(`/team/${memberId}/role`, { role: newRole })
       fetchTeam()
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to update role')
@@ -155,7 +190,7 @@ export default function TeamPage() {
   const handleRemove = async (memberId) => {
     setActionLoading(true)
     try {
-      await api.delete(`/team/members/${memberId}`)
+      await api.delete(`/team/${memberId}`)
       setDeleteConfirm(null)
       fetchTeam()
     } catch (err) {
@@ -167,7 +202,7 @@ export default function TeamPage() {
 
   const handleCancelInvite = async (inviteId) => {
     try {
-      await api.delete(`/team/invitations/${inviteId}`)
+      await api.delete(`/team/invite/${inviteId}`)
       fetchTeam()
     } catch {
       //
@@ -204,6 +239,38 @@ export default function TeamPage() {
       </Box>
 
       {error && <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError('')}>{error}</Alert>}
+      {inviteStatus && (
+        <Alert
+          severity={inviteStatus.severity}
+          sx={{ mb: 3 }}
+          onClose={() => setInviteStatus(null)}
+          action={inviteStatus.inviteLink ? (
+            <Button color="inherit" size="small" onClick={handleCopyInviteLink}>
+              Copy Invite Link
+            </Button>
+          ) : null}
+        >
+          <Box>
+            <Typography variant="body2" sx={{ fontWeight: 600 }}>
+              {inviteStatus.message}
+            </Typography>
+            {inviteStatus.deliveryError && (
+              <Typography variant="caption" sx={{ display: 'block', mt: 0.5 }}>
+                Email provider response: {inviteStatus.deliveryError}
+              </Typography>
+            )}
+            {inviteStatus.inviteLink && (
+              <TextField
+                fullWidth
+                size="small"
+                margin="dense"
+                value={inviteStatus.inviteLink}
+                slotProps={{ input: { readOnly: true } }}
+              />
+            )}
+          </Box>
+        </Alert>
+      )}
 
       {/* Members */}
       <Card sx={{ mb: 3 }}>
@@ -373,7 +440,7 @@ export default function TeamPage() {
         </DialogActions>
       </Dialog>
 
-      <InviteDialog open={inviteOpen} onClose={() => setInviteOpen(false)} onInvited={fetchTeam} />
+      <InviteDialog open={inviteOpen} onClose={() => setInviteOpen(false)} onInvited={handleInviteCreated} />
     </Box>
   )
 }

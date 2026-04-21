@@ -97,10 +97,8 @@ export default function LuluOrdersPage() {
       const { data } = await api.get('/orders', { params })
       const allOrders = data.orders || []
 
-      // Filter: has lulu status or in_progress/completed
-      const luluFiltered = allOrders.filter(
-        (o) => o.luluStatus || o.etsyStatus === 'in_progress' || o.etsyStatus === 'completed'
-      )
+      // Show only orders that were actually submitted to Lulu.
+      const luluFiltered = allOrders.filter((o) => Boolean(o.luluJobId || o.luluStatus))
       const statusFiltered = tab ? luluFiltered.filter((o) => o.luluStatus === tab) : luluFiltered
       setOrders(statusFiltered)
 
@@ -230,7 +228,7 @@ export default function LuluOrdersPage() {
             {missingFiles.length > 0 && (
               <Alert severity="warning" sx={{ mb: 2 }}>
                 {missingFiles.length} order(s) cannot be submitted missing cover image, interior PDF, or Pod Package ID.
-                Go to Etsy Orders to upload the missing files.
+                Go to Etsy Orders to upload files/paste asset URLs and set the Pod Package ID.
               </Alert>
             )}
 
@@ -421,10 +419,10 @@ export default function LuluOrdersPage() {
                       <Typography variant="body2" color="text.secondary">{formatDate(order.updatedAt)}</Typography>
                     </TableCell>
                     <TableCell align="right">
-                      <Tooltip title="Refresh status from Lulu">
+                      <Tooltip title={order.luluJobId ? 'Refresh status from Lulu' : 'Not submitted to Lulu'}>
                         <IconButton
                           size="small"
-                          disabled={refreshingId === order._id}
+                          disabled={refreshingId === order._id || !order.luluJobId}
                           onClick={() => handleRefreshStatus(order._id)}
                         >
                           {refreshingId === order._id

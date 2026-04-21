@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Dialog from '@mui/material/Dialog'
 import DialogTitle from '@mui/material/DialogTitle'
 import DialogContent from '@mui/material/DialogContent'
@@ -11,6 +11,10 @@ import CircularProgress from '@mui/material/CircularProgress'
 import Chip from '@mui/material/Chip'
 import IconButton from '@mui/material/IconButton'
 import Tooltip from '@mui/material/Tooltip'
+import Select from '@mui/material/Select'
+import MenuItem from '@mui/material/MenuItem'
+import FormControl from '@mui/material/FormControl'
+import InputLabel from '@mui/material/InputLabel'
 import LocalPrintshopOutlinedIcon from '@mui/icons-material/LocalPrintshopOutlined'
 import ContentCopyIcon from '@mui/icons-material/ContentCopy'
 import OpenInNewIcon from '@mui/icons-material/OpenInNew'
@@ -22,17 +26,19 @@ import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined'
 import Inventory2OutlinedIcon from '@mui/icons-material/Inventory2Outlined'
 import LocalShippingOutlinedIcon from '@mui/icons-material/LocalShippingOutlined'
 import api from '../../lib/api'
+import { buildAssetThumbnailUrl } from '../../lib/assets'
+import useAuthStore from '../../stores/authStore'
+
+const SHIPPING_LEVELS = [
+  { value: 'MAIL', label: 'Standard Mail' },
+  { value: 'PRIORITY_MAIL', label: 'Priority Mail' },
+  { value: 'GROUND_HD', label: 'Ground Home Delivery' },
+  { value: 'GROUND_BUS', label: 'Ground Business' },
+  { value: 'EXPEDITED', label: 'Expedited' },
+  { value: 'EXPRESS_OVERNIGHT', label: 'Express Overnight' },
+]
 
 const cn = (...classes) => classes.filter(Boolean).join(' ')
-
-const buildThumbnailUrl = (url) => {
-  if (!url || !url.includes('cloudinary.com')) return url
-  return url.replace('/upload/', '/upload/q_auto,w_400,f_webp/')
-}
-
-const formatCurrency = (value) => (
-  typeof value === 'number' ? `$${value.toFixed(2)}` : 'Not priced'
-)
 
 const formatDate = (value) => {
   if (!value) return 'Not available'
@@ -165,30 +171,47 @@ function ReviewChecklistItem({
 }
 
 export default function LuluReviewDialog({ open, onClose, order, onSubmitted }) {
+  const { activeStore } = useAuthStore()
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [copied, setCopied] = useState(false)
+  const [coverPreviewFailed, setCoverPreviewFailed] = useState(false)
+  const [shippingLevel, setShippingLevel] = useState('MAIL')
+
+  useEffect(() => {
+    setCoverPreviewFailed(false)
+  }, [order?.coverImageUrl])
+
+  // Initialise shipping level from order or store default when dialog opens
+  useEffect(() => {
+    if (open && order) {
+      setShippingLevel(order.shippingLevel || activeStore?.shippingLevel || 'MAIL')
+    }
+  }, [open, order, activeStore])
 
   if (!order) return null
 
+  const storeName = activeStore?.name || 'Beatific'
+
   const luluPayload = {
-    external_id: order.etsyOrderId,
+    external_id: String(order.etsyOrderId),
     line_items: [{
-      title: order.productTitle,
       pod_package_id: order.podPackageId,
       quantity: order.quantity,
-      cover: order.coverImageUrl,
-      interior: order.interiorPdfUrl,
+      interior: { source_url: order.interiorPdfUrl },
+      cover: { source_url: order.coverImageUrl },
     }],
     shipping_address: {
       name: order.shippingAddress?.name,
       street1: order.shippingAddress?.street1,
-      street2: order.shippingAddress?.street2,
+      street2: order.shippingAddress?.street2 || '',
       city: order.shippingAddress?.city,
       state_code: order.shippingAddress?.state,
-      postcode: order.shippingAddress?.zip,
+      postcode: String(order.shippingAddress?.zip || ''),
       country_code: order.shippingAddress?.country || 'US',
+      phone_number: '',
     },
+    shipping_level: shippingLevel,
     contact_email: order.customerEmail || 'orders@beatific.co',
   }
 
@@ -204,7 +227,7 @@ export default function LuluReviewDialog({ open, onClose, order, onSubmitted }) 
     setSubmitting(true)
     setError('')
     try {
-      await api.post(`/lulu/submit/${order._id}`)
+      await api.post(`/lulu/submit/${order._id}`, { shippingLevel })
       onSubmitted?.()
       onClose()
     } catch (err) {
@@ -214,7 +237,9 @@ export default function LuluReviewDialog({ open, onClose, order, onSubmitted }) 
     }
   }
 
-  const thumbnailUrl = buildThumbnailUrl(order.coverImageUrl)
+  const hasCover = Boolean(order.coverImageUrl)
+  const thumbnailUrl = hasCover && !coverPreviewFailed ? buildAssetThumbnailUrl(order.coverImageUrl) : ''
+  const canPreviewCover = Boolean(thumbnailUrl && !coverPreviewFailed)
   const canSubmit = order.coverImageUrl && order.interiorPdfUrl && order.podPackageId
   const addressLines = buildAddressLines(order.shippingAddress)
   const shipByDate = order.shipByDate ? new Date(order.shipByDate) : null
@@ -232,7 +257,7 @@ export default function LuluReviewDialog({ open, onClose, order, onSubmitted }) 
       title: 'Cover artwork',
       description: order.coverImageUrl
         ? 'The cover asset is linked and ready for Lulu to fetch.'
-        : 'Upload the final cover artwork before submitting this order.',
+        : 'Upload or link the final cover artwork before submitting this order.',
       ready: Boolean(order.coverImageUrl),
       href: order.coverImageUrl,
       actionLabel: 'Open cover',
@@ -242,7 +267,7 @@ export default function LuluReviewDialog({ open, onClose, order, onSubmitted }) 
       title: 'Interior PDF',
       description: order.interiorPdfUrl
         ? 'The interior file is available and included in the payload.'
-        : 'Add the interior PDF so Lulu can print the inside pages.',
+        : 'Upload or link the interior PDF so Lulu can print the inside pages.',
       ready: Boolean(order.interiorPdfUrl),
       href: order.interiorPdfUrl,
       actionLabel: 'Open PDF',
@@ -271,7 +296,9 @@ export default function LuluReviewDialog({ open, onClose, order, onSubmitted }) 
       onClose={onClose}
       maxWidth="lg"
       fullWidth
-      PaperProps={{ className: 'lulu-review-paper' }}
+      slotProps={{
+        paper: { className: 'lulu-review-paper' },
+      }}
     >
       <DialogTitle className="lulu-review-title">
         <Box className="lulu-review-hero">
@@ -348,10 +375,10 @@ export default function LuluReviewDialog({ open, onClose, order, onSubmitted }) 
           <Box className="lulu-review-stat-grid">
             <Box className="lulu-review-stat">
               <Typography component="p" className="lulu-review-stat-label">
-                Quantity / Price
+                Quantity
               </Typography>
               <Typography component="p" className="lulu-review-stat-value">
-                {order.quantity || 1} units · {formatCurrency(order.price)}
+                {order.quantity || 1} {order.quantity === 1 ? 'unit' : 'units'}
               </Typography>
             </Box>
 
@@ -389,7 +416,7 @@ export default function LuluReviewDialog({ open, onClose, order, onSubmitted }) 
 
           {!canSubmit && (
             <Alert severity="warning" className="lulu-review-alert">
-              Missing {missingRequirements.join(', ')}. Upload the required items before sending this job to Lulu.
+              Missing {missingRequirements.join(', ')}. Upload or link the required items before sending this job to Lulu.
             </Alert>
           )}
 
@@ -436,10 +463,33 @@ export default function LuluReviewDialog({ open, onClose, order, onSubmitted }) 
                       </Typography>
                     )}
                     <Typography component="p" className="lulu-review-inline-note">
-                      Sender on the shipping label: BeatificDotCo
+                      Sender on the shipping label: <strong>{storeName}</strong>
+                      {' '}(configured in your Lulu account settings)
                     </Typography>
                   </Box>
                 </Box>
+              </ReviewCard>
+
+              {/* Shipping level selector */}
+              <ReviewCard
+                eyebrow="Shipping"
+                title="Shipping level"
+                subtitle="Select the service level for this print job. This is sent directly to Lulu."
+              >
+                <FormControl fullWidth size="small" sx={{ mt: 1 }}>
+                  <InputLabel>Shipping level</InputLabel>
+                  <Select
+                    value={shippingLevel}
+                    label="Shipping level"
+                    onChange={(e) => setShippingLevel(e.target.value)}
+                  >
+                    {SHIPPING_LEVELS.map((opt) => (
+                      <MenuItem key={opt.value} value={opt.value}>
+                        {opt.label} ({opt.value})
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
               </ReviewCard>
 
               <ReviewCard
@@ -458,19 +508,32 @@ export default function LuluReviewDialog({ open, onClose, order, onSubmitted }) 
             <Box className="lulu-review-column">
               <ReviewCard
                 eyebrow="Cover preview"
-                title={thumbnailUrl ? 'Cover artwork ready' : 'No cover uploaded'}
-                subtitle={thumbnailUrl
+                title={hasCover ? (canPreviewCover ? 'Cover artwork ready' : 'Cover file linked') : 'No cover uploaded'}
+                subtitle={canPreviewCover
                   ? 'The original cover URL will be sent to Lulu without compression.'
-                  : 'Upload a final cover before sending this order.'}
+                  : hasCover
+                    ? 'This cover file cannot be previewed here, but the original URL will still be sent to Lulu.'
+                    : 'Upload or link a final cover before sending this order.'}
               >
                 <Box className="lulu-review-cover-frame">
-                  {thumbnailUrl ? (
+                  {canPreviewCover ? (
                     <Box
                       component="img"
                       src={thumbnailUrl}
                       alt="Cover preview"
+                      onError={() => setCoverPreviewFailed(true)}
                       className="lulu-review-cover-image"
                     />
+                  ) : hasCover ? (
+                    <Box className="lulu-review-empty-state">
+                      <DescriptionOutlinedIcon />
+                      <Typography component="p" className="lulu-review-empty-title">
+                        Cover preview unavailable
+                      </Typography>
+                      <Typography component="p" className="lulu-review-empty-copy">
+                        This cover file is still linked and ready to send to Lulu.
+                      </Typography>
+                    </Box>
                   ) : (
                     <Box className="lulu-review-empty-state">
                       <WarningAmberRoundedIcon />
@@ -478,7 +541,7 @@ export default function LuluReviewDialog({ open, onClose, order, onSubmitted }) 
                         No cover available
                       </Typography>
                       <Typography component="p" className="lulu-review-empty-copy">
-                        Add a cover image to unlock Lulu submission for this order.
+                        Add a cover image or cover URL to unlock Lulu submission for this order.
                       </Typography>
                     </Box>
                   )}
@@ -536,7 +599,7 @@ export default function LuluReviewDialog({ open, onClose, order, onSubmitted }) 
                 )}
               >
                 <Typography component="p" className="lulu-review-payload-note">
-                  External ID, files, and shipping data are shown below exactly as prepared for submission.
+                  External ID, files (as source URLs), shipping level, and address are shown exactly as prepared for Lulu.
                 </Typography>
                 <Box component="pre" className="lulu-review-code">
                   {payloadStr}
@@ -548,8 +611,8 @@ export default function LuluReviewDialog({ open, onClose, order, onSubmitted }) 
                 icon={<LocalPrintshopOutlinedIcon />}
                 className="lulu-review-alert"
               >
-                The store name <strong>BeatificDotCo</strong> appears on the Lulu shipping label, and the original
-                artwork URLs are sent without extra compression.
+                The store name <strong>{storeName}</strong> appears on the Lulu shipping label — set
+                this in your Lulu account settings, not the API. Files are sent as URLs (no upload required).
               </Alert>
             </Box>
           </Box>

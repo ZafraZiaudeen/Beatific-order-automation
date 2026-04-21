@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import Box from '@mui/material/Box'
 import Typography from '@mui/material/Typography'
 import Drawer from '@mui/material/Drawer'
@@ -13,6 +13,7 @@ import TextField from '@mui/material/TextField'
 import Select from '@mui/material/Select'
 import FormControl from '@mui/material/FormControl'
 import MenuItem from '@mui/material/MenuItem'
+import InputLabel from '@mui/material/InputLabel'
 import Alert from '@mui/material/Alert'
 import LinearProgress from '@mui/material/LinearProgress'
 import Skeleton from '@mui/material/Skeleton'
@@ -28,8 +29,10 @@ import ImageOutlinedIcon from '@mui/icons-material/ImageOutlined'
 import PictureAsPdfOutlinedIcon from '@mui/icons-material/PictureAsPdfOutlined'
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutlined'
 import api from '../../lib/api'
+import { buildAssetThumbnailUrl } from '../../lib/assets'
 import StatusBadge from './StatusBadge'
 import LuluReviewDialog from './LuluReviewDialog'
+import AssetInputField from '../common/AssetInputField'
 import { ETSY_ORDER_STATUSES } from '../../lib/constants'
 
 const buildThumbnailUrl = (url) => {
@@ -237,14 +240,31 @@ export default function OrderDetailDrawer({ order, open, onClose, onRefresh }) {
   const [statusChange, setStatusChange] = useState('')
   const [statusNote, setStatusNote] = useState('')
   const [statusLoading, setStatusLoading] = useState(false)
+  const [statusError, setStatusError] = useState('')
   const [luluReviewOpen, setLuluReviewOpen] = useState(false)
+  const [productCoverPreviewFailed, setProductCoverPreviewFailed] = useState(false)
+  const [podPackageDraft, setPodPackageDraft] = useState('')
+  const [podPackageSaving, setPodPackageSaving] = useState(false)
+  const [podPackageError, setPodPackageError] = useState('')
+  const [shippingLevelSaving, setShippingLevelSaving] = useState(false)
+  const [product, setProduct] = useState(null)
 
   useEffect(() => { setLocalOrder(order) }, [order])
+
+  useEffect(() => {
+    setProductCoverPreviewFailed(false)
+  }, [localOrder?.coverImageUrl])
+
+  useEffect(() => {
+    setPodPackageDraft(localOrder?.podPackageId || '')
+    setPodPackageError('')
+  }, [localOrder?.podPackageId])
 
   useEffect(() => {
     if (open && order) {
       setStatusChange('')
       setStatusNote('')
+      setStatusError('')
       setEventsLoading(true)
       api.get(`/orders/${order._id}/events`)
         .then(({ data }) => setEvents(data))
@@ -253,19 +273,97 @@ export default function OrderDetailDrawer({ order, open, onClose, onRefresh }) {
     }
   }, [open, order?._id])
 
+  useEffect(() => {
+    const productId = localOrder?.productId
+    if (productId) {
+      api.get(`/products/${productId}`)
+        .then(({ data }) => setProduct(data))
+        .catch(() => setProduct(null))
+    } else {
+      setProduct(null)
+    }
+  }, [localOrder?.productId])
+
   const handleStatusApply = async () => {
     if (!statusChange || !localOrder) return
     setStatusLoading(true)
+    setStatusError('')
     try {
       await api.patch(`/orders/${localOrder._id}/status`, { status: statusChange, note: statusNote })
       setLocalOrder((o) => ({ ...o, etsyStatus: statusChange }))
       onRefresh?.()
       setStatusChange('')
       setStatusNote('')
-    } catch {
-      //
+    } catch (err) {
+      setStatusError(err.response?.data?.message || 'Failed to update order status')
     } finally {
       setStatusLoading(false)
+    }
+  }
+
+  const handleArtworkChange = async (field, value) => {
+    const nextValue = value || null
+    await api.patch(`/orders/${localOrder._id}`, { [field]: nextValue })
+    setLocalOrder((current) => ({
+      ...current,
+      [field]: nextValue,
+      ...(field === 'coverImageUrl' ? { hasCustomArtwork: Boolean(nextValue) } : {}),
+    }))
+    onRefresh?.()
+  }
+
+  const handlePodPackageBlur = async () => {
+    if (!localOrder) return
+
+    const normalizedValue = podPackageDraft.trim().toUpperCase()
+    const currentValue = localOrder.podPackageId || ''
+
+    if (normalizedValue === currentValue) return
+
+    setPodPackageSaving(true)
+    setPodPackageError('')
+
+    try {
+      await handleArtworkChange('podPackageId', normalizedValue)
+      setPodPackageDraft(normalizedValue)
+    } catch (err) {
+      setPodPackageError(err.response?.data?.message || 'Failed to save Pod Package ID')
+      setPodPackageDraft(currentValue)
+    } finally {
+      setPodPackageSaving(false)
+    }
+  }
+
+  const handleShippingLevelChange = async (value) => {
+    setShippingLevelSaving(true)
+    try {
+      await api.patch(`/orders/${localOrder._id}`, { shippingLevel: value })
+      setLocalOrder((o) => ({ ...o, shippingLevel: value }))
+      onRefresh?.()
+    } catch {
+      // ignore
+    } finally {
+      setShippingLevelSaving(false)
+    }
+  }
+
+  const handleVariantSelect = async (variant) => {
+    try {
+      await api.patch(`/orders/${localOrder._id}`, {
+        interiorPdfUrl: variant.interiorPdfUrl,
+        podPackageId: variant.podPackageId,
+        matchedVariantName: variant.name,
+      })
+      setLocalOrder((o) => ({
+        ...o,
+        interiorPdfUrl: variant.interiorPdfUrl,
+        podPackageId: variant.podPackageId,
+        matchedVariantName: variant.name,
+      }))
+      setPodPackageDraft(variant.podPackageId)
+      onRefresh?.()
+    } catch {
+      // ignore
     }
   }
 
@@ -279,7 +377,11 @@ export default function OrderDetailDrawer({ order, open, onClose, onRefresh }) {
     return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
   }
 
-  const canSubmitToLulu = localOrder?.etsyStatus === 'ready_to_order'
+  const canSubmitToLulu =
+    localOrder?.etsyStatus === 'ready_to_order' &&
+    localOrder?.coverImageUrl &&
+    localOrder?.interiorPdfUrl &&
+    localOrder?.podPackageId
   const isOverdue = localOrder?.shipByDate && new Date(localOrder.shipByDate) < new Date()
 
   const shippingLines = localOrder
@@ -301,12 +403,14 @@ export default function OrderDetailDrawer({ order, open, onClose, onRefresh }) {
         anchor="right"
         open={open}
         onClose={onClose}
-        PaperProps={{
-          sx: {
-            width: { xs: '100%', sm: 560 },
-            display: 'flex',
-            flexDirection: 'column',
-            overflow: 'hidden',
+        slotProps={{
+          paper: {
+            sx: {
+              width: { xs: '100%', sm: 560 },
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden',
+            },
           },
         }}
       >
@@ -449,11 +553,12 @@ export default function OrderDetailDrawer({ order, open, onClose, onRefresh }) {
             <Box>
               <SectionLabel>Product</SectionLabel>
               <InfoCard>
-                {localOrder.coverImageUrl && (
+                {localOrder.coverImageUrl && !productCoverPreviewFailed && (
                   <Box
                     component="img"
-                    src={buildThumbnailUrl(localOrder.coverImageUrl)}
+                    src={buildAssetThumbnailUrl(localOrder.coverImageUrl)}
                     alt="Cover"
+                    onError={() => setProductCoverPreviewFailed(true)}
                     sx={{
                       width: '100%',
                       height: 140,
@@ -464,6 +569,32 @@ export default function OrderDetailDrawer({ order, open, onClose, onRefresh }) {
                       borderColor: 'divider',
                     }}
                   />
+                )}
+
+                {localOrder.coverImageUrl && productCoverPreviewFailed && (
+                  <Box
+                    sx={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 1.5,
+                      p: 1.5,
+                      mb: 1.75,
+                      borderRadius: 1.5,
+                      border: '1px solid',
+                      borderColor: 'divider',
+                      bgcolor: 'grey.50',
+                    }}
+                  >
+                    <PictureAsPdfOutlinedIcon sx={{ color: 'text.secondary' }} />
+                    <Box>
+                      <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                        Cover file linked
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        This file cannot be previewed here, but Lulu can still use the URL.
+                      </Typography>
+                    </Box>
+                  </Box>
                 )}
 
                 <Typography variant="body2" sx={{ fontWeight: 700, lineHeight: 1.4, mb: 0.75 }}>
@@ -561,24 +692,109 @@ export default function OrderDetailDrawer({ order, open, onClose, onRefresh }) {
             {/* Artwork uploads */}
             <Box>
               <SectionLabel>Artwork</SectionLabel>
-              <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
+
+              {/* Variant picker — only shown when the product has variants */}
+              {product?.variants?.length > 0 && (
+                <InfoCard sx={{ p: 1.75, mb: 2 }}>
+                  <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.secondary', display: 'block', mb: 1 }}>
+                    PRODUCT VARIANT
+                  </Typography>
+                  <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap>
+                    {product.variants.map((v) => {
+                      const isActive = localOrder.matchedVariantName === v.name
+                      return (
+                        <Chip
+                          key={v.name}
+                          label={v.name}
+                          size="small"
+                          variant={isActive ? 'filled' : 'outlined'}
+                          color={isActive ? 'primary' : 'default'}
+                          onClick={() => handleVariantSelect(v)}
+                          sx={{ cursor: 'pointer', fontWeight: isActive ? 700 : 400 }}
+                        />
+                      )
+                    })}
+                  </Stack>
+                  <Typography variant="caption" sx={{ display: 'block', mt: 1, color: 'text.secondary' }}>
+                    {localOrder.matchedVariantName
+                      ? `Variant "${localOrder.matchedVariantName}" applied — interior PDF and pod package ID set from this variant.`
+                      : 'Select a variant to auto-apply its interior PDF and pod package ID.'}
+                  </Typography>
+                </InfoCard>
+              )}
+
+              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 2 }}>
                 <InfoCard sx={{ p: 1.75 }}>
-                  <ArtworkUploadZone
-                    orderId={localOrder._id}
-                    currentUrl={localOrder.coverImageUrl}
+                  <AssetInputField
                     label="Cover"
-                    onUploaded={(url) => setLocalOrder((o) => ({ ...o, coverImageUrl: url, hasCustomArtwork: true }))}
+                    value={localOrder.coverImageUrl}
+                    onChange={(url) => handleArtworkChange('coverImageUrl', url)}
+                    folder="covers"
+                    accept=".png,.jpg,.jpeg,.webp,.pdf"
+                    allowImages
+                    allowPdf
+                    helperText="Upload an image or PDF, or paste a public URL for the final cover."
+                    showImagePreview
+                    openLabel="Open cover"
                   />
                 </InfoCard>
                 <InfoCard sx={{ p: 1.75 }}>
-                  <ArtworkUploadZone
-                    orderId={localOrder._id}
-                    currentUrl={localOrder.interiorPdfUrl}
-                    label="Interior PDF"
-                    onUploaded={(url) => setLocalOrder((o) => ({ ...o, interiorPdfUrl: url }))}
+                  <AssetInputField
+                    label="Inside Page PDF"
+                    value={localOrder.interiorPdfUrl}
+                    onChange={(url) => handleArtworkChange('interiorPdfUrl', url)}
+                    folder="interiors"
+                    accept=".pdf"
+                    allowPdf
+                    helperText="Upload a PDF or paste a public URL for the inside pages."
+                    openLabel="Open inside page PDF"
                   />
                 </InfoCard>
               </Box>
+              <InfoCard sx={{ p: 1.75, mt: 2 }}>
+                <TextField
+                  label="Lulu Pod Package ID"
+                  value={podPackageDraft}
+                  onChange={(e) => setPodPackageDraft(e.target.value)}
+                  onBlur={handlePodPackageBlur}
+                  fullWidth
+                  size="small"
+                  placeholder="e.g. 0850X1100BWSTDLW060UW444MNG"
+                  helperText={podPackageError || "From Lulu's product catalogue. Saves when you leave this field."}
+                  error={Boolean(podPackageError)}
+                />
+                {podPackageSaving && (
+                  <Typography variant="caption" color="text.secondary" sx={{ mt: 0.75, display: 'block' }}>
+                    Saving Pod Package ID...
+                  </Typography>
+                )}
+              </InfoCard>
+              <InfoCard sx={{ p: 1.75, mt: 2 }}>
+                <FormControl fullWidth size="small" disabled={shippingLevelSaving}>
+                  <InputLabel>Shipping Level</InputLabel>
+                  <Select
+                    value={localOrder.shippingLevel || 'MAIL'}
+                    label="Shipping Level"
+                    onChange={(e) => handleShippingLevelChange(e.target.value)}
+                  >
+                    {[
+                      { value: 'MAIL', label: 'Standard Mail' },
+                      { value: 'PRIORITY_MAIL', label: 'Priority Mail' },
+                      { value: 'GROUND_HD', label: 'Ground Home Delivery' },
+                      { value: 'GROUND_BUS', label: 'Ground Business' },
+                      { value: 'EXPEDITED', label: 'Expedited' },
+                      { value: 'EXPRESS_OVERNIGHT', label: 'Express Overnight' },
+                    ].map((opt) => (
+                      <MenuItem key={opt.value} value={opt.value}>
+                        {opt.label} ({opt.value})
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+                <Typography variant="caption" color="text.secondary" sx={{ mt: 0.75, display: 'block' }}>
+                  Shipping level sent to Lulu. Can be overridden in the review dialog.
+                </Typography>
+              </InfoCard>
             </Box>
 
             {/* Lulu status */}
@@ -653,9 +869,15 @@ export default function OrderDetailDrawer({ order, open, onClose, onRefresh }) {
                     sx={{ '& .MuiOutlinedInput-root': { bgcolor: 'background.paper' } }}
                   />
 
-                  {statusChange === 'ready_to_order' && (!localOrder.coverImageUrl || !localOrder.podPackageId) && (
+                  {statusChange === 'ready_to_order' && (!localOrder.coverImageUrl || !localOrder.interiorPdfUrl || !localOrder.podPackageId) && (
                     <Alert severity="warning" sx={{ fontSize: '0.75rem', py: 0.5 }}>
-                      Cover image and Pod Package ID are required for "Ready to Order"
+                      Cover image, inside page PDF, and Pod Package ID are required for "Ready to Order".
+                    </Alert>
+                  )}
+
+                  {statusError && (
+                    <Alert severity="error" sx={{ fontSize: '0.75rem', py: 0.5 }}>
+                      {statusError}
                     </Alert>
                   )}
 
