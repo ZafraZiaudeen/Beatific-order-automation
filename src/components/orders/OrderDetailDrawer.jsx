@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import Box from '@mui/material/Box'
 import Typography from '@mui/material/Typography'
 import Drawer from '@mui/material/Drawer'
@@ -28,12 +28,14 @@ import CalendarTodayOutlinedIcon from '@mui/icons-material/CalendarTodayOutlined
 import ImageOutlinedIcon from '@mui/icons-material/ImageOutlined'
 import PictureAsPdfOutlinedIcon from '@mui/icons-material/PictureAsPdfOutlined'
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutlined'
+import DesignServicesIcon from '@mui/icons-material/DesignServicesOutlined'
 import api from '../../lib/api'
 import { buildAssetThumbnailUrl } from '../../lib/assets'
 import StatusBadge from './StatusBadge'
 import LuluReviewDialog from './LuluReviewDialog'
 import AssetInputField from '../common/AssetInputField'
 import { ETSY_ORDER_STATUSES } from '../../lib/constants'
+import TemplatePersonalizationDialog from './TemplatePersonalizationDialog'
 
 const buildThumbnailUrl = (url) => {
   if (!url || !url.includes('cloudinary.com')) return url
@@ -248,6 +250,7 @@ export default function OrderDetailDrawer({ order, open, onClose, onRefresh }) {
   const [podPackageError, setPodPackageError] = useState('')
   const [shippingLevelSaving, setShippingLevelSaving] = useState(false)
   const [product, setProduct] = useState(null)
+  const [templateDialogOpen, setTemplateDialogOpen] = useState(false)
 
   useEffect(() => { setLocalOrder(order) }, [order])
 
@@ -383,6 +386,7 @@ export default function OrderDetailDrawer({ order, open, onClose, onRefresh }) {
     localOrder?.interiorPdfUrl &&
     localOrder?.podPackageId
   const isOverdue = localOrder?.shipByDate && new Date(localOrder.shipByDate) < new Date()
+  const productHasTemplate = Boolean(product?.printTemplate?.fields?.length)
 
   const shippingLines = localOrder
     ? [
@@ -693,6 +697,35 @@ export default function OrderDetailDrawer({ order, open, onClose, onRefresh }) {
             <Box>
               <SectionLabel>Artwork</SectionLabel>
 
+              {productHasTemplate && (
+                <InfoCard sx={{ p: 1.75, mb: 2, borderColor: localOrder.templateFinalizedAt ? 'success.light' : 'warning.light' }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2 }}>
+                    <Box>
+                      <Typography variant="body2" sx={{ fontWeight: 800 }}>
+                        {localOrder.templateFinalizedAt ? 'Personalized PDFs frozen' : 'Personalization required'}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        Fill the product template fields and generate order-specific cover and inside PDFs.
+                      </Typography>
+                    </Box>
+                    <Button
+                      variant={localOrder.templateFinalizedAt ? 'outlined' : 'contained'}
+                      size="small"
+                      startIcon={<DesignServicesIcon />}
+                      onClick={() => setTemplateDialogOpen(true)}
+                      sx={{ flexShrink: 0 }}
+                    >
+                      Personalize
+                    </Button>
+                  </Box>
+                  {localOrder.templateWarnings?.length > 0 && (
+                    <Alert severity="warning" sx={{ mt: 1.5, fontSize: '0.75rem' }}>
+                      {localOrder.templateWarnings.join('; ')}
+                    </Alert>
+                  )}
+                </InfoCard>
+              )}
+
               {/* Variant picker — only shown when the product has variants */}
               {product?.variants?.length > 0 && (
                 <InfoCard sx={{ p: 1.75, mb: 2 }}>
@@ -968,6 +1001,17 @@ export default function OrderDetailDrawer({ order, open, onClose, onRefresh }) {
         onClose={() => setLuluReviewOpen(false)}
         order={localOrder}
         onSubmitted={() => { onRefresh?.(); onClose() }}
+      />
+
+      <TemplatePersonalizationDialog
+        open={templateDialogOpen}
+        onClose={() => setTemplateDialogOpen(false)}
+        order={localOrder}
+        product={product}
+        onFinalized={(updatedOrder) => {
+          setLocalOrder(updatedOrder)
+          onRefresh?.()
+        }}
       />
     </>
   )
