@@ -33,11 +33,35 @@ import DesignServicesIcon from '@mui/icons-material/DesignServicesOutlined'
 import CheckCircleIcon from '@mui/icons-material/CheckCircleOutlined'
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutlined'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
+import ContentPasteIcon from '@mui/icons-material/ContentPasteOutlined'
 import api from '../lib/api'
 import useAuthStore from '../stores/authStore'
 import ProductTemplateEditor from '../components/products/ProductTemplateEditor'
 
-const BLANK_VARIANT = { name: '', podPackageId: '' }
+const DEFAULT_TEMPLATE_POLICY = { cover: 'inherit', interior: 'inherit', fields: 'inherit' }
+const BLANK_VARIANT = { name: '', podPackageId: '', priceLabel: '', templatePolicy: DEFAULT_TEMPLATE_POLICY }
+
+const normalizeVariant = (variant = {}) => ({
+  ...variant,
+  name: variant.name || '',
+  podPackageId: variant.podPackageId || '',
+  priceLabel: variant.priceLabel || '',
+  templatePolicy: { ...DEFAULT_TEMPLATE_POLICY, ...(variant.templatePolicy || {}) },
+})
+
+const parseVariantPaste = (text) =>
+  String(text || '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const priceMatch = line.match(/\s*\(([^()]*)\)\s*$/)
+      return {
+        ...BLANK_VARIANT,
+        name: priceMatch ? line.slice(0, priceMatch.index).trim() : line,
+        priceLabel: priceMatch ? priceMatch[1].trim() : '',
+      }
+    })
 
 function ProductFormDialog({ open, onClose, product, onSaved }) {
   const { activeStore } = useAuthStore()
@@ -48,6 +72,8 @@ function ProductFormDialog({ open, onClose, product, onSaved }) {
   })
   const [variants, setVariants] = useState([])
   const [variantsOpen, setVariantsOpen] = useState(false)
+  const [pasteOpen, setPasteOpen] = useState(false)
+  const [variantPaste, setVariantPaste] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -58,13 +84,15 @@ function ProductFormDialog({ open, onClose, product, onSaved }) {
         title: product.title || '',
         podPackageId: product.podPackageId || '',
       })
-      setVariants(product.variants?.length ? product.variants.map((v) => ({ ...v })) : [])
+      setVariants(product.variants?.length ? product.variants.map(normalizeVariant) : [])
       setVariantsOpen(Boolean(product.variants?.length))
     } else {
       setForm({ listingId: '', title: '', podPackageId: '' })
       setVariants([])
       setVariantsOpen(false)
     }
+    setPasteOpen(false)
+    setVariantPaste('')
     setError('')
   }, [product, open])
 
@@ -74,6 +102,24 @@ function ProductFormDialog({ open, onClose, product, onSaved }) {
     setVariants((vs) => vs.map((v, i) => (i === idx ? { ...v, [key]: value } : v)))
   const addVariant = () => setVariants((vs) => [...vs, { ...BLANK_VARIANT }])
   const removeVariant = (idx) => setVariants((vs) => vs.filter((_, i) => i !== idx))
+  const applyVariantPaste = () => {
+    const parsed = parseVariantPaste(variantPaste)
+    if (!parsed.length) {
+      setError('Paste at least one Etsy variant line')
+      return
+    }
+    setVariants((current) => {
+      const names = new Set(current.map((variant) => String(variant.name || '').toLowerCase()))
+      return [
+        ...current,
+        ...parsed.filter((variant) => !names.has(variant.name.toLowerCase())),
+      ]
+    })
+    setVariantsOpen(true)
+    setPasteOpen(false)
+    setVariantPaste('')
+    setError('')
+  }
 
   const handleSubmit = async () => {
     if (!form.listingId.trim() || !form.title.trim()) {
@@ -82,8 +128,8 @@ function ProductFormDialog({ open, onClose, product, onSaved }) {
     }
     // Validate variants
     for (const v of variants) {
-      if (!String(v.name || '').trim() || !String(v.podPackageId || '').trim()) {
-        setError('Each variant needs a name and Pod Package ID')
+      if (!String(v.name || '').trim()) {
+        setError('Each variant needs a name')
         return
       }
     }
@@ -94,8 +140,12 @@ function ProductFormDialog({ open, onClose, product, onSaved }) {
         title: form.title,
         podPackageId: form.podPackageId || null,
         variants: variants.map((v) => ({
+          ...(v._id ? { _id: v._id } : {}),
           name: String(v.name || '').trim(),
-          podPackageId: String(v.podPackageId || '').trim(),
+          podPackageId: String(v.podPackageId || '').trim() || null,
+          priceLabel: String(v.priceLabel || '').trim() || null,
+          templatePolicy: { ...DEFAULT_TEMPLATE_POLICY, ...(v.templatePolicy || {}) },
+          ...(v.printTemplate ? { printTemplate: v.printTemplate } : {}),
         })),
       }
       if (product) {
@@ -167,8 +217,36 @@ function ProductFormDialog({ open, onClose, product, onSaved }) {
           <Collapse in={variantsOpen}>
             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
               Add one variant per size or cover type. Variants only affect order matching and the
-              Lulu Pod Package ID; cover and inside PDFs are shared in Template Designer.
+              Lulu Pod Package ID; template PDFs can inherit defaults or override in Template Designer.
             </Typography>
+            <Stack spacing={1.5} sx={{ mb: 2 }}>
+              <Button
+                variant="outlined"
+                size="small"
+                startIcon={<ContentPasteIcon />}
+                onClick={() => setPasteOpen((value) => !value)}
+                sx={{ alignSelf: 'flex-start' }}
+              >
+                Paste Etsy Variants
+              </Button>
+              <Collapse in={pasteOpen}>
+                <Stack spacing={1}>
+                  <TextField
+                    label="Etsy variant lines"
+                    value={variantPaste}
+                    onChange={(event) => setVariantPaste(event.target.value)}
+                    multiline
+                    minRows={5}
+                    placeholder="Size - A5 (5.8 x 8.3 inches) - 150 Pages Softcover (Rp 395,495)"
+                    helperText="One line per option. Price text in parentheses is stored separately."
+                    fullWidth
+                  />
+                  <Button variant="contained" size="small" onClick={applyVariantPaste} sx={{ alignSelf: 'flex-start' }}>
+                    Add Parsed Variants
+                  </Button>
+                </Stack>
+              </Collapse>
+            </Stack>
             <Stack spacing={2}>
               {variants.map((v, idx) => (
                 <Box key={idx} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1.5, p: 1.5 }}>
@@ -197,6 +275,15 @@ function ProductFormDialog({ open, onClose, product, onSaved }) {
                       size="small"
                       fullWidth
                       placeholder="e.g. 0850X1100BWSTDLW060UW444MNG"
+                      helperText={v.priceLabel ? `Etsy price: ${v.priceLabel}` : 'Falls back to default POD ID when left blank'}
+                    />
+                    <TextField
+                      label="Etsy price label"
+                      value={v.priceLabel || ''}
+                      onChange={(e) => setVariant(idx, 'priceLabel', e.target.value)}
+                      size="small"
+                      fullWidth
+                      placeholder="Rp 395,495"
                     />
                   </Stack>
                 </Box>
@@ -352,15 +439,21 @@ export default function ProductLibraryPage() {
                 </TableRow>
               ) : (
                 filtered.map((product) => {
+                  const variants = product.variants || []
                   const hasTemplateCover = Boolean(product.printTemplate?.cover?.sourcePdfUrl)
                   const hasTemplateInterior = Boolean(product.printTemplate?.interior?.sourcePdfUrl)
                   const templateFieldCount = product.printTemplate?.fields?.length || 0
                   const hasVariantInteriorPdf = Boolean(
-                    product.variants?.some((variant) => Boolean(variant?.interiorPdfUrl))
+                    variants.some((variant) => Boolean(variant?.interiorPdfUrl))
                   )
                   const hasVariantPodPackage = Boolean(
-                    product.variants?.some((variant) => Boolean(variant?.podPackageId))
+                    variants.some((variant) => Boolean(variant?.podPackageId))
                   )
+                  const overrideCount = variants.filter((variant) => {
+                    const policy = { ...DEFAULT_TEMPLATE_POLICY, ...(variant.templatePolicy || {}) }
+                    return policy.cover === 'override' || policy.interior === 'override' || policy.fields === 'override'
+                  }).length
+                  const missingPodCount = variants.filter((variant) => !variant.podPackageId && !product.podPackageId).length
                   const hasLegacyAssets = Boolean(product.coverImageUrl && (product.interiorPdfUrl || hasVariantInteriorPdf))
                   const hasPodPackage = Boolean(product.podPackageId || hasVariantPodPackage)
                   const templateSourcesReady = Boolean(hasTemplateCover && hasTemplateInterior)
@@ -397,11 +490,11 @@ export default function ProductLibraryPage() {
                         </Typography>
                       </TableCell>
                       <TableCell align="center">
-                        {product.variants?.length > 0 ? (
+                        {variants.length > 0 ? (
                           <Chip
-                            label={product.variants.length}
+                            label={`${variants.length}${overrideCount ? ` / ${overrideCount} override` : ''}`}
                             size="small"
-                            color="primary"
+                            color={overrideCount ? 'secondary' : 'primary'}
                             variant="outlined"
                             sx={{ fontWeight: 600 }}
                           />
@@ -421,7 +514,7 @@ export default function ProductLibraryPage() {
                       </TableCell>
                       <TableCell align="center">
                         <Chip
-                          label={templateFieldCount ? `${templateFieldCount} fields` : 'None'}
+                          label={templateFieldCount ? `Default ${templateFieldCount}` : 'None'}
                           size="small"
                           color={templateFieldCount ? 'success' : 'warning'}
                           variant="outlined"
@@ -430,7 +523,7 @@ export default function ProductLibraryPage() {
                       </TableCell>
                       <TableCell align="center">
                         <Chip
-                          label={isReady ? 'Ready' : 'Needs template'}
+                          label={isReady ? 'Ready' : missingPodCount ? `${missingPodCount} missing POD` : 'Needs template'}
                           size="small"
                           color={isReady ? 'success' : 'warning'}
                           variant="outlined"

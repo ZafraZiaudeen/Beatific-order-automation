@@ -37,6 +37,19 @@ import AssetInputField from '../common/AssetInputField'
 import { ETSY_ORDER_STATUSES } from '../../lib/constants'
 import TemplatePersonalizationDialog from './TemplatePersonalizationDialog'
 
+const DEFAULT_TEMPLATE_POLICY = { cover: 'inherit', interior: 'inherit', fields: 'inherit' }
+const variantId = (variant) => String(variant?._id || variant?.id || '')
+const resolveEffectiveTemplateFields = (product, order) => {
+  const baseFields = product?.printTemplate?.fields || []
+  const variantKey = order?.matchedVariantId || order?.matchedVariantName
+  const variant = product?.variants?.find((item) =>
+    variantId(item) === String(variantKey || '') || item.name === variantKey
+  )
+  const policy = { ...DEFAULT_TEMPLATE_POLICY, ...(variant?.templatePolicy || {}) }
+  if (variant && policy.fields === 'override') return variant.printTemplate?.fields || []
+  return baseFields
+}
+
 const buildThumbnailUrl = (url) => {
   if (!url || !url.includes('cloudinary.com')) return url
   return url.replace('/upload/', '/upload/q_auto,w_400,f_webp/')
@@ -351,16 +364,19 @@ export default function OrderDetailDrawer({ order, open, onClose, onRefresh }) {
   }
 
   const handleVariantSelect = async (variant) => {
+    const id = variantId(variant)
     try {
       await api.patch(`/orders/${localOrder._id}`, {
-        interiorPdfUrl: variant.interiorPdfUrl,
-        podPackageId: variant.podPackageId,
+        interiorPdfUrl: variant.interiorPdfUrl || localOrder.interiorPdfUrl || null,
+        podPackageId: variant.podPackageId || localOrder.podPackageId || null,
+        matchedVariantId: id || null,
         matchedVariantName: variant.name,
       })
       setLocalOrder((o) => ({
         ...o,
-        interiorPdfUrl: variant.interiorPdfUrl,
-        podPackageId: variant.podPackageId,
+        interiorPdfUrl: variant.interiorPdfUrl || o.interiorPdfUrl || null,
+        podPackageId: variant.podPackageId || o.podPackageId || null,
+        matchedVariantId: id || null,
         matchedVariantName: variant.name,
       }))
       setPodPackageDraft(variant.podPackageId)
@@ -386,7 +402,7 @@ export default function OrderDetailDrawer({ order, open, onClose, onRefresh }) {
     localOrder?.interiorPdfUrl &&
     localOrder?.podPackageId
   const isOverdue = localOrder?.shipByDate && new Date(localOrder.shipByDate) < new Date()
-  const productHasTemplate = Boolean(product?.printTemplate?.fields?.length)
+  const productHasTemplate = Boolean(resolveEffectiveTemplateFields(product, localOrder).length)
 
   const shippingLines = localOrder
     ? [
@@ -732,12 +748,14 @@ export default function OrderDetailDrawer({ order, open, onClose, onRefresh }) {
                   <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.secondary', display: 'block', mb: 1 }}>
                     PRODUCT VARIANT
                   </Typography>
-                  <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap>
+                  <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: 'wrap' }}>
                     {product.variants.map((v) => {
-                      const isActive = localOrder.matchedVariantName === v.name
+                      const isActive = localOrder.matchedVariantId
+                        ? localOrder.matchedVariantId === variantId(v)
+                        : localOrder.matchedVariantName === v.name
                       return (
                         <Chip
-                          key={v.name}
+                          key={variantId(v) || v.name}
                           label={v.name}
                           size="small"
                           variant={isActive ? 'filled' : 'outlined'}
@@ -750,8 +768,8 @@ export default function OrderDetailDrawer({ order, open, onClose, onRefresh }) {
                   </Stack>
                   <Typography variant="caption" sx={{ display: 'block', mt: 1, color: 'text.secondary' }}>
                     {localOrder.matchedVariantName
-                      ? `Variant "${localOrder.matchedVariantName}" applied — interior PDF and pod package ID set from this variant.`
-                      : 'Select a variant to auto-apply its interior PDF and pod package ID.'}
+                      ? `Variant "${localOrder.matchedVariantName}" applied. Template PDFs inherit defaults unless this variant overrides them.`
+                      : 'Select a variant to auto-apply its POD ID and template overrides.'}
                   </Typography>
                 </InfoCard>
               )}
@@ -856,7 +874,7 @@ export default function OrderDetailDrawer({ order, open, onClose, onRefresh }) {
             {localOrder.aiFlags?.length > 0 && (
               <Box>
                 <SectionLabel>AI Flags</SectionLabel>
-                <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap>
+                <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: 'wrap' }}>
                   {localOrder.aiFlags.map((flag, i) => (
                     <Chip key={i} label={flag} size="small" color="warning" variant="outlined" />
                   ))}

@@ -15,6 +15,8 @@ import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import Switch from '@mui/material/Switch'
 import FormControlLabel from '@mui/material/FormControlLabel'
+import ToggleButton from '@mui/material/ToggleButton'
+import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import UploadFileIcon from '@mui/icons-material/UploadFileOutlined'
 import SaveIcon from '@mui/icons-material/SaveOutlined'
@@ -30,11 +32,14 @@ import LayersIcon from '@mui/icons-material/LayersOutlined'
 import { Stage, Layer, Image as KonvaImage, Rect, Text, Transformer } from 'react-konva'
 import { v4 as uuidv4 } from 'uuid'
 import api from '../../lib/api'
-import { FONT_OPTIONS, normalizeFontStyle } from '../../lib/fonts'
+import { FONT_OPTIONS, getFontOption, normalizeFontStyle } from '../../lib/fonts'
+
+const DEFAULT_TEMPLATE_KEY = 'default'
+const DEFAULT_TEMPLATE_POLICY = { cover: 'inherit', interior: 'inherit', fields: 'inherit' }
 
 const TARGETS = {
-  cover: { label: 'Cover', productKey: 'cover' },
-  interiorFirstPage: { label: 'Inside First Page', productKey: 'interior' },
+  cover: { label: 'Cover', productKey: 'cover', policyKey: 'cover' },
+  interiorFirstPage: { label: 'Inside First Page', productKey: 'interior', policyKey: 'interior' },
 }
 
 const slugify = (value) =>
@@ -53,6 +58,40 @@ const uniqueKey = (base, fields) => {
     i += 1
   }
   return key
+}
+
+const variantId = (variant) => String(variant?._id || variant?.id || '')
+const normalizePolicy = (policy) => ({ ...DEFAULT_TEMPLATE_POLICY, ...(policy || {}) })
+const emptyTemplate = () => ({ cover: null, interior: null, fields: [] })
+
+const cloneFields = (fields = []) =>
+  fields.map((field) => ({
+    ...field,
+    id: uuidv4(),
+    replacementBox: field.replacementBox ? { ...field.replacementBox } : null,
+  }))
+
+const getVariant = (product, templateKey) => {
+  if (!product || templateKey === DEFAULT_TEMPLATE_KEY) return null
+  return (product.variants || []).find((variant) => variantId(variant) === templateKey) || null
+}
+
+const resolveEffectiveTemplate = (product, templateKey) => {
+  const base = product?.printTemplate || emptyTemplate()
+  const variant = getVariant(product, templateKey)
+  const policy = normalizePolicy(variant?.templatePolicy)
+  const override = variant?.printTemplate || emptyTemplate()
+
+  return {
+    variant,
+    policy,
+    template: {
+      cover: variant && policy.cover === 'override' && override.cover?.sourcePdfUrl ? override.cover : base.cover || null,
+      interior: variant && policy.interior === 'override' && override.interior?.sourcePdfUrl ? override.interior : base.interior || null,
+      fields: variant && policy.fields === 'override' ? override.fields || [] : base.fields || [],
+      sampleOutputs: variant ? override.sampleOutputs : base.sampleOutputs,
+    },
+  }
 }
 
 const buttonRailSx = (active = false) => ({
@@ -99,6 +138,8 @@ function TemplateStage({
   target,
   fields,
   selectedId,
+  fieldsEditable,
+  previewModes,
   onSelect,
   onCreateFromText,
   onCreateBlank,
@@ -117,10 +158,10 @@ function TemplateStage({
     const stage = stageRef.current
     const transformer = transformerRef.current
     if (!stage || !transformer) return
-    const node = selectedId ? stage.findOne(`#${selectedId}`) : null
+    const node = selectedId && fieldsEditable ? stage.findOne(`#${selectedId}`) : null
     transformer.nodes(node ? [node] : [])
     transformer.getLayer()?.batchDraw()
-  }, [selectedId, fields, target])
+  }, [selectedId, fields, target, fieldsEditable])
 
   const pointer = () => {
     const stage = stageRef.current
@@ -141,16 +182,7 @@ function TemplateStage({
         backgroundSize: '20px 20px',
       }}
     >
-      <Box
-        sx={{
-          minWidth: '100%',
-          minHeight: '100%',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          p: { xs: 2, md: 5 },
-        }}
-      >
+      <Box sx={{ minWidth: '100%', minHeight: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', p: { xs: 2, md: 5 } }}>
         <Box
           sx={{
             width: pageWidth * zoom,
@@ -169,12 +201,10 @@ function TemplateStage({
             scaleX={zoom}
             scaleY={zoom}
             onMouseDown={(event) => {
-              if (event.target === stageRef.current) {
-                onSelect(null)
-              }
+              if (event.target === stageRef.current) onSelect(null)
             }}
             onDblClick={(event) => {
-              if (event.target === stageRef.current) onCreateBlank(pointer())
+              if (fieldsEditable && event.target === stageRef.current) onCreateBlank(pointer())
             }}
             style={{ display: 'block' }}
           >
@@ -195,32 +225,50 @@ function TemplateStage({
                   fill="rgba(14, 165, 233, 0.025)"
                   stroke="rgba(14, 165, 233, 0.22)"
                   strokeWidth={0.5}
+                  listening={fieldsEditable}
                   onClick={(event) => {
                     event.cancelBubble = true
-                    onCreateFromText(text)
+                    if (fieldsEditable) onCreateFromText(text)
                   }}
                   onTap={(event) => {
                     event.cancelBubble = true
-                    onCreateFromText(text)
+                    if (fieldsEditable) onCreateFromText(text)
                   }}
                 />
               ))}
 
               {activeFields.map((field) => {
                 const selected = selectedId === field.id
+                const previewMode = previewModes[field.id] || 'sample'
+                const showSample = previewMode !== 'original'
+                const maskOriginal = previewMode === 'sample' && field.replacementBox
+                const useReplacementBox = Boolean(field.replacementBox && !(field.rotation || 0))
+                const box = useReplacementBox ? field.replacementBox : field
                 return (
                   <React.Fragment key={field.id}>
+                    {maskOriginal && (
+                      <Rect
+                        x={box.x}
+                        y={box.y}
+                        width={Math.max(1, box.width)}
+                        height={Math.max(1, box.height)}
+                        rotation={field.rotation || 0}
+                        fill="#ffffff"
+                        listening={false}
+                      />
+                    )}
                     <Rect
                       id={field.id}
                       x={field.x}
                       y={field.y}
                       width={field.width}
                       height={field.height}
-                      fill={selected ? 'rgba(0, 167, 111, 0.12)' : 'rgba(0, 167, 111, 0.06)'}
-                      stroke={selected ? '#00A76F' : 'rgba(0, 167, 111, 0.78)'}
+                      rotation={field.rotation || 0}
+                      fill={selected ? 'rgba(0, 167, 111, 0.12)' : 'rgba(0, 167, 111, 0.04)'}
+                      stroke={selected ? '#00A76F' : 'rgba(0, 167, 111, 0.74)'}
                       strokeWidth={selected ? 1.5 : 1}
                       dash={selected ? [] : [4, 3]}
-                      draggable
+                      draggable={fieldsEditable}
                       onClick={(event) => {
                         event.cancelBubble = true
                         onSelect(field.id)
@@ -229,8 +277,9 @@ function TemplateStage({
                         event.cancelBubble = true
                         onSelect(field.id)
                       }}
-                      onDragEnd={(event) => onChange(field.id, { x: event.target.x(), y: event.target.y() })}
+                      onDragEnd={(event) => fieldsEditable && onChange(field.id, { x: event.target.x(), y: event.target.y() })}
                       onTransformEnd={(event) => {
+                        if (!fieldsEditable) return
                         const node = event.target
                         const scaleX = node.scaleX()
                         const scaleY = node.scaleY()
@@ -244,21 +293,24 @@ function TemplateStage({
                         })
                       }}
                     />
-                    <Text
-                      x={field.x + 3}
-                      y={field.y + 2}
-                      width={Math.max(4, field.width - 6)}
-                      height={field.height}
-                      listening={false}
-                      text={field.sampleValue || field.label}
-                      fontSize={field.fontSize}
-                      fontFamily={field.fontFamily}
-                      fontStyle={normalizeFontStyle(field.fontStyle)}
-                      fill={field.fill}
-                      align={field.align}
-                      lineHeight={field.lineHeight}
-                      opacity={0.96}
-                    />
+                    {showSample && (
+                      <Text
+                        x={field.x + 3}
+                        y={field.y + 2}
+                        width={Math.max(4, field.width - 6)}
+                        height={field.height}
+                        listening={false}
+                        text={field.sampleValue || field.label}
+                        fontSize={field.fontSize}
+                        fontFamily={field.fontFamily}
+                        fontStyle={normalizeFontStyle(field.fontStyle)}
+                        fill={field.fill}
+                        align={field.align}
+                        lineHeight={field.lineHeight}
+                        rotation={field.rotation || 0}
+                        opacity={0.96}
+                      />
+                    )}
                   </React.Fragment>
                 )
               })}
@@ -285,7 +337,7 @@ function TemplateStage({
   )
 }
 
-function EmptyCanvas({ target, onImport }) {
+function EmptyCanvas({ target, onImport, inherited }) {
   return (
     <Box
       sx={{
@@ -301,15 +353,17 @@ function EmptyCanvas({ target, onImport }) {
         backgroundSize: '20px 20px',
       }}
     >
-      <Box sx={{ maxWidth: 360 }}>
+      <Box sx={{ maxWidth: 390 }}>
         <PictureAsPdfIcon sx={{ fontSize: 58, color: 'text.disabled', mb: 1 }} />
         <Typography variant="h6" sx={{ fontWeight: 800 }}>
           Import the {TARGETS[target].label.toLowerCase()} PDF
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75, mb: 2 }}>
-          The PDF becomes the locked print background. You will place labeled editable fields on top.
+          {inherited
+            ? 'This variant currently inherits the default PDF. Switch this page to override before importing a variant-specific file.'
+            : 'The PDF becomes the locked print background. You will place labeled editable fields on top.'}
         </Typography>
-        <Button variant="contained" startIcon={<UploadFileIcon />} onClick={onImport}>
+        <Button variant="contained" startIcon={<UploadFileIcon />} onClick={onImport} disabled={inherited}>
           Import PDF
         </Button>
       </Box>
@@ -322,6 +376,9 @@ function FieldPanel({
   fields,
   selectedId,
   target,
+  fieldsEditable,
+  selectedPreviewMode,
+  onPreviewModeChange,
   setTarget,
   setSelectedId,
   updateField,
@@ -332,21 +389,7 @@ function FieldPanel({
 
   if (!selected) {
     return (
-      <Box
-        sx={{
-          width: 64,
-          borderLeft: '1px solid',
-          borderColor: 'divider',
-          bgcolor: 'background.paper',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          py: 1.5,
-          gap: 1,
-          transition: 'width 180ms ease',
-          overflow: 'hidden',
-        }}
-      >
+      <Box sx={{ width: 64, borderLeft: '1px solid', borderColor: 'divider', bgcolor: 'background.paper', display: 'flex', flexDirection: 'column', alignItems: 'center', py: 1.5, gap: 1, transition: 'width 180ms ease', overflow: 'hidden' }}>
         <Tooltip title="Template fields" placement="left">
           <IconButton sx={{ width: 46, height: 46 }}>
             <LayersIcon />
@@ -363,31 +406,22 @@ function FieldPanel({
     )
   }
 
+  const selectedFontOption = getFontOption(selected.fontFile || selected.fontFamily)
+
   return (
-    <Box
-      sx={{
-        width: { xs: 320, md: 360 },
-        borderLeft: '1px solid',
-        borderColor: 'divider',
-        bgcolor: 'background.paper',
-        display: 'flex',
-        flexDirection: 'column',
-        transition: 'width 180ms ease',
-        overflow: 'hidden',
-      }}
-    >
+    <Box sx={{ width: { xs: 320, md: 372 }, borderLeft: '1px solid', borderColor: 'divider', bgcolor: 'background.paper', display: 'flex', flexDirection: 'column', transition: 'width 180ms ease', overflow: 'hidden' }}>
       <Box sx={{ px: 2, py: 1.5, borderBottom: '1px solid', borderColor: 'divider' }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <Box sx={{ flex: 1, minWidth: 0 }}>
             <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>Template Fields</Typography>
-            <Typography variant="caption" color="text.secondary">
-              {targetFields.length} on this page
-            </Typography>
+            <Typography variant="caption" color="text.secondary">{targetFields.length} on this page</Typography>
           </Box>
           <Tooltip title="Delete field">
-            <IconButton size="small" color="error" onClick={deleteSelected}>
-              <DeleteIcon fontSize="small" />
-            </IconButton>
+            <span>
+              <IconButton size="small" color="error" onClick={deleteSelected} disabled={!fieldsEditable}>
+                <DeleteIcon fontSize="small" />
+              </IconButton>
+            </span>
           </Tooltip>
         </Box>
 
@@ -413,10 +447,30 @@ function FieldPanel({
 
       <Box sx={{ p: 2, overflowY: 'auto', flex: 1 }}>
         <Stack spacing={1.35}>
-          <TextField label="Form label" size="small" value={selected.label} onChange={(e) => updateField(selected.id, { label: e.target.value })} />
-          <TextField label="Form key" size="small" value={selected.key} onChange={(e) => updateField(selected.id, { key: slugify(e.target.value) })} />
-          <TextField label="Sample value" size="small" value={selected.sampleValue} onChange={(e) => updateField(selected.id, { sampleValue: e.target.value })} multiline minRows={2} />
+          {!fieldsEditable && (
+            <Alert severity="info">This variant is using default fields. Choose "Customize fields" to edit positions or sample data.</Alert>
+          )}
+          <Box>
+            <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 800, display: 'block', mb: 0.75 }}>
+              Preview mode
+            </Typography>
+            <ToggleButtonGroup
+              exclusive
+              size="small"
+              value={selectedPreviewMode}
+              onChange={(_, value) => value && onPreviewModeChange(value)}
+              fullWidth
+            >
+              <ToggleButton value="sample">Sample</ToggleButton>
+              <ToggleButton value="original">Original</ToggleButton>
+              <ToggleButton value="both">Both</ToggleButton>
+            </ToggleButtonGroup>
+          </Box>
+          <TextField disabled={!fieldsEditable} label="Form label" size="small" value={selected.label} onChange={(e) => updateField(selected.id, { label: e.target.value })} />
+          <TextField disabled={!fieldsEditable} label="Form key" size="small" value={selected.key} onChange={(e) => updateField(selected.id, { key: slugify(e.target.value) })} />
+          <TextField disabled={!fieldsEditable} label="Sample value" size="small" value={selected.sampleValue} onChange={(e) => updateField(selected.id, { sampleValue: e.target.value })} multiline minRows={2} />
           <TextField
+            disabled={!fieldsEditable}
             select
             label="Page"
             size="small"
@@ -435,27 +489,44 @@ function FieldPanel({
             Exact PDF coordinates
           </Typography>
           <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1 }}>
-            <TextField label="X" size="small" type="number" value={Math.round(selected.x * 100) / 100} onChange={(e) => updateField(selected.id, { x: Number(e.target.value) })} />
-            <TextField label="Y" size="small" type="number" value={Math.round(selected.y * 100) / 100} onChange={(e) => updateField(selected.id, { y: Number(e.target.value) })} />
-            <TextField label="Width" size="small" type="number" value={Math.round(selected.width * 100) / 100} onChange={(e) => updateField(selected.id, { width: Number(e.target.value) })} />
-            <TextField label="Height" size="small" type="number" value={Math.round(selected.height * 100) / 100} onChange={(e) => updateField(selected.id, { height: Number(e.target.value) })} />
+            <TextField disabled={!fieldsEditable} label="X" size="small" type="number" value={Math.round(selected.x * 100) / 100} onChange={(e) => updateField(selected.id, { x: Number(e.target.value) })} />
+            <TextField disabled={!fieldsEditable} label="Y" size="small" type="number" value={Math.round(selected.y * 100) / 100} onChange={(e) => updateField(selected.id, { y: Number(e.target.value) })} />
+            <TextField disabled={!fieldsEditable} label="Width" size="small" type="number" value={Math.round(selected.width * 100) / 100} onChange={(e) => updateField(selected.id, { width: Number(e.target.value) })} />
+            <TextField disabled={!fieldsEditable} label="Height" size="small" type="number" value={Math.round(selected.height * 100) / 100} onChange={(e) => updateField(selected.id, { height: Number(e.target.value) })} />
+            <TextField disabled={!fieldsEditable} label="Rotation (deg)" size="small" type="number" value={Math.round((selected.rotation || 0) * 100) / 100} onChange={(e) => updateField(selected.id, { rotation: Number(e.target.value) })} />
           </Box>
 
           <Divider />
 
-          <TextField label="Font size" size="small" type="number" value={selected.fontSize} onChange={(e) => updateField(selected.id, { fontSize: Number(e.target.value) })} />
-          <TextField select label="Font family" size="small" value={selected.fontFamily} onChange={(e) => updateField(selected.id, { fontFamily: e.target.value })}>
+          <TextField disabled={!fieldsEditable} label="Font size" size="small" type="number" value={selected.fontSize} onChange={(e) => updateField(selected.id, { fontSize: Number(e.target.value) })} />
+          <TextField
+            disabled={!fieldsEditable}
+            select
+            label="Font family"
+            size="small"
+            value={selectedFontOption?.value || selected.fontFamily}
+            onChange={(e) => {
+              const font = getFontOption(e.target.value)
+              updateField(selected.id, {
+                fontFamily: font?.value || e.target.value,
+                fontFile: font?.file || null,
+                fontWeight: font?.weight || 400,
+                fontStyle: font?.style || normalizeFontStyle(selected.fontStyle),
+              })
+            }}
+          >
+            {!selectedFontOption && selected.fontFamily && <MenuItem value={selected.fontFamily}>{selected.fontFamily}</MenuItem>}
             {FONT_OPTIONS.map((font) => <MenuItem key={font.value} value={font.value}>{font.label}</MenuItem>)}
           </TextField>
-          <TextField select label="Style" size="small" value={normalizeFontStyle(selected.fontStyle)} onChange={(e) => updateField(selected.id, { fontStyle: e.target.value })}>
+          <TextField disabled={!fieldsEditable} select label="Style" size="small" value={normalizeFontStyle(selected.fontStyle)} onChange={(e) => updateField(selected.id, { fontStyle: e.target.value })}>
             {['normal', 'bold', 'italic', 'bold italic'].map((style) => <MenuItem key={style} value={style}>{style}</MenuItem>)}
           </TextField>
-          <TextField select label="Align" size="small" value={selected.align} onChange={(e) => updateField(selected.id, { align: e.target.value })}>
+          <TextField disabled={!fieldsEditable} select label="Align" size="small" value={selected.align} onChange={(e) => updateField(selected.id, { align: e.target.value })}>
             {['left', 'center', 'right'].map((align) => <MenuItem key={align} value={align}>{align}</MenuItem>)}
           </TextField>
-          <TextField label="Color" size="small" value={selected.fill} onChange={(e) => updateField(selected.id, { fill: e.target.value })} />
+          <TextField disabled={!fieldsEditable} label="Color" size="small" value={selected.fill} onChange={(e) => updateField(selected.id, { fill: e.target.value })} />
           <FormControlLabel
-            control={<Switch checked={selected.required} onChange={(e) => updateField(selected.id, { required: e.target.checked })} />}
+            control={<Switch disabled={!fieldsEditable} checked={selected.required} onChange={(e) => updateField(selected.id, { required: e.target.checked })} />}
             label="Required before final PDF"
           />
           {selected.replacementTextId && (
@@ -466,7 +537,7 @@ function FieldPanel({
             <>
               <Divider />
               <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>Latest Sample</Typography>
-              <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+              <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap' }}>
                 {sampleOutputs.coverPdfUrl && (
                   <Button size="small" variant="outlined" endIcon={<OpenInNewIcon />} onClick={() => window.open(sampleOutputs.coverPdfUrl, '_blank')}>Cover PDF</Button>
                 )}
@@ -487,9 +558,11 @@ function FieldPanel({
 
 export default function ProductTemplateEditor({ product, onBack, onSaved }) {
   const [localProduct, setLocalProduct] = useState(product)
+  const [templateKey, setTemplateKey] = useState(DEFAULT_TEMPLATE_KEY)
   const [target, setTarget] = useState('cover')
-  const [fields, setFields] = useState(product?.printTemplate?.fields || [])
+  const [fields, setFields] = useState([])
   const [selectedId, setSelectedId] = useState(null)
+  const [previewModes, setPreviewModes] = useState({})
   const [zoom, setZoom] = useState(1)
   const [autoFit, setAutoFit] = useState(true)
   const [uploading, setUploading] = useState('')
@@ -500,17 +573,30 @@ export default function ProductTemplateEditor({ product, onBack, onSaved }) {
   const fileInputRef = useRef(null)
   const viewportRef = useRef(null)
 
+  const variants = localProduct?.variants || []
+  const selectedVariant = getVariant(localProduct, templateKey)
+  const selectedVariantId = selectedVariant ? variantId(selectedVariant) : null
+  const selectedPolicy = normalizePolicy(selectedVariant?.templatePolicy)
+  const effective = useMemo(() => resolveEffectiveTemplate(localProduct, templateKey), [localProduct, templateKey])
+  const page = effective.template[TARGETS[target].productKey]
+  const selected = fields.find((field) => field.id === selectedId) || null
+  const sampleOutputs = effective.template.sampleOutputs
+  const fieldsEditable = !selectedVariant || selectedPolicy.fields === 'override'
+  const pageInherited = Boolean(selectedVariant && selectedPolicy[TARGETS[target].policyKey] !== 'override')
+  const selectedPreviewMode = selected ? previewModes[selected.id] || 'sample' : 'sample'
+
   useEffect(() => {
     setLocalProduct(product)
-    setFields(product?.printTemplate?.fields || [])
+    setTemplateKey(DEFAULT_TEMPLATE_KEY)
     setSelectedId(null)
     setAutoFit(true)
   }, [product])
 
-  const template = localProduct?.printTemplate || {}
-  const page = template[TARGETS[target].productKey]
-  const selected = fields.find((field) => field.id === selectedId) || null
-  const sampleOutputs = localProduct?.printTemplate?.sampleOutputs
+  useEffect(() => {
+    const next = resolveEffectiveTemplate(localProduct, templateKey).template.fields || []
+    setFields(next)
+    setSelectedId(null)
+  }, [localProduct, templateKey])
 
   const stats = useMemo(() => ({
     cover: fields.filter((field) => field.target === 'cover').length,
@@ -540,10 +626,38 @@ export default function ProductTemplateEditor({ product, onBack, onSaved }) {
   }, [autoFit, fitToView, page?.previewImageUrl])
 
   const updateField = (id, changes) => {
+    if (!fieldsEditable) return
     setFields((current) => current.map((field) => (field.id === id ? { ...field, ...changes } : field)))
   }
 
+  const updateVariantLocal = (variantIdToUpdate, updater) => {
+    setLocalProduct((current) => ({
+      ...current,
+      variants: (current.variants || []).map((variant) => {
+        if (variantId(variant) !== variantIdToUpdate) return variant
+        return updater({ ...variant, templatePolicy: normalizePolicy(variant.templatePolicy), printTemplate: variant.printTemplate || emptyTemplate() })
+      }),
+    }))
+  }
+
+  const setVariantPolicy = (part, value) => {
+    if (!selectedVariantId) return
+    updateVariantLocal(selectedVariantId, (variant) => {
+      const nextPolicy = { ...normalizePolicy(variant.templatePolicy), [part]: value }
+      const nextTemplate = { ...(variant.printTemplate || emptyTemplate()) }
+      if (part === 'fields' && value === 'override' && !nextTemplate.fields?.length) {
+        nextTemplate.fields = cloneFields(localProduct?.printTemplate?.fields || [])
+        setFields(nextTemplate.fields)
+      }
+      if (part === 'fields' && value === 'inherit') {
+        setFields(localProduct?.printTemplate?.fields || [])
+      }
+      return { ...variant, templatePolicy: nextPolicy, printTemplate: nextTemplate }
+    })
+  }
+
   const addField = (draft) => {
+    if (!fieldsEditable) return
     const id = uuidv4()
     setFields((current) => {
       const key = uniqueKey(draft.label || draft.text || 'field', current)
@@ -558,21 +672,26 @@ export default function ProductTemplateEditor({ product, onBack, onSaved }) {
         width: Math.max(40, draft.width || 180),
         height: Math.max(18, draft.height || 34),
         fontSize: draft.fontSize || 24,
-        fontFamily: draft.fontFamily || 'Canela',
+        fontFamily: draft.fontFamily || 'Canela Regular',
         fontStyle: normalizeFontStyle(draft.fontStyle),
+        fontWeight: draft.fontWeight || 400,
+        fontFile: draft.fontFile || null,
         fill: draft.fill || '#000000',
         align: draft.align || 'left',
         lineHeight: draft.lineHeight || 1.2,
+        rotation: typeof draft.rotation === 'number' ? draft.rotation : Number(draft.rotation || 0),
         required: true,
         replacementTextId: draft.replacementTextId || null,
         replacementBox: draft.replacementBox || null,
       }
       return [...current, next]
     })
+    setPreviewModes((current) => ({ ...current, [id]: 'sample' }))
     setSelectedId(id)
   }
 
   const createFromText = (text) => {
+    if (!fieldsEditable) return
     const existing = fields.find((field) => field.target === target && field.replacementTextId === text.id)
     if (existing) {
       setSelectedId(existing.id)
@@ -591,6 +710,7 @@ export default function ProductTemplateEditor({ product, onBack, onSaved }) {
       fontFamily: text.fontFamily,
       fontStyle: text.fontStyle,
       fill: text.fill,
+      rotation: typeof text.rotation === 'number' ? text.rotation : 0,
       replacementTextId: text.id,
       replacementBox: {
         x: text.x,
@@ -602,15 +722,7 @@ export default function ProductTemplateEditor({ product, onBack, onSaved }) {
   }
 
   const createBlank = ({ x, y }) => {
-    addField({
-      label: 'Personalized text',
-      x,
-      y,
-      width: 220,
-      height: 42,
-      fontSize: 28,
-      fontFamily: 'Canela',
-    })
+    addField({ label: 'Personalized text', x, y, width: 220, height: 42, fontSize: 28, fontFamily: 'Canela Regular', fontFile: 'Canela-Regular-Trial.otf' })
   }
 
   const addCenteredBlankField = () => {
@@ -628,13 +740,14 @@ export default function ProductTemplateEditor({ product, onBack, onSaved }) {
       const form = new FormData()
       form.append('kind', target === 'cover' ? 'cover' : 'interior')
       form.append('file', file)
-      const { data } = await api.post(`/products/${localProduct._id}/template/import`, form, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      })
+      const url = selectedVariantId
+        ? `/products/${localProduct._id}/variants/${selectedVariantId}/template/import`
+        : `/products/${localProduct._id}/template/import`
+      const { data } = await api.post(url, form, { headers: { 'Content-Type': 'multipart/form-data' } })
       setLocalProduct(data)
       onSaved?.(data)
       setAutoFit(true)
-      setMessage(`${TARGETS[target].label} imported`)
+      setMessage(`${selectedVariant ? `${selectedVariant.name} ` : ''}${TARGETS[target].label} imported`)
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to import PDF. Make sure the Python PDF template service is running.')
     } finally {
@@ -648,10 +761,19 @@ export default function ProductTemplateEditor({ product, onBack, onSaved }) {
     setError('')
     if (!silent) setMessage('')
     try {
-      const { data } = await api.patch(`/products/${localProduct._id}/template`, { fields })
+      const payload = selectedVariantId
+        ? {
+            templatePolicy: selectedPolicy,
+            ...(selectedPolicy.fields === 'override' ? { fields } : {}),
+          }
+        : { fields }
+      const url = selectedVariantId
+        ? `/products/${localProduct._id}/variants/${selectedVariantId}/template`
+        : `/products/${localProduct._id}/template`
+      const { data } = await api.patch(url, payload)
       setLocalProduct(data)
       onSaved?.(data)
-      if (!silent) setMessage('Template fields saved')
+      if (!silent) setMessage(selectedVariant ? 'Variant template saved' : 'Default template saved')
       return data
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to save template fields')
@@ -667,7 +789,7 @@ export default function ProductTemplateEditor({ product, onBack, onSaved }) {
     setMessage('')
     try {
       await saveFields({ silent: true })
-      const { data } = await api.post(`/products/${localProduct._id}/template/sample`)
+      const { data } = await api.post(`/products/${localProduct._id}/template/sample`, selectedVariantId ? { variantId: selectedVariantId } : {})
       setLocalProduct(data.product)
       onSaved?.(data.product)
       const warningText = data.sample?.warnings?.length ? ` with ${data.sample.warnings.length} warning(s)` : ''
@@ -680,7 +802,7 @@ export default function ProductTemplateEditor({ product, onBack, onSaved }) {
   }
 
   const deleteSelected = () => {
-    if (!selectedId) return
+    if (!selectedId || !fieldsEditable) return
     setFields((current) => current.filter((field) => field.id !== selectedId))
     setSelectedId(null)
   }
@@ -690,34 +812,24 @@ export default function ProductTemplateEditor({ product, onBack, onSaved }) {
     setZoom(Math.min(3, Math.max(0.08, Number(next.toFixed(3)))))
   }
 
+  const currentDefaultPage = localProduct?.printTemplate?.[TARGETS[target].productKey]
+  const currentOverridePage = selectedVariant?.printTemplate?.[TARGETS[target].productKey]
+  const dimensionWarning = Boolean(
+    selectedVariant &&
+    selectedPolicy.fields === 'inherit' &&
+    selectedPolicy[TARGETS[target].policyKey] === 'override' &&
+    currentDefaultPage?.pageWidth &&
+    currentOverridePage?.pageWidth &&
+    (currentDefaultPage.pageWidth !== currentOverridePage.pageWidth || currentDefaultPage.pageHeight !== currentOverridePage.pageHeight)
+  )
+
   return (
-    <Box
-      sx={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: (theme) => theme.zIndex.modal + 4,
-        display: 'flex',
-        flexDirection: 'column',
-        bgcolor: '#f8f7f4',
-      }}
-    >
-      <Box
-        sx={{
-          height: 58,
-          flexShrink: 0,
-          display: 'flex',
-          alignItems: 'center',
-          gap: 1.25,
-          px: 1.5,
-          bgcolor: 'background.paper',
-          borderBottom: '1px solid',
-          borderColor: 'divider',
-        }}
-      >
+    <Box sx={{ position: 'fixed', inset: 0, zIndex: (theme) => theme.zIndex.modal - 1, display: 'flex', flexDirection: 'column', bgcolor: '#f8f7f4' }}>
+      <Box sx={{ height: 58, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 1.25, px: 1.5, bgcolor: 'background.paper', borderBottom: '1px solid', borderColor: 'divider' }}>
         <Tooltip title="Back to product library">
           <IconButton onClick={onBack} size="small"><ArrowBackIcon /></IconButton>
         </Tooltip>
-        <Box sx={{ minWidth: 0, width: { xs: 180, md: 280 } }}>
+        <Box sx={{ minWidth: 0, width: { xs: 180, md: 260 } }}>
           <Typography variant="subtitle2" sx={{ fontWeight: 800, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {localProduct?.title}
           </Typography>
@@ -726,42 +838,39 @@ export default function ProductTemplateEditor({ product, onBack, onSaved }) {
           </Typography>
         </Box>
 
-        <Divider orientation="vertical" flexItem />
-
-        <Tabs
-          value={target}
-          onChange={(_, value) => {
-            setTarget(value)
+        <TextField
+          select
+          size="small"
+          label="Template"
+          value={templateKey}
+          onChange={(event) => {
+            setTemplateKey(event.target.value)
             setSelectedId(null)
             setAutoFit(true)
           }}
-          sx={{ minHeight: 44 }}
+          sx={{ minWidth: 230 }}
         >
+          <MenuItem value={DEFAULT_TEMPLATE_KEY}>Default Template</MenuItem>
+          {variants.map((variant) => (
+            <MenuItem key={variantId(variant)} value={variantId(variant)}>{variant.name}</MenuItem>
+          ))}
+        </TextField>
+
+        <Divider orientation="vertical" flexItem />
+
+        <Tabs value={target} onChange={(_, value) => { setTarget(value); setSelectedId(null); setAutoFit(true) }} sx={{ minHeight: 44 }}>
           <Tab value="cover" label={`Cover (${stats.cover})`} sx={{ minHeight: 44, textTransform: 'none', fontWeight: 700 }} />
           <Tab value="interiorFirstPage" label={`Inside First Page (${stats.interior})`} sx={{ minHeight: 44, textTransform: 'none', fontWeight: 700 }} />
         </Tabs>
 
         <Box sx={{ flex: 1 }} />
 
-        <Stack direction="row" spacing={0.5} alignItems="center">
-          <Tooltip title="Zoom out">
-            <IconButton size="small" onClick={() => updateZoom(zoom - 0.08)}><ZoomOutIcon fontSize="small" /></IconButton>
-          </Tooltip>
-          <Typography variant="caption" sx={{ width: 44, textAlign: 'center', fontFamily: 'monospace', color: 'text.secondary' }}>
-            {Math.round(zoom * 100)}%
-          </Typography>
-          <Tooltip title="Zoom in">
-            <IconButton size="small" onClick={() => updateZoom(zoom + 0.08)}><ZoomInIcon fontSize="small" /></IconButton>
-          </Tooltip>
+        <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
+          <Tooltip title="Zoom out"><IconButton size="small" onClick={() => updateZoom(zoom - 0.08)}><ZoomOutIcon fontSize="small" /></IconButton></Tooltip>
+          <Typography variant="caption" sx={{ width: 44, textAlign: 'center', fontFamily: 'monospace', color: 'text.secondary' }}>{Math.round(zoom * 100)}%</Typography>
+          <Tooltip title="Zoom in"><IconButton size="small" onClick={() => updateZoom(zoom + 0.08)}><ZoomInIcon fontSize="small" /></IconButton></Tooltip>
           <Tooltip title="Fit page to view">
-            <IconButton
-              size="small"
-              color={autoFit ? 'primary' : 'default'}
-              onClick={() => {
-                setAutoFit(true)
-                fitToView()
-              }}
-            >
+            <IconButton size="small" color={autoFit ? 'primary' : 'default'} onClick={() => { setAutoFit(true); fitToView() }}>
               <FitScreenIcon fontSize="small" />
             </IconButton>
           </Tooltip>
@@ -769,13 +878,38 @@ export default function ProductTemplateEditor({ product, onBack, onSaved }) {
 
         <Divider orientation="vertical" flexItem />
 
-        <Button variant="outlined" startIcon={<SaveIcon />} onClick={() => saveFields()} disabled={saving}>
-          {saving ? 'Saving' : 'Save'}
-        </Button>
-        <Button variant="contained" startIcon={<PictureAsPdfIcon />} onClick={generateSample} disabled={generating || !fields.length}>
-          {generating ? 'Generating' : 'Sample PDFs'}
-        </Button>
+        <Button variant="outlined" startIcon={<SaveIcon />} onClick={() => saveFields()} disabled={saving}>{saving ? 'Saving' : 'Save'}</Button>
+        <Button variant="contained" startIcon={<PictureAsPdfIcon />} onClick={generateSample} disabled={generating || !fields.length}>{generating ? 'Generating' : 'Sample PDFs'}</Button>
       </Box>
+
+      {selectedVariant && (
+        <Box sx={{ flexShrink: 0, px: 1.5, py: 1, bgcolor: 'background.paper', borderBottom: '1px solid', borderColor: 'divider', display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+          <Chip size="small" label={selectedVariant.name} color="primary" variant="outlined" sx={{ maxWidth: 280 }} />
+          {[
+            ['cover', 'Cover'],
+            ['interior', 'Interior'],
+            ['fields', 'Fields'],
+          ].map(([part, label]) => (
+            <TextField
+              key={part}
+              select
+              size="small"
+              label={label}
+              value={selectedPolicy[part]}
+              onChange={(event) => setVariantPolicy(part, event.target.value)}
+              sx={{ width: 170 }}
+            >
+              <MenuItem value="inherit">Use default</MenuItem>
+              <MenuItem value="override">{part === 'fields' ? 'Customize fields' : 'Override PDF'}</MenuItem>
+            </TextField>
+          ))}
+          {dimensionWarning && (
+            <Alert severity="warning" sx={{ py: 0, flex: 1 }}>
+              This variant PDF has different page dimensions while fields are inherited. Customize fields before finalizing print PDFs.
+            </Alert>
+          )}
+        </Box>
+      )}
 
       {(error || message || uploading || saving || generating) && (
         <Box sx={{ flexShrink: 0 }}>
@@ -786,35 +920,18 @@ export default function ProductTemplateEditor({ product, onBack, onSaved }) {
       )}
 
       <Box sx={{ flex: 1, minHeight: 0, display: 'flex', overflow: 'hidden' }}>
-        <Box
-          sx={{
-            width: 72,
-            flexShrink: 0,
-            bgcolor: 'background.paper',
-            borderRight: '1px solid',
-            borderColor: 'divider',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            py: 1.5,
-            gap: 0.75,
-          }}
-        >
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".pdf,application/pdf"
-            hidden
-            onChange={(event) => importPdf(event.target.files?.[0])}
-          />
+        <Box sx={{ width: 72, flexShrink: 0, bgcolor: 'background.paper', borderRight: '1px solid', borderColor: 'divider', display: 'flex', flexDirection: 'column', alignItems: 'center', py: 1.5, gap: 0.75 }}>
+          <input ref={fileInputRef} type="file" accept=".pdf,application/pdf" hidden onChange={(event) => importPdf(event.target.files?.[0])} />
           <Tooltip title={`Import ${TARGETS[target].label} PDF`} placement="right">
-            <IconButton sx={buttonRailSx(Boolean(uploading))} onClick={() => fileInputRef.current?.click()} disabled={Boolean(uploading)}>
-              <UploadFileIcon />
-            </IconButton>
-          </Tooltip>
-          <Tooltip title="Add manual text field" placement="right">
             <span>
-              <IconButton sx={buttonRailSx(false)} onClick={addCenteredBlankField} disabled={!page?.previewImageUrl}>
+              <IconButton sx={buttonRailSx(Boolean(uploading))} onClick={() => fileInputRef.current?.click()} disabled={Boolean(uploading) || pageInherited}>
+                <UploadFileIcon />
+              </IconButton>
+            </span>
+          </Tooltip>
+          <Tooltip title={fieldsEditable ? 'Add manual text field' : 'Customize fields to add a manual field'} placement="right">
+            <span>
+              <IconButton sx={buttonRailSx(false)} onClick={addCenteredBlankField} disabled={!page?.previewImageUrl || !fieldsEditable}>
                 <TextFieldsIcon />
               </IconButton>
             </span>
@@ -834,9 +951,7 @@ export default function ProductTemplateEditor({ product, onBack, onSaved }) {
           </Tooltip>
           <Box sx={{ flex: 1 }} />
           <Tooltip title="Click existing text to replace it, or double-click blank space to add a field." placement="right">
-            <IconButton sx={buttonRailSx(false)}>
-              <AddIcon />
-            </IconButton>
+            <IconButton sx={buttonRailSx(false)}><AddIcon /></IconButton>
           </Tooltip>
         </Box>
 
@@ -847,6 +962,8 @@ export default function ProductTemplateEditor({ product, onBack, onSaved }) {
               target={target}
               fields={fields}
               selectedId={selectedId}
+              fieldsEditable={fieldsEditable}
+              previewModes={previewModes}
               onSelect={setSelectedId}
               onCreateFromText={createFromText}
               onCreateBlank={createBlank}
@@ -855,7 +972,7 @@ export default function ProductTemplateEditor({ product, onBack, onSaved }) {
               viewportRef={viewportRef}
             />
           ) : (
-            <EmptyCanvas target={target} onImport={() => fileInputRef.current?.click()} />
+            <EmptyCanvas target={target} inherited={pageInherited} onImport={() => fileInputRef.current?.click()} />
           )}
         </Box>
 
@@ -864,6 +981,9 @@ export default function ProductTemplateEditor({ product, onBack, onSaved }) {
           fields={fields}
           selectedId={selectedId}
           target={target}
+          fieldsEditable={fieldsEditable}
+          selectedPreviewMode={selectedPreviewMode}
+          onPreviewModeChange={(mode) => selected && setPreviewModes((current) => ({ ...current, [selected.id]: mode }))}
           setTarget={setTarget}
           setSelectedId={setSelectedId}
           updateField={updateField}

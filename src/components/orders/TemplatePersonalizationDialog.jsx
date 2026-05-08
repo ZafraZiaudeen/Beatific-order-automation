@@ -19,9 +19,23 @@ import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdfOutlined'
 import api from '../../lib/api'
 
 const targetLabel = (target) => target === 'cover' ? 'Cover' : 'Inside First Page'
+const DEFAULT_TEMPLATE_POLICY = { cover: 'inherit', interior: 'inherit', fields: 'inherit' }
+
+const variantId = (variant) => String(variant?._id || variant?.id || '')
+
+const resolveEffectiveFields = (product, order) => {
+  const baseFields = product?.printTemplate?.fields || []
+  const variantKey = order?.matchedVariantId || order?.matchedVariantName
+  const variant = product?.variants?.find((item) =>
+    variantId(item) === String(variantKey || '') || item.name === variantKey
+  )
+  const policy = { ...DEFAULT_TEMPLATE_POLICY, ...(variant?.templatePolicy || {}) }
+  if (variant && policy.fields === 'override') return variant.printTemplate?.fields || []
+  return baseFields
+}
 
 export default function TemplatePersonalizationDialog({ open, order, product, onClose, onFinalized }) {
-  const fields = useMemo(() => product?.printTemplate?.fields || [], [product])
+  const fields = useMemo(() => resolveEffectiveFields(product, order), [product, order])
   const [values, setValues] = useState({})
   const [tab, setTab] = useState('cover')
   const [saving, setSaving] = useState(false)
