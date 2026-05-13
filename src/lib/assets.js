@@ -53,7 +53,8 @@ export const validateAssetFile = (
 }
 
 export const uploadAssetFile = async ({ file, folder, onProgress }) => {
-  const { data: presign } = await api.post('/upload/presign', { folder })
+  const resourceType = file.type === 'application/pdf' ? 'raw' : 'auto'
+  const { data: presign } = await api.post('/upload/presign', { folder, resourceType })
 
   if (!presign.configured) {
     return URL.createObjectURL(file)

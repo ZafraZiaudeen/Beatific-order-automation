@@ -29,26 +29,51 @@ import SearchIcon from '@mui/icons-material/SearchOutlined'
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined'
 import ImageOutlinedIcon from '@mui/icons-material/ImageOutlined'
+import DesignServicesIcon from '@mui/icons-material/DesignServicesOutlined'
 import CheckCircleIcon from '@mui/icons-material/CheckCircleOutlined'
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutlined'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
+import ContentPasteIcon from '@mui/icons-material/ContentPasteOutlined'
 import api from '../lib/api'
 import useAuthStore from '../stores/authStore'
-import AssetInputField from '../components/common/AssetInputField'
+import ProductTemplateEditor from '../components/products/ProductTemplateEditor'
 
-const BLANK_VARIANT = { name: '', podPackageId: '', interiorPdfUrl: '' }
+const DEFAULT_TEMPLATE_POLICY = { cover: 'inherit', interior: 'inherit', fields: 'inherit' }
+const BLANK_VARIANT = { name: '', podPackageId: '', priceLabel: '', templatePolicy: DEFAULT_TEMPLATE_POLICY }
+
+const normalizeVariant = (variant = {}) => ({
+  ...variant,
+  name: variant.name || '',
+  podPackageId: variant.podPackageId || '',
+  priceLabel: variant.priceLabel || '',
+  templatePolicy: { ...DEFAULT_TEMPLATE_POLICY, ...(variant.templatePolicy || {}) },
+})
+
+const parseVariantPaste = (text) =>
+  String(text || '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const priceMatch = line.match(/\s*\(([^()]*)\)\s*$/)
+      return {
+        ...BLANK_VARIANT,
+        name: priceMatch ? line.slice(0, priceMatch.index).trim() : line,
+        priceLabel: priceMatch ? priceMatch[1].trim() : '',
+      }
+    })
 
 function ProductFormDialog({ open, onClose, product, onSaved }) {
   const { activeStore } = useAuthStore()
   const [form, setForm] = useState({
     listingId: '',
     title: '',
-    coverImageUrl: '',
-    interiorPdfUrl: '',
     podPackageId: '',
   })
   const [variants, setVariants] = useState([])
   const [variantsOpen, setVariantsOpen] = useState(false)
+  const [pasteOpen, setPasteOpen] = useState(false)
+  const [variantPaste, setVariantPaste] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -57,27 +82,44 @@ function ProductFormDialog({ open, onClose, product, onSaved }) {
       setForm({
         listingId: product.listingId || '',
         title: product.title || '',
-        coverImageUrl: product.coverImageUrl || '',
-        interiorPdfUrl: product.interiorPdfUrl || '',
         podPackageId: product.podPackageId || '',
       })
-      setVariants(product.variants?.length ? product.variants.map((v) => ({ ...v })) : [])
+      setVariants(product.variants?.length ? product.variants.map(normalizeVariant) : [])
       setVariantsOpen(Boolean(product.variants?.length))
     } else {
-      setForm({ listingId: '', title: '', coverImageUrl: '', interiorPdfUrl: '', podPackageId: '' })
+      setForm({ listingId: '', title: '', podPackageId: '' })
       setVariants([])
       setVariantsOpen(false)
     }
+    setPasteOpen(false)
+    setVariantPaste('')
     setError('')
   }, [product, open])
 
   const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }))
-  const setAsset = (key) => (value) => setForm((f) => ({ ...f, [key]: value || '' }))
 
   const setVariant = (idx, key, value) =>
     setVariants((vs) => vs.map((v, i) => (i === idx ? { ...v, [key]: value } : v)))
   const addVariant = () => setVariants((vs) => [...vs, { ...BLANK_VARIANT }])
   const removeVariant = (idx) => setVariants((vs) => vs.filter((_, i) => i !== idx))
+  const applyVariantPaste = () => {
+    const parsed = parseVariantPaste(variantPaste)
+    if (!parsed.length) {
+      setError('Paste at least one Etsy variant line')
+      return
+    }
+    setVariants((current) => {
+      const names = new Set(current.map((variant) => String(variant.name || '').toLowerCase()))
+      return [
+        ...current,
+        ...parsed.filter((variant) => !names.has(variant.name.toLowerCase())),
+      ]
+    })
+    setVariantsOpen(true)
+    setPasteOpen(false)
+    setVariantPaste('')
+    setError('')
+  }
 
   const handleSubmit = async () => {
     if (!form.listingId.trim() || !form.title.trim()) {
@@ -86,8 +128,8 @@ function ProductFormDialog({ open, onClose, product, onSaved }) {
     }
     // Validate variants
     for (const v of variants) {
-      if (!v.name.trim() || !v.podPackageId.trim() || !v.interiorPdfUrl.trim()) {
-        setError('Each variant needs a name, Pod Package ID, and interior PDF URL')
+      if (!String(v.name || '').trim()) {
+        setError('Each variant needs a name')
         return
       }
     }
@@ -96,19 +138,24 @@ function ProductFormDialog({ open, onClose, product, onSaved }) {
     try {
       const payload = {
         title: form.title,
-        coverImageUrl: form.coverImageUrl || null,
-        interiorPdfUrl: form.interiorPdfUrl || null,
         podPackageId: form.podPackageId || null,
         variants: variants.map((v) => ({
-          name: v.name.trim(),
-          podPackageId: v.podPackageId.trim(),
-          interiorPdfUrl: v.interiorPdfUrl.trim(),
+          ...(v._id ? { _id: v._id } : {}),
+          name: String(v.name || '').trim(),
+          podPackageId: String(v.podPackageId || '').trim() || null,
+          priceLabel: String(v.priceLabel || '').trim() || null,
+          templatePolicy: { ...DEFAULT_TEMPLATE_POLICY, ...(v.templatePolicy || {}) },
+          ...(v.printTemplate ? { printTemplate: v.printTemplate } : {}),
         })),
       }
       if (product) {
         await api.patch(`/products/${product._id}`, payload)
       } else {
-        await api.post('/products', { ...form, storeId: activeStore?._id, ...payload })
+        await api.post('/products', {
+          listingId: form.listingId,
+          storeId: activeStore?._id,
+          ...payload,
+        })
       }
       onSaved()
       onClose()
@@ -142,37 +189,13 @@ function ProductFormDialog({ open, onClose, product, onSaved }) {
           fullWidth
           required
         />
-        <AssetInputField
-          label="Cover"
-          value={form.coverImageUrl}
-          onChange={setAsset('coverImageUrl')}
-          folder="covers"
-          accept=".png,.jpg,.jpeg,.webp,.pdf"
-          allowImages
-          allowPdf
-          helperText="Default cover used when no variant is matched. Upload or paste a URL."
-          showImagePreview
-          openLabel="Open cover"
-          urlPlaceholder="https://example.com/cover.pdf"
-        />
-        <AssetInputField
-          label="Inside Page PDF"
-          value={form.interiorPdfUrl}
-          onChange={setAsset('interiorPdfUrl')}
-          folder="interiors"
-          accept=".pdf"
-          allowPdf
-          helperText="Default interior used when no variant is matched."
-          openLabel="Open inside page PDF"
-          urlPlaceholder="https://example.com/interior.pdf"
-        />
         <TextField
           label="Default Lulu Pod Package ID"
           value={form.podPackageId}
           onChange={set('podPackageId')}
           fullWidth
           placeholder="e.g. 0850X1100BWSTDLW060UW444MNG"
-          helperText="Used when no variant is matched. From Lulu's product catalogue."
+          helperText="Used unless a matched variant has its own print code. PDFs are imported in Template Designer."
         />
 
         {/* Variants section */}
@@ -193,9 +216,37 @@ function ProductFormDialog({ open, onClose, product, onSaved }) {
           </Box>
           <Collapse in={variantsOpen}>
             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
-              Add one variant per size or cover type. When importing orders, the system auto-matches
-              the order's size/type options to the correct variant's interior PDF and pod package ID.
+              Add one variant per size or cover type. Variants only affect order matching and the
+              Lulu Pod Package ID; template PDFs can inherit defaults or override in Template Designer.
             </Typography>
+            <Stack spacing={1.5} sx={{ mb: 2 }}>
+              <Button
+                variant="outlined"
+                size="small"
+                startIcon={<ContentPasteIcon />}
+                onClick={() => setPasteOpen((value) => !value)}
+                sx={{ alignSelf: 'flex-start' }}
+              >
+                Paste Etsy Variants
+              </Button>
+              <Collapse in={pasteOpen}>
+                <Stack spacing={1}>
+                  <TextField
+                    label="Etsy variant lines"
+                    value={variantPaste}
+                    onChange={(event) => setVariantPaste(event.target.value)}
+                    multiline
+                    minRows={5}
+                    placeholder="Size - A5 (5.8 x 8.3 inches) - 150 Pages Softcover (Rp 395,495)"
+                    helperText="One line per option. Price text in parentheses is stored separately."
+                    fullWidth
+                  />
+                  <Button variant="contained" size="small" onClick={applyVariantPaste} sx={{ alignSelf: 'flex-start' }}>
+                    Add Parsed Variants
+                  </Button>
+                </Stack>
+              </Collapse>
+            </Stack>
             <Stack spacing={2}>
               {variants.map((v, idx) => (
                 <Box key={idx} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1.5, p: 1.5 }}>
@@ -218,20 +269,21 @@ function ProductFormDialog({ open, onClose, product, onSaved }) {
                       helperText="Short label matched against the order's size/type options"
                     />
                     <TextField
-                      label="Interior PDF URL"
-                      value={v.interiorPdfUrl}
-                      onChange={(e) => setVariant(idx, 'interiorPdfUrl', e.target.value)}
-                      size="small"
-                      fullWidth
-                      placeholder="https://drive.google.com/file/d/..."
-                    />
-                    <TextField
                       label="Pod Package ID"
                       value={v.podPackageId}
                       onChange={(e) => setVariant(idx, 'podPackageId', e.target.value)}
                       size="small"
                       fullWidth
                       placeholder="e.g. 0850X1100BWSTDLW060UW444MNG"
+                      helperText={v.priceLabel ? `Etsy price: ${v.priceLabel}` : 'Falls back to default POD ID when left blank'}
+                    />
+                    <TextField
+                      label="Etsy price label"
+                      value={v.priceLabel || ''}
+                      onChange={(e) => setVariant(idx, 'priceLabel', e.target.value)}
+                      size="small"
+                      fullWidth
+                      placeholder="Rp 395,495"
                     />
                   </Stack>
                 </Box>
@@ -267,6 +319,7 @@ export default function ProductLibraryPage() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editProduct, setEditProduct] = useState(null)
   const [deleteId, setDeleteId] = useState(null)
+  const [templateProduct, setTemplateProduct] = useState(null)
 
   const fetchProducts = useCallback(async () => {
     setLoading(true)
@@ -298,13 +351,26 @@ export default function ProductLibraryPage() {
     p.title?.toLowerCase().includes(search.toLowerCase())
   )
 
+  if (templateProduct) {
+    return (
+      <ProductTemplateEditor
+        product={templateProduct}
+        onBack={() => setTemplateProduct(null)}
+        onSaved={(updatedProduct) => {
+          setTemplateProduct(updatedProduct)
+          setProducts((current) => current.map((item) => item._id === updatedProduct._id ? updatedProduct : item))
+        }}
+      />
+    )
+  }
+
   return (
     <Box>
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 4 }}>
         <Box>
           <Typography variant="h4" sx={{ fontWeight: 800, mb: 0.5 }}>Product Library</Typography>
           <Typography variant="body2" color="text.secondary">
-            Map Etsy listing IDs to cover assets, inside-page PDFs, and Lulu print specifications.
+            Map Etsy listings to shared print templates, labeled personalization fields, and Lulu print codes.
           </Typography>
         </Box>
         <Button
@@ -342,10 +408,10 @@ export default function ProductLibraryPage() {
               <TableRow>
                 <TableCell>Listing ID</TableCell>
                 <TableCell>Title</TableCell>
-                <TableCell align="center">Cover</TableCell>
-                <TableCell align="center">Interior</TableCell>
                 <TableCell>Pod Package ID</TableCell>
                 <TableCell align="center">Variants</TableCell>
+                <TableCell align="center">Template PDFs</TableCell>
+                <TableCell align="center">Fields</TableCell>
                 <TableCell align="center">Status</TableCell>
                 <TableCell align="right">Actions</TableCell>
               </TableRow>
@@ -354,7 +420,7 @@ export default function ProductLibraryPage() {
               {loading ? (
                 Array.from({ length: 5 }).map((_, i) => (
                   <TableRow key={i}>
-                    {Array.from({ length: 7 }).map((__, j) => (
+                    {Array.from({ length: 8 }).map((__, j) => (
                       <TableCell key={j}><Skeleton /></TableCell>
                     ))}
                   </TableRow>
@@ -373,21 +439,39 @@ export default function ProductLibraryPage() {
                 </TableRow>
               ) : (
                 filtered.map((product) => {
+                  const variants = product.variants || []
+                  const hasTemplateCover = Boolean(product.printTemplate?.cover?.sourcePdfUrl)
+                  const hasTemplateInterior = Boolean(product.printTemplate?.interior?.sourcePdfUrl)
+                  const templateFieldCount = product.printTemplate?.fields?.length || 0
                   const hasVariantInteriorPdf = Boolean(
-                    product.variants?.some((variant) => Boolean(variant?.interiorPdfUrl))
+                    variants.some((variant) => Boolean(variant?.interiorPdfUrl))
                   )
                   const hasVariantPodPackage = Boolean(
-                    product.variants?.some((variant) => Boolean(variant?.podPackageId))
+                    variants.some((variant) => Boolean(variant?.podPackageId))
                   )
-                  const hasInteriorPdf = Boolean(product.interiorPdfUrl || hasVariantInteriorPdf)
+                  const overrideCount = variants.filter((variant) => {
+                    const policy = { ...DEFAULT_TEMPLATE_POLICY, ...(variant.templatePolicy || {}) }
+                    return policy.cover === 'override' || policy.interior === 'override' || policy.fields === 'override'
+                  }).length
+                  const missingPodCount = variants.filter((variant) => !variant.podPackageId && !product.podPackageId).length
+                  const hasLegacyAssets = Boolean(product.coverImageUrl && (product.interiorPdfUrl || hasVariantInteriorPdf))
                   const hasPodPackage = Boolean(product.podPackageId || hasVariantPodPackage)
-                  const isReady = Boolean(product.coverImageUrl && hasInteriorPdf && hasPodPackage)
+                  const templateSourcesReady = Boolean(hasTemplateCover && hasTemplateInterior)
+                  const templateReady = Boolean(templateSourcesReady && templateFieldCount > 0)
+                  const isReady = Boolean(hasPodPackage && (templateReady || hasLegacyAssets))
 
                   const podPackageDisplay = product.podPackageId
                     ? product.podPackageId
                     : hasVariantPodPackage
                       ? 'Variant mapped'
-                      : '—'
+                      : '-'
+                  const templatePdfLabel = templateSourcesReady
+                    ? 'Cover + inside'
+                    : hasTemplateCover || hasTemplateInterior
+                      ? 'Partial'
+                      : hasLegacyAssets
+                        ? 'Legacy assets'
+                        : 'Not imported'
                   return (
                     <TableRow key={product._id} hover>
                       <TableCell>
@@ -400,49 +484,46 @@ export default function ProductLibraryPage() {
                           {product.title}
                         </Typography>
                       </TableCell>
-                      <TableCell align="center">
-                        {product.coverImageUrl ? (
-                          <Tooltip title="Cover asset linked">
-                            <CheckCircleIcon sx={{ color: 'success.main', fontSize: 20 }} />
-                          </Tooltip>
-                        ) : (
-                          <Tooltip title="No cover asset">
-                            <ErrorOutlineIcon sx={{ color: 'warning.main', fontSize: 20 }} />
-                          </Tooltip>
-                        )}
-                      </TableCell>
-                      <TableCell align="center">
-                        {hasInteriorPdf ? (
-                          <Tooltip title={product.interiorPdfUrl ? 'Inside page PDF linked' : 'Inside page PDF linked via variant'}>
-                            <CheckCircleIcon sx={{ color: 'success.main', fontSize: 20 }} />
-                          </Tooltip>
-                        ) : (
-                          <Tooltip title="No inside page PDF">
-                            <ErrorOutlineIcon sx={{ color: 'text.disabled', fontSize: 20 }} />
-                          </Tooltip>
-                        )}
-                      </TableCell>
                       <TableCell>
                         <Typography variant="caption" sx={{ fontFamily: 'monospace', color: hasPodPackage ? 'text.primary' : 'text.disabled' }}>
                           {podPackageDisplay}
                         </Typography>
                       </TableCell>
                       <TableCell align="center">
-                        {product.variants?.length > 0 ? (
+                        {variants.length > 0 ? (
                           <Chip
-                            label={product.variants.length}
+                            label={`${variants.length}${overrideCount ? ` / ${overrideCount} override` : ''}`}
                             size="small"
-                            color="primary"
+                            color={overrideCount ? 'secondary' : 'primary'}
                             variant="outlined"
                             sx={{ fontWeight: 600 }}
                           />
                         ) : (
-                          <Typography variant="caption" color="text.disabled">—</Typography>
+                          <Typography variant="caption" color="text.disabled">-</Typography>
                         )}
                       </TableCell>
                       <TableCell align="center">
                         <Chip
-                          label={isReady ? 'Ready' : 'Incomplete'}
+                          icon={templateSourcesReady || hasLegacyAssets ? <CheckCircleIcon /> : <ErrorOutlineIcon />}
+                          label={templatePdfLabel}
+                          size="small"
+                          color={templateSourcesReady ? 'success' : hasLegacyAssets ? 'info' : 'default'}
+                          variant="outlined"
+                          sx={{ fontWeight: 600 }}
+                        />
+                      </TableCell>
+                      <TableCell align="center">
+                        <Chip
+                          label={templateFieldCount ? `Default ${templateFieldCount}` : 'None'}
+                          size="small"
+                          color={templateFieldCount ? 'success' : 'warning'}
+                          variant="outlined"
+                          sx={{ fontWeight: 600 }}
+                        />
+                      </TableCell>
+                      <TableCell align="center">
+                        <Chip
+                          label={isReady ? 'Ready' : missingPodCount ? `${missingPodCount} missing POD` : 'Needs template'}
                           size="small"
                           color={isReady ? 'success' : 'warning'}
                           variant="outlined"
@@ -450,6 +531,11 @@ export default function ProductLibraryPage() {
                         />
                       </TableCell>
                       <TableCell align="right">
+                        <Tooltip title="Template designer">
+                          <IconButton size="small" color="primary" onClick={() => setTemplateProduct(product)}>
+                            <DesignServicesIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
                         <Tooltip title="Edit">
                           <IconButton size="small" onClick={() => { setEditProduct(product); setDialogOpen(true) }}>
                             <EditOutlinedIcon fontSize="small" />
