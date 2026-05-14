@@ -212,7 +212,7 @@ export default function ImportPage() {
                           <Chip
                             label={order.status.replace(/_/g, ' ')}
                             size="small"
-                            color={order.status === 'new' ? 'info' : 'warning'}
+                            color={order.status === 'in_progress' ? 'info' : 'warning'}
                             variant="outlined"
                             sx={{ textTransform: 'capitalize', fontWeight: 600 }}
                           />

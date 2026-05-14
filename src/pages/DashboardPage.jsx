@@ -18,7 +18,8 @@ import useAuthStore from '../stores/authStore'
 import { useNavigate } from 'react-router-dom'
 import api from '../lib/api'
 
-function StatCard({ title, value, change, icon: Icon, color, bgGradient, loading }) {
+function StatCard({ title, value, change, icon, color, bgGradient, loading }) {
+  const IconComponent = icon
   return (
     <Card>
       <CardContent sx={{ p: 3 }}>
@@ -53,7 +54,7 @@ function StatCard({ title, value, change, icon: Icon, color, bgGradient, loading
               flexShrink: 0,
             }}
           >
-            <Icon sx={{ fontSize: 28, color }} />
+            <IconComponent sx={{ fontSize: 28, color }} />
           </Box>
         </Box>
       </CardContent>
@@ -61,7 +62,8 @@ function StatCard({ title, value, change, icon: Icon, color, bgGradient, loading
   )
 }
 
-function QuickActionCard({ icon: Icon, title, description, to, color }) {
+function QuickActionCard({ icon, title, description, to, color }) {
+  const IconComponent = icon
   const navigate = useNavigate()
   return (
     <Card
@@ -91,7 +93,7 @@ function QuickActionCard({ icon: Icon, title, description, to, color }) {
             mb: 1.5,
           }}
         >
-          <Icon sx={{ fontSize: 22, color }} />
+          <IconComponent sx={{ fontSize: 22, color }} />
         </Box>
         <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.5 }}>
           {title}
@@ -130,7 +132,7 @@ export default function DashboardPage() {
 
       const totalOrders = Object.values(counts).reduce((a, b) => a + b, 0)
       const sentToLulu = (counts.in_progress || 0) + (counts.completed || 0)
-      const pendingReview = (counts.waiting || 0) + (counts.custom_orders || 0) + (counts.drawings || 0)
+      const pendingReview = (counts.waiting || 0) + (counts.custom_orders || 0)
       const productsMapped = products.filter((p) => p.coverImageUrl && p.podPackageId).length
 
       setStats({ totalOrders, sentToLulu, productsMapped, pendingReview })

@@ -10,11 +10,8 @@ import { ETSY_ORDER_STATUSES } from '../../lib/constants'
 import api from '../../lib/api'
 
 const STATUS_COLORS = {
-  new: '#0288D1',
   custom_orders: '#7B1FA2',
   waiting: '#F57F17',
-  drawings: '#5C6BC0',
-  ready_to_order: '#2E7D32',
   in_progress: '#1565C0',
   completed: '#1B5E20',
 }

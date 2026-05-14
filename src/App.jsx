@@ -7,6 +7,7 @@ import DashboardPage from './pages/DashboardPage'
 import ProductLibraryPage from './pages/ProductLibraryPage'
 import ImportPage from './pages/ImportPage'
 import EtsyOrdersPage from './pages/EtsyOrdersPage'
+import EtsyOrderDetailPage from './pages/EtsyOrderDetailPage'
 import LuluOrdersPage from './pages/LuluOrdersPage'
 import TeamPage from './pages/TeamPage'
 import StoresPage from './pages/StoresPage'
@@ -36,6 +37,7 @@ export default function App() {
 
           {/* Orders */}
           <Route path="/orders/etsy" element={<EtsyOrdersPage />} />
+          <Route path="/orders/etsy/:etsyOrderId" element={<EtsyOrderDetailPage />} />
           <Route path="/orders/lulu" element={<LuluOrdersPage />} />
 
           {/* Products */}

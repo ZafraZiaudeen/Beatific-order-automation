@@ -397,7 +397,7 @@ export default function OrderDetailDrawer({ order, open, onClose, onRefresh }) {
   }
 
   const canSubmitToLulu =
-    localOrder?.etsyStatus === 'ready_to_order' &&
+    localOrder?.etsyStatus === 'completed' &&
     localOrder?.coverImageUrl &&
     localOrder?.interiorPdfUrl &&
     localOrder?.podPackageId
@@ -920,9 +920,9 @@ export default function OrderDetailDrawer({ order, open, onClose, onRefresh }) {
                     sx={{ '& .MuiOutlinedInput-root': { bgcolor: 'background.paper' } }}
                   />
 
-                  {statusChange === 'ready_to_order' && (!localOrder.coverImageUrl || !localOrder.interiorPdfUrl || !localOrder.podPackageId) && (
+                  {statusChange === 'completed' && (!localOrder.coverImageUrl || !localOrder.interiorPdfUrl || !localOrder.podPackageId) && (
                     <Alert severity="warning" sx={{ fontSize: '0.75rem', py: 0.5 }}>
-                      Cover image, inside page PDF, and Pod Package ID are required for "Ready to Order".
+                      Cover PDF, inside page PDF, and Pod Package ID are required for "Completed".
                     </Alert>
                   )}
 
