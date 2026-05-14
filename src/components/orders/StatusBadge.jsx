@@ -1,12 +1,8 @@
 import Chip from '@mui/material/Chip'
-import { ETSY_ORDER_STATUSES, LULU_ORDER_STATUSES } from '../../lib/constants'
 
 const STATUS_COLORS = {
-  new: { bg: '#E8F4FD', color: '#0288D1', label: 'New' },
   custom_orders: { bg: '#F3E5F5', color: '#7B1FA2', label: 'Custom Orders' },
-  waiting: { bg: '#FFF8E1', color: '#F57F17', label: 'Waiting' },
-  drawings: { bg: '#F3E5F5', color: '#5C6BC0', label: 'Drawings' },
-  ready_to_order: { bg: '#E8F5E9', color: '#2E7D32', label: 'Ready to Order' },
+  waiting: { bg: '#FFF8E1', color: '#F57F17', label: 'Waiting (Unmapped)' },
   in_progress: { bg: '#E3F2FD', color: '#1565C0', label: 'In Progress' },
   completed: { bg: '#E8F5E9', color: '#1B5E20', label: 'Completed' },
   // Lulu statuses

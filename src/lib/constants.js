@@ -1,11 +1,8 @@
 export const ROLES = ['owner', 'admin', 'member']
 
 export const ETSY_ORDER_STATUSES = [
-  { value: 'new', label: 'New', color: 'info' },
   { value: 'custom_orders', label: 'Custom Orders', color: 'secondary' },
-  { value: 'waiting', label: 'Waiting', color: 'warning' },
-  { value: 'drawings', label: 'Drawings', color: 'default' },
-  { value: 'ready_to_order', label: 'Ready to Order', color: 'primary' },
+  { value: 'waiting', label: 'Waiting (Unmapped)', color: 'warning' },
   { value: 'in_progress', label: 'In Progress', color: 'info' },
   { value: 'completed', label: 'Completed', color: 'success' },
 ]

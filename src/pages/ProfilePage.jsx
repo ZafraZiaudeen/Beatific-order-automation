@@ -167,7 +167,7 @@ export default function ProfilePage() {
           {pwError && <Alert severity="error" sx={{ mb: 2 }}>{pwError}</Alert>}
 
           <form onSubmit={handlePasswordChange}>
-            {['current', 'newPw', 'confirm'].map((field, i) => (
+            {['current', 'newPw', 'confirm'].map((field) => (
               <TextField
                 key={field}
                 label={field === 'current' ? 'Current Password' : field === 'newPw' ? 'New Password' : 'Confirm New Password'}

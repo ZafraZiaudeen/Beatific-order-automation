@@ -30,6 +30,8 @@ import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined'
 import StorefrontOutlinedIcon from '@mui/icons-material/StorefrontOutlined'
 import LocalPrintshopOutlinedIcon from '@mui/icons-material/LocalPrintshopOutlined'
+import EmailOutlinedIcon from '@mui/icons-material/EmailOutlined'
+import CloudSyncOutlinedIcon from '@mui/icons-material/CloudSyncOutlined'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import ExpandLessIcon from '@mui/icons-material/ExpandLess'
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
@@ -45,6 +47,25 @@ const SHIPPING_LEVELS = [
   { value: 'EXPRESS_OVERNIGHT', label: 'Express Overnight' },
 ]
 
+const deriveEmailProviderSettings = (mailbox) => {
+  const domain = String(mailbox || '').split('@')[1]?.toLowerCase() || ''
+  const defaults = {
+    'gmail.com': { host: 'imap.gmail.com', port: '993', secure: true },
+    'googlemail.com': { host: 'imap.gmail.com', port: '993', secure: true },
+    'outlook.com': { host: 'outlook.office365.com', port: '993', secure: true },
+    'hotmail.com': { host: 'outlook.office365.com', port: '993', secure: true },
+    'live.com': { host: 'outlook.office365.com', port: '993', secure: true },
+    'msn.com': { host: 'outlook.office365.com', port: '993', secure: true },
+    'yahoo.com': { host: 'imap.mail.yahoo.com', port: '993', secure: true },
+    'icloud.com': { host: 'imap.mail.me.com', port: '993', secure: true },
+    'me.com': { host: 'imap.mail.me.com', port: '993', secure: true },
+    'mac.com': { host: 'imap.mail.me.com', port: '993', secure: true },
+    'zoho.com': { host: 'imap.zoho.com', port: '993', secure: true },
+    'aol.com': { host: 'imap.aol.com', port: '993', secure: true },
+  }
+  return defaults[domain] || null
+}
+
 function StoreFormDialog({ open, onClose, store, onSaved }) {
   const [form, setForm] = useState({
     name: '',
@@ -55,10 +76,23 @@ function StoreFormDialog({ open, onClose, store, onSaved }) {
     luluSandboxMode: true,
     shippingLevel: 'MAIL',
     contactEmail: '',
+    emailImportMailbox: '',
+    emailImportUsername: '',
+    emailImportPassword: '',
+    emailImportHost: '',
+    emailImportPort: '993',
+    emailImportSecure: true,
+    emailImportSenderFilter: '',
+    emailImportFolder: 'INBOX',
+    emailImportPollingEnabled: false,
   })
   const [loading, setLoading] = useState(false)
+  const [testingEmail, setTestingEmail] = useState(false)
   const [error, setError] = useState('')
+  const [success, setSuccess] = useState('')
+  const [emailTestStatus, setEmailTestStatus] = useState(null)
   const [luluExpanded, setLuluExpanded] = useState(false)
+  const [emailExpanded, setEmailExpanded] = useState(false)
 
   useEffect(() => {
     if (store) {
@@ -71,22 +105,107 @@ function StoreFormDialog({ open, onClose, store, onSaved }) {
         luluSandboxMode: store.luluSandboxMode ?? true,
         shippingLevel: store.shippingLevel || 'MAIL',
         contactEmail: store.contactEmail || '',
+        emailImportMailbox: store.emailImportMailbox || '',
+        emailImportUsername: store.emailImportUsername || store.emailImportMailbox || '',
+        emailImportPassword: '',
+        emailImportHost: store.emailImportHost || '',
+        emailImportPort: String(store.emailImportPort || 993),
+        emailImportSecure: store.emailImportSecure ?? true,
+        emailImportSenderFilter: store.emailImportSenderFilter || '',
+        emailImportFolder: store.emailImportFolder || 'INBOX',
+        emailImportPollingEnabled: store.emailImportPollingEnabled || false,
       })
       setLuluExpanded(Boolean(store.luluApiKeyConfigured))
+      setEmailExpanded(Boolean(store.emailImportMailbox || store.emailImportPasswordConfigured))
     } else {
-      setForm({ name: '', etsyShopId: '', luluApiKey: '', luluApiSecret: '', luluApiBaseUrl: '', luluSandboxMode: true, shippingLevel: 'MAIL', contactEmail: '' })
+      setForm({
+        name: '',
+        etsyShopId: '',
+        luluApiKey: '',
+        luluApiSecret: '',
+        luluApiBaseUrl: '',
+        luluSandboxMode: true,
+        shippingLevel: 'MAIL',
+        contactEmail: '',
+        emailImportMailbox: '',
+        emailImportUsername: '',
+        emailImportPassword: '',
+        emailImportHost: '',
+        emailImportPort: '993',
+        emailImportSecure: true,
+        emailImportSenderFilter: '',
+        emailImportFolder: 'INBOX',
+        emailImportPollingEnabled: false,
+      })
       setLuluExpanded(false)
+      setEmailExpanded(false)
     }
     setError('')
+    setSuccess('')
+    setEmailTestStatus(null)
   }, [store, open])
 
-  const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }))
-  const setBool = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.checked }))
+  const set = (key) => (e) => {
+    if (key.startsWith('emailImport')) setEmailTestStatus(null)
+    setForm((f) => ({ ...f, [key]: e.target.value }))
+  }
+  const setBool = (key) => (e) => {
+    if (key.startsWith('emailImport')) setEmailTestStatus(null)
+    setForm((f) => ({ ...f, [key]: e.target.checked }))
+  }
+
+  const handleMailboxChange = (e) => {
+    const value = e.target.value
+    const provider = deriveEmailProviderSettings(value)
+    setEmailTestStatus(null)
+    setForm((f) => ({
+      ...f,
+      emailImportMailbox: value,
+      emailImportUsername: f.emailImportUsername || value,
+      emailImportHost: f.emailImportHost || provider?.host || '',
+      emailImportPort: f.emailImportPort || provider?.port || '993',
+      emailImportSecure: provider?.secure ?? f.emailImportSecure,
+    }))
+  }
+
+  const buildEmailPayload = () => ({
+    storeId: store?._id,
+    mailbox: form.emailImportMailbox || null,
+    username: form.emailImportUsername || form.emailImportMailbox || null,
+    password: form.emailImportPassword || null,
+    host: form.emailImportHost || null,
+    port: form.emailImportPort ? Number(form.emailImportPort) : null,
+    secure: form.emailImportSecure,
+    senderFilter: form.emailImportSenderFilter || null,
+    folder: form.emailImportFolder || 'INBOX',
+  })
+
+  const handleTestEmail = async () => {
+    if (!store?._id) return
+    setTestingEmail(true)
+    setError('')
+    setSuccess('')
+    setEmailTestStatus(null)
+    try {
+      const { data } = await api.post('/email-orders/test', buildEmailPayload())
+      setEmailTestStatus({
+        severity: 'success',
+        message: `Connected to ${data.mailbox} via ${data.host} and opened ${data.folder}. No email is sent during this test.`,
+      })
+    } catch (err) {
+      setEmailTestStatus({
+        severity: 'error',
+        message: err.response?.data?.message || 'Email connection failed',
+      })
+    } finally {
+      setTestingEmail(false)
+    }
+  }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
     if (!form.name.trim()) { setError('Store name is required'); return }
-    setLoading(true); setError('')
+    setLoading(true); setError(''); setSuccess('')
     try {
       const body = {
         name: form.name,
@@ -94,10 +213,19 @@ function StoreFormDialog({ open, onClose, store, onSaved }) {
         luluSandboxMode: form.luluSandboxMode,
         shippingLevel: form.shippingLevel,
         contactEmail: form.contactEmail || null,
+        emailImportMailbox: form.emailImportMailbox || null,
+        emailImportUsername: form.emailImportUsername || form.emailImportMailbox || null,
+        emailImportHost: form.emailImportHost || null,
+        emailImportPort: form.emailImportPort ? Number(form.emailImportPort) : null,
+        emailImportSecure: form.emailImportSecure,
+        emailImportSenderFilter: form.emailImportSenderFilter || null,
+        emailImportFolder: form.emailImportFolder || 'INBOX',
+        emailImportPollingEnabled: form.emailImportPollingEnabled,
       }
       if (form.luluApiKey) body.luluApiKey = form.luluApiKey
       if (form.luluApiSecret) body.luluApiSecret = form.luluApiSecret
       if (form.luluApiBaseUrl) body.luluApiBaseUrl = form.luluApiBaseUrl || null
+      if (form.emailImportPassword) body.emailImportPassword = form.emailImportPassword
 
       if (store) {
         await api.patch(`/company/stores/${store._id}`, body)
@@ -122,6 +250,7 @@ function StoreFormDialog({ open, onClose, store, onSaved }) {
       <DialogTitle sx={{ fontWeight: 700 }}>{store ? 'Edit Store' : 'Add Store'}</DialogTitle>
       <DialogContent sx={{ pt: '16px !important' }}>
         {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+        {success && <Alert severity="success" sx={{ mb: 2 }}>{success}</Alert>}
         <Alert severity="info" sx={{ mb: 2, fontSize: '0.82rem' }}>
           <InfoOutlinedIcon sx={{ fontSize: 16, mr: 0.5, verticalAlign: 'middle' }} />
           The store name appears on Lulu shipping labels as the sender — make sure it matches your Lulu account name.
@@ -273,6 +402,184 @@ function StoreFormDialog({ open, onClose, store, onSaved }) {
                   helperText="Sent to Lulu as the order contact email. Overrides the customer's email."
                   size="small"
                 />
+              </Box>
+            </Collapse>
+          </Box>
+
+          <Box
+            sx={{
+              border: '1px solid',
+              borderColor: emailExpanded ? 'primary.light' : 'divider',
+              borderRadius: 2,
+              overflow: 'hidden',
+              mt: 2,
+            }}
+          >
+            <Box
+              onClick={() => setEmailExpanded((v) => !v)}
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 1,
+                px: 2,
+                py: 1.5,
+                cursor: 'pointer',
+                bgcolor: emailExpanded ? alpha('#00A76F', 0.04) : 'transparent',
+                '&:hover': { bgcolor: alpha('#00A76F', 0.06) },
+              }}
+            >
+              <EmailOutlinedIcon sx={{ fontSize: 18, color: 'primary.main' }} />
+              <Typography variant="subtitle2" sx={{ flex: 1, fontWeight: 700 }}>
+                Email Order Import
+              </Typography>
+              {store?.emailImportPasswordConfigured && (
+                <Chip label="Configured" size="small" color="success" variant="outlined" />
+              )}
+              {emailExpanded ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
+            </Box>
+
+            <Collapse in={emailExpanded}>
+              <Box sx={{ px: 2, pb: 2, pt: 1 }}>
+                <Alert severity="info" sx={{ mb: 2, fontSize: '0.79rem' }}>
+                  Use an app password when your mailbox requires two-factor authentication. Gmail, Outlook, Yahoo,
+                  iCloud, Zoho, and AOL fill IMAP host settings automatically.
+                </Alert>
+
+                <TextField
+                  label="Mailbox Email"
+                  fullWidth
+                  type="email"
+                  value={form.emailImportMailbox}
+                  onChange={handleMailboxChange}
+                  placeholder="orders@yourcompany.com"
+                  helperText="The mailbox this app will fetch Etsy sale emails from."
+                  sx={{ mb: 2 }}
+                  size="small"
+                />
+                <TextField
+                  label="Username"
+                  fullWidth
+                  value={form.emailImportUsername}
+                  onChange={set('emailImportUsername')}
+                  placeholder={form.emailImportMailbox || 'Usually the mailbox email'}
+                  sx={{ mb: 2 }}
+                  size="small"
+                />
+                <TextField
+                  label="App Password / Key"
+                  fullWidth
+                  type="password"
+                  value={form.emailImportPassword}
+                  onChange={set('emailImportPassword')}
+                  placeholder={store?.emailImportPasswordConfigured ? 'Enter a new key to replace the saved one' : 'Paste mailbox app password'}
+                  helperText={store?.emailImportPasswordConfigured ? 'A key is already saved; leave blank to keep it.' : 'It is encrypted and never shown after saving.'}
+                  sx={{ mb: 2 }}
+                  size="small"
+                />
+
+                <Grid container spacing={1.5} sx={{ mb: 2 }}>
+                  <Grid size={{ xs: 12, sm: 7 }}>
+                    <TextField
+                      label="IMAP Host"
+                      fullWidth
+                      value={form.emailImportHost}
+                      onChange={set('emailImportHost')}
+                      placeholder="imap.gmail.com"
+                      size="small"
+                    />
+                  </Grid>
+                  <Grid size={{ xs: 6, sm: 2 }}>
+                    <TextField
+                      label="Port"
+                      fullWidth
+                      type="number"
+                      value={form.emailImportPort}
+                      onChange={set('emailImportPort')}
+                      size="small"
+                    />
+                  </Grid>
+                  <Grid size={{ xs: 6, sm: 3 }}>
+                    <FormControlLabel
+                      control={
+                        <Switch
+                          checked={form.emailImportSecure}
+                          onChange={setBool('emailImportSecure')}
+                          color="primary"
+                        />
+                      }
+                      label="SSL"
+                      sx={{ m: 0, height: 40 }}
+                    />
+                  </Grid>
+                </Grid>
+
+                <TextField
+                  label="Fetch Emails Received From"
+                  fullWidth
+                  value={form.emailImportSenderFilter}
+                  onChange={set('emailImportSenderFilter')}
+                  placeholder="transaction@etsy.com or Fathima@beatific.co"
+                  helperText="Only emails with this sender text are imported."
+                  sx={{ mb: 2 }}
+                  size="small"
+                />
+                <TextField
+                  label="Mailbox Folder"
+                  fullWidth
+                  value={form.emailImportFolder}
+                  onChange={set('emailImportFolder')}
+                  placeholder="INBOX"
+                  sx={{ mb: 2 }}
+                  size="small"
+                />
+
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={form.emailImportPollingEnabled}
+                      onChange={setBool('emailImportPollingEnabled')}
+                      color="primary"
+                    />
+                  }
+                  label={
+                    <Box>
+                      <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                        Fetch automatically every 5 minutes
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        You can still use Fetch Email Orders manually from the orders page.
+                      </Typography>
+                    </Box>
+                  }
+                  sx={{ mb: 2, alignItems: 'flex-start' }}
+                />
+
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                  <Typography variant="caption" color={store?.emailImportLastError ? 'error.main' : 'text.secondary'}>
+                    {store?.emailImportLastError
+                      ? `Last error: ${store.emailImportLastError}`
+                      : store?.emailImportLastSyncedAt
+                        ? `Last synced ${new Date(store.emailImportLastSyncedAt).toLocaleString()}`
+                        : 'No email sync has run for this store yet.'}
+                  </Typography>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    startIcon={testingEmail ? <CircularProgress size={14} /> : <CloudSyncOutlinedIcon />}
+                    disabled={!store?._id || testingEmail}
+                    onClick={handleTestEmail}
+                  >
+                    {testingEmail ? 'Testing...' : 'Test Connection'}
+                  </Button>
+                </Box>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
+                  Test Connection only checks IMAP login and folder access. It does not send a confirmation email.
+                </Typography>
+                {emailTestStatus && (
+                  <Alert severity={emailTestStatus.severity} sx={{ mt: 1.5 }}>
+                    {emailTestStatus.message}
+                  </Alert>
+                )}
               </Box>
             </Collapse>
           </Box>
@@ -453,6 +760,14 @@ export default function StoresPage() {
                       variant="outlined"
                       sx={{ fontWeight: 600, fontSize: '0.7rem' }}
                     />
+                    <Chip
+                      size="small"
+                      icon={<EmailOutlinedIcon sx={{ fontSize: '13px !important' }} />}
+                      label={store.emailImportPasswordConfigured ? (store.emailImportPollingEnabled ? 'Email auto-sync' : 'Email manual') : 'Email not set'}
+                      color={store.emailImportPasswordConfigured ? (store.emailImportPollingEnabled ? 'success' : 'info') : 'default'}
+                      variant="outlined"
+                      sx={{ fontWeight: 600, fontSize: '0.7rem' }}
+                    />
                     {store.shippingLevel && store.shippingLevel !== 'MAIL' && (
                       <Chip
                         size="small"
@@ -488,7 +803,11 @@ export default function StoresPage() {
                   </Box>
 
                   <Typography variant="caption" sx={{ display: 'block', mt: 1.5, color: 'text.disabled' }}>
-                    Created {new Date(store.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                    {store.emailImportLastError
+                      ? `Email sync error: ${store.emailImportLastError}`
+                      : store.emailImportLastSyncedAt
+                        ? `Email synced ${new Date(store.emailImportLastSyncedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
+                        : `Created ${new Date(store.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`}
                   </Typography>
                 </CardContent>
               </Card>

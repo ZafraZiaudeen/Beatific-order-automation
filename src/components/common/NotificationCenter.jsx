@@ -55,26 +55,32 @@ export default function NotificationCenter() {
   const navigate = useNavigate()
   const open = Boolean(anchorEl)
 
-  const fetchNotifications = useCallback(async () => {
+  const fetchNotifications = useCallback(async (showLoading = false) => {
+    if (showLoading) setLoading(true)
     try {
       const { data } = await api.get('/notifications')
       setNotifications(data.notifications || [])
       setUnreadCount(data.unreadCount || 0)
     } catch {
       // silently fail
+    } finally {
+      if (showLoading) setLoading(false)
     }
   }, [])
 
   // Poll every 60 seconds
   useEffect(() => {
-    fetchNotifications()
+    const initial = setTimeout(() => fetchNotifications(true), 0)
     const interval = setInterval(fetchNotifications, 60_000)
-    return () => clearInterval(interval)
+    return () => {
+      clearTimeout(initial)
+      clearInterval(interval)
+    }
   }, [fetchNotifications])
 
   const handleOpen = (e) => {
     setAnchorEl(e.currentTarget)
-    fetchNotifications()
+    fetchNotifications(true)
   }
 
   const handleMarkAllRead = async () => {

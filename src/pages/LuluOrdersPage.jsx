@@ -103,7 +103,14 @@ export default function LuluOrdersPage() {
       setOrders(statusFiltered)
 
       // Ready to submit
-      setReadyOrders(allOrders.filter((o) => o.etsyStatus === 'ready_to_order'))
+      setReadyOrders(allOrders.filter((o) =>
+        o.etsyStatus === 'completed' &&
+        !o.luluStatus &&
+        !o.luluJobId &&
+        o.coverImageUrl &&
+        o.interiorPdfUrl &&
+        o.podPackageId
+      ))
     } catch {
       //
     } finally {
