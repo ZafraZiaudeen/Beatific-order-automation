@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import Box from '@mui/material/Box'
+import Grid from '@mui/material/Grid'
 import Typography from '@mui/material/Typography'
 import Card from '@mui/material/Card'
 import CardContent from '@mui/material/CardContent'
@@ -12,17 +13,21 @@ import Divider from '@mui/material/Divider'
 import InputAdornment from '@mui/material/InputAdornment'
 import IconButton from '@mui/material/IconButton'
 import CircularProgress from '@mui/material/CircularProgress'
+import Stack from '@mui/material/Stack'
 import Visibility from '@mui/icons-material/Visibility'
 import VisibilityOff from '@mui/icons-material/VisibilityOff'
 import PersonOutlineIcon from '@mui/icons-material/PersonOutlined'
 import LockOutlinedIcon from '@mui/icons-material/LockOutlined'
+import EmailOutlinedIcon from '@mui/icons-material/EmailOutlined'
+import BusinessOutlinedIcon from '@mui/icons-material/BusinessOutlined'
+import ShieldOutlinedIcon from '@mui/icons-material/ShieldOutlined'
 import useAuthStore from '../stores/authStore'
 import api from '../lib/api'
 
 const ROLE_COLORS = {
-  owner: { bgcolor: '#D3FCD2', color: '#118D57' },
-  admin: { bgcolor: '#D6E4FF', color: '#1939B7' },
-  member: { bgcolor: '#F4F6F8', color: '#637381' },
+  owner: { bgcolor: '#e7f7ed', color: '#118D57', border: '1px solid #118D57' },
+  admin: { bgcolor: '#e0f7fa', color: '#006C9C', border: '1px solid #006C9C' },
+  member: { bgcolor: '#f4f6f8', color: '#637381', border: '1px solid #637381' },
 }
 
 const getInitials = (name) =>
@@ -77,132 +82,303 @@ export default function ProfilePage() {
   const togglePw = (field) => () => setShowPw((v) => ({ ...v, [field]: !v[field] }))
 
   return (
-    <Box sx={{ maxWidth: 680 }}>
-      <Box sx={{ mb: 4 }}>
-        <Typography variant="h4" sx={{ fontWeight: 800, mb: 0.5 }}>Profile</Typography>
+    <Box>
+      <Box sx={{ mb: 3 }}>
+        <Typography variant="h4" sx={{ fontWeight: 800, mb: 0.5, color: 'text.primary' }}>
+          My Profile
+        </Typography>
         <Typography variant="body2" color="text.secondary">
-          Manage your account settings and change your password.
+          Manage your account settings, preferences, and security.
         </Typography>
       </Box>
 
-      {/* Identity card */}
-      <Card sx={{ mb: 3 }}>
-        <CardContent sx={{ p: 3 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3 }}>
-            <Avatar sx={{ width: 64, height: 64, fontSize: '1.25rem', fontWeight: 700, bgcolor: 'primary.main' }}>
-              {getInitials(user?.name)}
-            </Avatar>
-            <Box>
-              <Typography variant="h5" sx={{ fontWeight: 700 }}>{user?.name}</Typography>
-              <Typography variant="body2" color="text.secondary">{user?.email}</Typography>
-              <Box sx={{ display: 'flex', gap: 1, mt: 0.75 }}>
+      <Grid container spacing={3}>
+        {/* Left Column - Identity Card */}
+        <Grid item xs={12} md={4}>
+          <Card 
+            elevation={0} 
+            sx={{ 
+              borderRadius: 3, 
+              border: '1px solid', 
+              borderColor: 'divider',
+              overflow: 'hidden',
+              position: 'relative',
+              boxShadow: '0px 4px 20px rgba(0,0,0,0.03)'
+            }}
+          >
+            {/* Banner Background */}
+            <Box 
+              sx={{ 
+                height: 100, 
+                background: 'linear-gradient(135deg, #118D57 0%, #006C9C 100%)',
+                width: '100%'
+              }} 
+            />
+            
+            <CardContent sx={{ pt: 0, px: 3, pb: 3, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+              <Avatar 
+                sx={{ 
+                  width: 80, 
+                  height: 80, 
+                  fontSize: '1.75rem', 
+                  fontWeight: 700, 
+                  bgcolor: 'background.paper',
+                  color: 'primary.main',
+                  border: '3px solid',
+                  borderColor: 'background.paper',
+                  mt: -5,
+                  mb: 1.5,
+                  boxShadow: '0px 4px 10px rgba(0,0,0,0.1)'
+                }}
+              >
+                {getInitials(user?.name)}
+              </Avatar>
+              
+              <Typography variant="h6" sx={{ fontWeight: 800, mb: 0.25 }}>
+                {user?.name}
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+                {user?.email}
+              </Typography>
+
+              <Stack direction="row" spacing={1} sx={{ mb: 2.5 }}>
                 <Chip
                   label={user?.role}
                   size="small"
-                  sx={{ height: 20, fontSize: '0.7rem', fontWeight: 700, textTransform: 'capitalize', ...ROLE_COLORS[user?.role] }}
+                  sx={{ 
+                    fontWeight: 700, 
+                    textTransform: 'capitalize', 
+                    px: 1,
+                    ...ROLE_COLORS[user?.role] 
+                  }}
                 />
-                <Chip label={company?.name} size="small" variant="outlined" sx={{ height: 20, fontSize: '0.7rem' }} />
+                <Chip 
+                  label={company?.name} 
+                  size="small" 
+                  variant="outlined" 
+                  sx={{ fontWeight: 600, borderColor: 'divider' }} 
+                />
+              </Stack>
+              
+              <Divider sx={{ width: '100%', mb: 2.5 }} />
+              
+              <Box sx={{ width: '100%' }}>
+                <Stack spacing={1.5}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
+                    <EmailOutlinedIcon sx={{ color: 'text.secondary', fontSize: 18 }} />
+                    <Typography variant="body2" color="text.primary" sx={{ fontWeight: 500 }}>
+                      {user?.email}
+                    </Typography>
+                  </Box>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
+                    <BusinessOutlinedIcon sx={{ color: 'text.secondary', fontSize: 18 }} />
+                    <Typography variant="body2" color="text.primary" sx={{ fontWeight: 500 }}>
+                      {company?.name}
+                    </Typography>
+                  </Box>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
+                    <ShieldOutlinedIcon sx={{ color: 'text.secondary', fontSize: 18 }} />
+                    <Typography variant="body2" color="text.primary" sx={{ fontWeight: 500, textTransform: 'capitalize' }}>
+                      {user?.role} Access
+                    </Typography>
+                  </Box>
+                </Stack>
               </Box>
-            </Box>
-          </Box>
+            </CardContent>
+          </Card>
+        </Grid>
 
-          <Divider sx={{ mb: 3 }} />
+        {/* Right Column - Forms */}
+        <Grid item xs={12} md={8}>
+          <Stack spacing={3}>
+            
+            {/* Account Info Form */}
+            <Card 
+              elevation={0} 
+              sx={{ 
+                borderRadius: 3, 
+                border: '1px solid', 
+                borderColor: 'divider',
+                boxShadow: '0px 4px 20px rgba(0,0,0,0.03)'
+              }}
+            >
+              <CardContent sx={{ p: { xs: 2.5, md: 3 } }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 2.5 }}>
+                  <Box sx={{ p: 0.75, borderRadius: 2, bgcolor: 'primary.lighter', color: 'primary.main', display: 'flex' }}>
+                    <PersonOutlineIcon fontSize="small" />
+                  </Box>
+                  <Box>
+                    <Typography variant="subtitle1" sx={{ fontWeight: 700, lineHeight: 1.2 }}>Personal Information</Typography>
+                    <Typography variant="caption" color="text.secondary">Update your basic profile details here.</Typography>
+                  </Box>
+                </Box>
 
-          {/* Name form */}
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-            <PersonOutlineIcon sx={{ color: 'text.secondary', fontSize: 20 }} />
-            <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>Account Information</Typography>
-          </Box>
+                {nameSuccess && <Alert severity="success" sx={{ mb: 2, borderRadius: 2, py: 0 }}>{nameSuccess}</Alert>}
+                {nameError && <Alert severity="error" sx={{ mb: 2, borderRadius: 2, py: 0 }}>{nameError}</Alert>}
 
-          {nameSuccess && <Alert severity="success" sx={{ mb: 2 }}>{nameSuccess}</Alert>}
-          {nameError && <Alert severity="error" sx={{ mb: 2 }}>{nameError}</Alert>}
+                <form onSubmit={handleNameSave}>
+                  <Grid container spacing={2}>
+                    <Grid item xs={12}>
+                      <TextField
+                        size="small"
+                        label="Full Name"
+                        fullWidth
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        variant="outlined"
+                        slotProps={{ input: { sx: { borderRadius: 2 } } }}
+                      />
+                    </Grid>
+                    <Grid item xs={12} sm={6}>
+                      <TextField
+                        size="small"
+                        label="Email Address"
+                        fullWidth
+                        value={user?.email || ''}
+                        disabled
+                        helperText="Email cannot be changed"
+                        variant="outlined"
+                        slotProps={{ input: { sx: { borderRadius: 2 } } }}
+                      />
+                    </Grid>
+                    <Grid item xs={12} sm={6}>
+                      <TextField
+                        size="small"
+                        label="Company"
+                        fullWidth
+                        value={company?.name || ''}
+                        disabled
+                        helperText="Managed by the owner"
+                        variant="outlined"
+                        slotProps={{ input: { sx: { borderRadius: 2 } } }}
+                      />
+                    </Grid>
+                  </Grid>
+                  
+                  <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2.5 }}>
+                    <Button
+                      type="submit"
+                      variant="contained"
+                      disableElevation
+                      disabled={nameLoading || name === user?.name}
+                      sx={{ borderRadius: 2, px: 3, py: 0.8, fontWeight: 700 }}
+                      startIcon={nameLoading ? <CircularProgress size={16} color="inherit" /> : null}
+                    >
+                      {nameLoading ? 'Saving...' : 'Save Changes'}
+                    </Button>
+                  </Box>
+                </form>
+              </CardContent>
+            </Card>
 
-          <form onSubmit={handleNameSave}>
-            <TextField
-              label="Full Name"
-              fullWidth
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              sx={{ mb: 2 }}
-            />
-            <TextField
-              label="Email"
-              fullWidth
-              value={user?.email || ''}
-              disabled
-              helperText="Email cannot be changed"
-              sx={{ mb: 2 }}
-            />
-            <TextField
-              label="Company"
-              fullWidth
-              value={company?.name || ''}
-              disabled
-              helperText="Company name is managed by the owner"
-              sx={{ mb: 2 }}
-            />
-            <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
-              <Button
-                type="submit"
-                variant="contained"
-                disabled={nameLoading || name === user?.name}
-                startIcon={nameLoading ? <CircularProgress size={16} color="inherit" /> : null}
-              >
-                {nameLoading ? 'Saving...' : 'Save Changes'}
-              </Button>
-            </Box>
-          </form>
-        </CardContent>
-      </Card>
+            {/* Password Form */}
+            <Card 
+              elevation={0} 
+              sx={{ 
+                borderRadius: 3, 
+                border: '1px solid', 
+                borderColor: 'divider',
+                boxShadow: '0px 4px 20px rgba(0,0,0,0.03)'
+              }}
+            >
+              <CardContent sx={{ p: { xs: 2.5, md: 3 } }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 2.5 }}>
+                  <Box sx={{ p: 0.75, borderRadius: 2, bgcolor: 'error.lighter', color: 'error.main', display: 'flex' }}>
+                    <LockOutlinedIcon fontSize="small" />
+                  </Box>
+                  <Box>
+                    <Typography variant="subtitle1" sx={{ fontWeight: 700, lineHeight: 1.2 }}>Security</Typography>
+                    <Typography variant="caption" color="text.secondary">Use a long, random password to stay secure.</Typography>
+                  </Box>
+                </Box>
 
-      {/* Password */}
-      <Card>
-        <CardContent sx={{ p: 3 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-            <LockOutlinedIcon sx={{ color: 'text.secondary', fontSize: 20 }} />
-            <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>Change Password</Typography>
-          </Box>
+                {pwSuccess && <Alert severity="success" sx={{ mb: 2, borderRadius: 2, py: 0 }}>{pwSuccess}</Alert>}
+                {pwError && <Alert severity="error" sx={{ mb: 2, borderRadius: 2, py: 0 }}>{pwError}</Alert>}
 
-          {pwSuccess && <Alert severity="success" sx={{ mb: 2 }}>{pwSuccess}</Alert>}
-          {pwError && <Alert severity="error" sx={{ mb: 2 }}>{pwError}</Alert>}
+                <form onSubmit={handlePasswordChange}>
+                  <Stack spacing={2}>
+                    <TextField
+                      size="small"
+                      label="Current Password"
+                      fullWidth
+                      type={showPw.current ? 'text' : 'password'}
+                      value={pwForm.current}
+                      onChange={(e) => setPwForm((f) => ({ ...f, current: e.target.value }))}
+                      variant="outlined"
+                      slotProps={{
+                        input: {
+                          sx: { borderRadius: 2 },
+                          endAdornment: (
+                            <InputAdornment position="end">
+                              <IconButton onClick={togglePw('current')} edge="end" size="small">
+                                {showPw.current ? <VisibilityOff fontSize="small" /> : <Visibility fontSize="small" />}
+                              </IconButton>
+                            </InputAdornment>
+                          ),
+                        },
+                      }}
+                    />
 
-          <form onSubmit={handlePasswordChange}>
-            {['current', 'newPw', 'confirm'].map((field) => (
-              <TextField
-                key={field}
-                label={field === 'current' ? 'Current Password' : field === 'newPw' ? 'New Password' : 'Confirm New Password'}
-                fullWidth
-                type={showPw[field] ? 'text' : 'password'}
-                value={pwForm[field]}
-                onChange={(e) => setPwForm((f) => ({ ...f, [field]: e.target.value }))}
-                helperText={field === 'newPw' ? 'Minimum 8 characters' : undefined}
-                sx={{ mb: 2 }}
-                slotProps={{
-                  input: {
-                    endAdornment: field !== 'confirm' ? (
-                      <InputAdornment position="end">
-                        <IconButton onClick={togglePw(field)} edge="end" size="small">
-                          {showPw[field] ? <VisibilityOff fontSize="small" /> : <Visibility fontSize="small" />}
-                        </IconButton>
-                      </InputAdornment>
-                    ) : undefined,
-                  },
-                }}
-              />
-            ))}
-            <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
-              <Button
-                type="submit"
-                variant="contained"
-                disabled={pwLoading || !pwForm.current || !pwForm.newPw}
-                startIcon={pwLoading ? <CircularProgress size={16} color="inherit" /> : null}
-              >
-                {pwLoading ? 'Updating...' : 'Update Password'}
-              </Button>
-            </Box>
-          </form>
-        </CardContent>
-      </Card>
+                    <Grid container spacing={2}>
+                      <Grid item xs={12} sm={6}>
+                        <TextField
+                          size="small"
+                          label="New Password"
+                          fullWidth
+                          type={showPw.newPw ? 'text' : 'password'}
+                          value={pwForm.newPw}
+                          onChange={(e) => setPwForm((f) => ({ ...f, newPw: e.target.value }))}
+                          helperText="Minimum 8 characters"
+                          variant="outlined"
+                          slotProps={{
+                            input: {
+                              sx: { borderRadius: 2 },
+                              endAdornment: (
+                                <InputAdornment position="end">
+                                  <IconButton onClick={togglePw('newPw')} edge="end" size="small">
+                                    {showPw.newPw ? <VisibilityOff fontSize="small" /> : <Visibility fontSize="small" />}
+                                  </IconButton>
+                                </InputAdornment>
+                              ),
+                            },
+                          }}
+                        />
+                      </Grid>
+                      <Grid item xs={12} sm={6}>
+                        <TextField
+                          size="small"
+                          label="Confirm New Password"
+                          fullWidth
+                          type={showPw.newPw ? 'text' : 'password'}
+                          value={pwForm.confirm}
+                          onChange={(e) => setPwForm((f) => ({ ...f, confirm: e.target.value }))}
+                          variant="outlined"
+                          slotProps={{ input: { sx: { borderRadius: 2 } } }}
+                        />
+                      </Grid>
+                    </Grid>
+                  </Stack>
+
+                  <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2.5 }}>
+                    <Button
+                      type="submit"
+                      variant="contained"
+                      color="inherit"
+                      disableElevation
+                      disabled={pwLoading || !pwForm.current || !pwForm.newPw}
+                      sx={{ borderRadius: 2, px: 3, py: 0.8, fontWeight: 700, bgcolor: 'text.primary', color: 'background.paper', '&:hover': { bgcolor: 'text.secondary' } }}
+                      startIcon={pwLoading ? <CircularProgress size={16} color="inherit" /> : null}
+                    >
+                      {pwLoading ? 'Updating...' : 'Update Password'}
+                    </Button>
+                  </Box>
+                </form>
+              </CardContent>
+            </Card>
+
+          </Stack>
+        </Grid>
+      </Grid>
     </Box>
   )
 }

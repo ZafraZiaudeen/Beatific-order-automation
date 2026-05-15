@@ -12,6 +12,7 @@ import Divider from '@mui/material/Divider'
 import Tooltip from '@mui/material/Tooltip'
 import Select from '@mui/material/Select'
 import FormControl from '@mui/material/FormControl'
+import Button from '@mui/material/Button'
 import { alpha } from '@mui/material/styles'
 import MenuIcon from '@mui/icons-material/Menu'
 import SearchIcon from '@mui/icons-material/SearchOutlined'
@@ -45,14 +46,14 @@ export default function Header({ onMenuToggle }) {
       position="sticky"
       elevation={0}
       sx={{
-        bgcolor: alpha('#fff', 0.8),
+        bgcolor: 'transparent',
         backdropFilter: 'blur(6px)',
-        borderBottom: (t) => `1px solid ${t.palette.divider}`,
+        borderBottom: (t) => `1px dashed ${t.palette.divider}`,
         color: 'text.primary',
         zIndex: (t) => t.zIndex.appBar,
       }}
     >
-      <Toolbar sx={{ height: HEADER_HEIGHT, gap: 1 }}>
+      <Toolbar sx={{ height: HEADER_HEIGHT, gap: 1.25, px: { xs: 2, lg: 4 } }}>
         {/* Mobile menu button */}
         <IconButton
           onClick={onMenuToggle}
@@ -77,9 +78,9 @@ export default function Header({ onMenuToggle }) {
               sx={{
                 fontSize: '0.875rem',
                 fontWeight: 600,
-                '& .MuiOutlinedInput-notchedOutline': { borderColor: 'transparent' },
+                '& .MuiOutlinedInput-notchedOutline': { borderColor: (t) => t.palette.grey[300] },
                 '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: (t) => t.palette.divider },
-                bgcolor: (t) => alpha(t.palette.grey[500], 0.08),
+                bgcolor: 'background.paper',
                 borderRadius: 1,
               }}
             >
@@ -94,7 +95,21 @@ export default function Header({ onMenuToggle }) {
 
         {/* Search */}
         <Tooltip title="Search">
-          <IconButton sx={{ color: 'text.secondary' }}>
+          <Button
+            variant="outlined"
+            startIcon={<SearchIcon sx={{ fontSize: 16 }} />}
+            sx={{
+              minHeight: 38,
+              px: 1.25,
+              display: { xs: 'none', sm: 'inline-flex' },
+              color: 'text.secondary',
+            }}
+          >
+            Ctrl K
+          </Button>
+        </Tooltip>
+        <Tooltip title="Search">
+          <IconButton sx={{ display: { xs: 'inline-flex', sm: 'none' }, color: 'text.secondary' }}>
             <SearchIcon />
           </IconButton>
         </Tooltip>
@@ -104,7 +119,7 @@ export default function Header({ onMenuToggle }) {
 
         {/* Profile */}
         <Tooltip title={user?.name || 'Profile'}>
-          <IconButton onClick={(e) => setAnchorEl(e.currentTarget)} sx={{ ml: 0.5 }}>
+          <IconButton onClick={(e) => setAnchorEl(e.currentTarget)} sx={{ ml: 0.5, p: 0.25 }}>
             <Avatar sx={{ width: 36, height: 36, fontSize: '0.875rem', fontWeight: 700, bgcolor: 'primary.main' }}>
               {initials}
             </Avatar>
@@ -122,8 +137,9 @@ export default function Header({ onMenuToggle }) {
               sx: {
                 minWidth: 200,
                 mt: 1,
-                borderRadius: 2,
-                boxShadow: (t) => `0 20px 40px -4px ${alpha(t.palette.grey[500], 0.24)}`,
+                borderRadius: 1.5,
+                border: (t) => `1px solid ${t.palette.divider}`,
+                boxShadow: (t) => `0 12px 24px -4px ${alpha(t.palette.grey[500], 0.16)}`,
               },
             },
           }}

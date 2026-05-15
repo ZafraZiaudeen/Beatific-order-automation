@@ -85,20 +85,20 @@ export default function LoginPage() {
   return (
     <AuthLayout>
       <div ref={fieldsRef}>
-        <div className="stagger-item mb-8">
+        <div className="stagger-item mb-4">
           <p className="auth-eyebrow">Welcome back</p>
           <h2 className="auth-heading">Sign in to your workspace</h2>
           <p className="auth-subtitle">Enter your credentials to continue.</p>
         </div>
 
         {error && (
-          <div className="error-box auth-alert mb-5">
+          <div className="error-box auth-alert mb-4">
             <AlertCircleIcon width={14} height={14} className="mt-0.5 shrink-0 text-[#ff5630]" aria-hidden="true" />
             <p className="auth-alert-text">{error}</p>
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+        <form onSubmit={handleSubmit} className="flex flex-col gap-3">
           <div className="stagger-item">
             <Field
               label="Work Email"
@@ -153,13 +153,13 @@ export default function LoginPage() {
           </div>
         </form>
 
-        <div className="stagger-item my-6 flex items-center gap-3">
+        <div className="stagger-item my-4 flex items-center gap-3">
           <div className="auth-divider-line" />
           <span className="auth-divider-text">or</span>
           <div className="auth-divider-line" />
         </div>
 
-        <div className="stagger-item auth-note mb-6">
+        <div className="stagger-item auth-note mb-4">
           <p className="auth-note-text">
             <span className="auth-note-title">Joining a team?</span>{' '}
             Your invite link was sent by your Owner or Admin, check your email and use the link there, not this form.

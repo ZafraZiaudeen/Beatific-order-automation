@@ -1,0 +1,99 @@
+@font-face {
+  font-family: 'Canela';
+  src: url('/fonts/canela/Canela-Regular-Trial.otf') format('opentype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Canela';
+  src: url('/fonts/canela/Canela-Bold-Trial.otf') format('opentype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Canela';
+  src: url('/fonts/canela/Canela-RegularItalic-Trial.otf') format('opentype');
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Canela';
+  src: url('/fonts/canela/Canela-BoldItalic-Trial.otf') format('opentype');
+  font-weight: 700;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Canela Deck';
+  src: url('/fonts/canela/CanelaDeck-Regular-Trial.otf') format('opentype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Canela Text';
+  src: url('/fonts/canela/CanelaText-Regular-Trial.otf') format('opentype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  /* Dasher surfaces */
+  --c-bg:          #ffffff;
+  --c-card:        #ffffff;
+  --c-surface:     #f9fafb;
+  --c-surface-2:   #f4f6f8;
+
+  /* Text */
+  --c-text:        #1c252e;
+  --c-text-2:      #637381;
+  --c-text-3:      #919eab;
+
+  /* Borders */
+  --c-border:      #dfe3e8;
+  --c-border-2:    #c4cdd5;
+
+  /* Accent — green */
+  --c-accent:      #00a76f;
+  --c-accent-2:    #007a52;
+  --c-accent-soft: rgba(0, 167, 111, 0.10);
+  --c-accent-glow: rgba(0, 167, 111, 0.28);
+
+  /* States */
+  --c-error:       #ef4444;
+  --c-error-soft:  rgba(239, 68, 68, 0.08);
+  --c-warn:        #f59e0b;
+
+  /* Panel */
+  --panel-bg:      #0b1120;
+
+  /* Shadows */
+  --shadow-card:   0 0 2px 0 rgba(145,158,171,0.20), 0 12px 24px -4px rgba(145,158,171,0.12);
+  --shadow-sm:     0 1px 2px 0 rgba(145,158,171,0.16);
+  --shadow-btn:    none;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+  font-family: 'Public Sans', system-ui, sans-serif;
+  background: var(--c-bg);
+  color: var(--c-text);
+  -webkit-font-smoothing: antialiased;
+}
+
+button, input, textarea, select { font: inherit; }
+a { color: inherit; text-decoration: none; }
+#root { min-height: 100vh; }

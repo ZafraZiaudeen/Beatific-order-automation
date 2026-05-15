@@ -1,12 +1,19 @@
 import { create } from 'zustand'
 import api from '../lib/api'
+import {
+  clearAuthSessionStorage,
+  getStoredAuthSession,
+  persistAuthSession,
+} from '../lib/authSession'
+
+const storedAuth = getStoredAuthSession()
 
 const useAuthStore = create((set, get) => ({
-  user: JSON.parse(localStorage.getItem('beatific_user') || 'null'),
-  token: localStorage.getItem('beatific_token') || null,
-  company: JSON.parse(localStorage.getItem('beatific_company') || 'null'),
-  stores: JSON.parse(localStorage.getItem('beatific_stores') || '[]'),
-  activeStore: JSON.parse(localStorage.getItem('beatific_active_store') || 'null'),
+  user: storedAuth.user,
+  token: storedAuth.token,
+  company: storedAuth.company,
+  stores: storedAuth.stores,
+  activeStore: storedAuth.activeStore,
   loading: false,
   error: null,
 
@@ -17,13 +24,18 @@ const useAuthStore = create((set, get) => ({
     set({ loading: true, error: null })
     try {
       const { data } = await api.post('/auth/register', { companyName, name, email, password })
-      localStorage.setItem('beatific_token', data.token)
-      localStorage.setItem('beatific_user', JSON.stringify(data.user))
-      localStorage.setItem('beatific_company', JSON.stringify(data.company))
+      persistAuthSession({
+        token: data.token,
+        tokenExpiresAt: data.tokenExpiresAt,
+        user: data.user,
+        company: data.company,
+      })
       set({
         token: data.token,
         user: data.user,
         company: data.company,
+        stores: [],
+        activeStore: null,
         loading: false,
       })
       return data
@@ -34,17 +46,19 @@ const useAuthStore = create((set, get) => ({
     }
   },
 
-  login: async ({ companyName, email, password }) => {
+  login: async ({ companyName, email, password, rememberMe = false }) => {
     set({ loading: true, error: null })
     try {
-      const { data } = await api.post('/auth/login', { companyName, email, password })
-      localStorage.setItem('beatific_token', data.token)
-      localStorage.setItem('beatific_user', JSON.stringify(data.user))
-      localStorage.setItem('beatific_company', JSON.stringify(data.company))
-      localStorage.setItem('beatific_stores', JSON.stringify(data.stores || []))
-
+      const { data } = await api.post('/auth/login', { companyName, email, password, rememberMe })
       const activeStore = data.stores?.[0] || null
-      if (activeStore) localStorage.setItem('beatific_active_store', JSON.stringify(activeStore))
+      persistAuthSession({
+        token: data.token,
+        tokenExpiresAt: data.tokenExpiresAt,
+        user: data.user,
+        company: data.company,
+        stores: data.stores || [],
+        activeStore,
+      })
 
       set({
         token: data.token,
@@ -93,16 +107,58 @@ const useAuthStore = create((set, get) => ({
     }
   },
 
+  forgotPassword: async ({ companyName, email }) => {
+    set({ loading: true, error: null })
+    try {
+      const { data } = await api.post('/auth/forgot-password', { companyName, email })
+      set({ loading: false })
+      return data
+    } catch (err) {
+      const message = err.response?.data?.message || 'Failed to send reset code'
+      set({ error: message, loading: false })
+      throw err
+    }
+  },
+
+  verifyResetCode: async ({ companyName, email, code }) => {
+    set({ loading: true, error: null })
+    try {
+      const { data } = await api.post('/auth/verify-reset-code', { companyName, email, code })
+      set({ loading: false })
+      return data
+    } catch (err) {
+      const message = err.response?.data?.message || 'Invalid or expired reset code'
+      set({ error: message, loading: false })
+      throw err
+    }
+  },
+
+  resetPassword: async ({ companyName, email, code, newPassword }) => {
+    set({ loading: true, error: null })
+    try {
+      const { data } = await api.post('/auth/reset-password', { companyName, email, code, newPassword })
+      set({ loading: false })
+      return data
+    } catch (err) {
+      const message = err.response?.data?.message || 'Failed to reset password'
+      set({ error: message, loading: false })
+      throw err
+    }
+  },
+
   acceptInvite: async ({ token, name, email, password }) => {
     set({ loading: true, error: null })
     try {
       const { data } = await api.post('/auth/accept-invite', { token, name, email, password })
-      localStorage.setItem('beatific_token', data.token)
-      localStorage.setItem('beatific_user', JSON.stringify(data.user))
-      localStorage.setItem('beatific_company', JSON.stringify(data.company))
-      localStorage.setItem('beatific_stores', JSON.stringify(data.stores || []))
       const activeStore = data.stores?.[0] || null
-      if (activeStore) localStorage.setItem('beatific_active_store', JSON.stringify(activeStore))
+      persistAuthSession({
+        token: data.token,
+        tokenExpiresAt: data.tokenExpiresAt,
+        user: data.user,
+        company: data.company,
+        stores: data.stores || [],
+        activeStore,
+      })
 
       set({
         token: data.token,
@@ -143,11 +199,7 @@ const useAuthStore = create((set, get) => ({
   },
 
   logout: () => {
-    localStorage.removeItem('beatific_token')
-    localStorage.removeItem('beatific_user')
-    localStorage.removeItem('beatific_company')
-    localStorage.removeItem('beatific_stores')
-    localStorage.removeItem('beatific_active_store')
+    clearAuthSessionStorage()
     set({
       user: null,
       token: null,

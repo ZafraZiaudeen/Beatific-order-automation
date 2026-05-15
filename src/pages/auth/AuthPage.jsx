@@ -220,7 +220,12 @@ function LoginView({ onSwitch }) {
     setLoad(true)
 
     try {
-      const data = await login({ companyName: form.company, email: form.email, password: form.password })
+      const data = await login({
+        companyName: form.company,
+        email: form.email,
+        password: form.password,
+        rememberMe: remember,
+      })
       if (data.user && !data.user.emailVerified) {
         navigate('/verify-email', { state: { email: form.email } })
       } else {
@@ -275,7 +280,7 @@ function LoginView({ onSwitch }) {
             value={form.password}
             onChange={set('password')}
             right={
-              <LinkBtn onClick={() => {}} className="text-[0.78rem]">
+              <LinkBtn onClick={() => onSwitch('forgot')} className="text-[0.78rem]">
                 Forgot password?
               </LinkBtn>
             }
@@ -321,6 +326,421 @@ function LoginView({ onSwitch }) {
       <div className="si">
         <SwitchRow text="Don't have an account?" linkText="Create a workspace ->" onClick={() => onSwitch('register')} />
       </div>
+    </div>
+  )
+}
+
+const RESET_CODE_LENGTH = 6
+const RESET_RESEND_COOLDOWN_SECONDS = 20
+const RESET_MAX_SENDS = 5
+const RESET_SESSION_BLOCK_SECONDS = 15 * 60
+
+const resetStepOrder = ['request', 'code', 'password']
+
+function ResetStepIndicator({ step }) {
+  const current = Math.max(resetStepOrder.indexOf(step), 0)
+
+  return (
+    <div className={cn('si', STEP_ROW_CLASS)}>
+      {resetStepOrder.map((item, index) => (
+        <div
+          key={item}
+          className={index <= current ? ACTIVE_STEP_CLASS : INACTIVE_STEP_CLASS}
+        />
+      ))}
+      <span className={STEP_LABEL_CLASS}>Step {current + 1} of 3</span>
+    </div>
+  )
+}
+
+function CodeInput({ value, onChange, error }) {
+  const refs = useRef([])
+  const digits = Array.from({ length: RESET_CODE_LENGTH }, (_, index) => value[index] || '')
+
+  const updateDigits = (index, input) => {
+    const nextDigits = [...digits]
+    const clean = input.replace(/\D/g, '')
+
+    if (!clean) {
+      nextDigits[index] = ''
+      onChange(nextDigits.join('').slice(0, RESET_CODE_LENGTH))
+      return
+    }
+
+    clean.slice(0, RESET_CODE_LENGTH - index).split('').forEach((digit, offset) => {
+      nextDigits[index + offset] = digit
+    })
+
+    onChange(nextDigits.join('').slice(0, RESET_CODE_LENGTH))
+    refs.current[Math.min(index + clean.length, RESET_CODE_LENGTH - 1)]?.focus()
+  }
+
+  const handleKeyDown = (index) => (event) => {
+    if (event.key !== 'Backspace') return
+
+    if (!digits[index] && index > 0) {
+      event.preventDefault()
+      const nextDigits = [...digits]
+      nextDigits[index - 1] = ''
+      onChange(nextDigits.join('').slice(0, RESET_CODE_LENGTH))
+      refs.current[index - 1]?.focus()
+    }
+  }
+
+  const handlePaste = (event) => {
+    event.preventDefault()
+    const clean = event.clipboardData.getData('text').replace(/\D/g, '').slice(0, RESET_CODE_LENGTH)
+    onChange(clean)
+    refs.current[Math.min(clean.length, RESET_CODE_LENGTH - 1)]?.focus()
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      <label className="auth-label">Reset Code</label>
+      <div className="auth-code-grid" onPaste={handlePaste}>
+        {digits.map((digit, index) => (
+          <input
+            key={index}
+            ref={(element) => { refs.current[index] = element }}
+            aria-label={`Reset code digit ${index + 1}`}
+            inputMode="numeric"
+            pattern="[0-9]*"
+            maxLength={1}
+            value={digit}
+            onChange={(event) => updateDigits(index, event.target.value)}
+            onKeyDown={handleKeyDown(index)}
+            className={cn('auth-code-input', error && 'is-error')}
+          />
+        ))}
+      </div>
+      {error && (
+        <p className="m-0 flex items-center gap-[0.3rem] text-xs text-[var(--c-error)]">
+          <AlertCircleIcon width={11} height={11} aria-hidden="true" />
+          {error}
+        </p>
+      )}
+    </div>
+  )
+}
+
+function formatWait(seconds) {
+  if (seconds <= 0) return 'now'
+  if (seconds < 60) return `${seconds}s`
+
+  const minutes = Math.ceil(seconds / 60)
+  return `${minutes} min`
+}
+
+function ForgotPasswordView({ onSwitch }) {
+  const [step, setStep] = useState('request')
+  const [identity, setIdentity] = useState({ company: '', email: '' })
+  const [code, setCode] = useState('')
+  const [passwords, setPasswords] = useState({ password: '', confirm: '' })
+  const [loading, setLoad] = useState(false)
+  const [error, setError] = useState('')
+  const [info, setInfo] = useState('')
+  const [codeError, setCodeError] = useState('')
+  const [sendCount, setSendCount] = useState(0)
+  const [cooldown, setCooldown] = useState(0)
+  const [blockSeconds, setBlockSeconds] = useState(0)
+  const [complete, setComplete] = useState(false)
+  const ref = useRef(null)
+  const { forgotPassword, verifyResetCode, resetPassword } = useAuthStore()
+
+  const setIdentityField = (key) => (event) => {
+    setIdentity((current) => ({ ...current, [key]: event.target.value }))
+    setError('')
+  }
+
+  const setPasswordField = (key) => (event) => {
+    setPasswords((current) => ({ ...current, [key]: event.target.value }))
+    setError('')
+  }
+
+  useEffect(() => {
+    const elements = ref.current?.querySelectorAll('.si')
+    if (elements) {
+      gsap.fromTo(elements, { opacity: 0, y: 14 }, { opacity: 1, y: 0, stagger: 0.07, duration: 0.45, ease: 'power2.out' })
+    }
+  }, [step])
+
+  useEffect(() => {
+    if (cooldown <= 0) return undefined
+
+    const timer = window.setInterval(() => {
+      setCooldown((seconds) => Math.max(seconds - 1, 0))
+    }, 1000)
+
+    return () => window.clearInterval(timer)
+  }, [cooldown])
+
+  useEffect(() => {
+    if (blockSeconds <= 0) return undefined
+
+    const timer = window.setInterval(() => {
+      setBlockSeconds((seconds) => Math.max(seconds - 1, 0))
+    }, 1000)
+
+    return () => window.clearInterval(timer)
+  }, [blockSeconds])
+
+  useEffect(() => {
+    if (blockSeconds === 0 && sendCount >= RESET_MAX_SENDS) {
+      setSendCount(0)
+    }
+  }, [blockSeconds, sendCount])
+
+  const startResetBlock = () => {
+    setCooldown(0)
+    setBlockSeconds(RESET_SESSION_BLOCK_SECONDS)
+    setError('You have reached the reset code limit. Please wait 15 minutes before requesting another code.')
+  }
+
+  const sendCode = async (event) => {
+    event?.preventDefault()
+    setError('')
+    setInfo('')
+
+    if (!identity.company.trim() || !identity.email.trim()) {
+      setError('Company name and email are required.')
+      return
+    }
+
+    if (blockSeconds > 0) {
+      setError(`You have reached the reset code limit. Please wait ${formatWait(blockSeconds)} before requesting another code.`)
+      return
+    }
+
+    if (sendCount >= RESET_MAX_SENDS) {
+      startResetBlock()
+      return
+    }
+
+    setLoad(true)
+    try {
+      const data = await forgotPassword({ companyName: identity.company, email: identity.email })
+      const nextSendCount = typeof data.remainingRequests === 'number'
+        ? RESET_MAX_SENDS - data.remainingRequests
+        : Math.min(sendCount + 1, RESET_MAX_SENDS)
+
+      setSendCount(nextSendCount)
+      setCooldown(data.resendAvailableInSeconds || RESET_RESEND_COOLDOWN_SECONDS)
+      setInfo(
+        nextSendCount >= RESET_MAX_SENDS
+          ? 'Reset code sent. This was your final code request for this session.'
+          : 'Reset code sent. Check your email for the latest 6 digit code.'
+      )
+      if (nextSendCount >= RESET_MAX_SENDS) {
+        setBlockSeconds(RESET_SESSION_BLOCK_SECONDS)
+      }
+      setStep('code')
+    } catch (err) {
+      const message = err.response?.data?.message || 'Failed to send reset code.'
+      setError(message)
+      if (message.toLowerCase().includes('15 minutes')) {
+        setBlockSeconds(RESET_SESSION_BLOCK_SECONDS)
+      } else if (message.toLowerCase().includes('20 seconds')) {
+        setCooldown(RESET_RESEND_COOLDOWN_SECONDS)
+      }
+    } finally {
+      setLoad(false)
+    }
+  }
+
+  const verifyCode = async (event) => {
+    event.preventDefault()
+    setError('')
+    setInfo('')
+    setCodeError('')
+
+    if (code.length !== RESET_CODE_LENGTH) {
+      setCodeError('Enter the 6 digit code from your email.')
+      return
+    }
+
+    setLoad(true)
+    try {
+      await verifyResetCode({
+        companyName: identity.company,
+        email: identity.email,
+        code,
+      })
+      setInfo('Code verified. Create your new password.')
+      setStep('password')
+    } catch (err) {
+      setCodeError(err.response?.data?.message || 'Invalid or expired reset code.')
+    } finally {
+      setLoad(false)
+    }
+  }
+
+  const submitNewPassword = async (event) => {
+    event.preventDefault()
+    setError('')
+    setInfo('')
+
+    if (passwords.password.length < 8) {
+      setError('Password must be at least 8 characters.')
+      return
+    }
+    if (passwords.password !== passwords.confirm) {
+      setError("Passwords don't match.")
+      return
+    }
+
+    setLoad(true)
+    try {
+      await resetPassword({
+        companyName: identity.company,
+        email: identity.email,
+        code,
+        newPassword: passwords.password,
+      })
+      setComplete(true)
+      setInfo('Password reset successfully. Sign in with your new password.')
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to reset password.')
+    } finally {
+      setLoad(false)
+    }
+  }
+
+  const resendDisabled = loading || cooldown > 0 || blockSeconds > 0 || sendCount >= RESET_MAX_SENDS
+  const remainingSends = Math.max(RESET_MAX_SENDS - sendCount, 0)
+
+  return (
+    <div ref={ref} className={VIEW_CLASS}>
+      <ResetStepIndicator step={step} />
+
+      {step === 'request' && (
+        <>
+          <div className="si">
+            <button type="button" onClick={() => onSwitch('login')} className={BACK_BUTTON_CLASS}>
+              <ArrowLeft /> Back to sign in
+            </button>
+            <p className="auth-eyebrow">Password reset</p>
+            <h2 className={TITLE_CLASS}>Get a reset code</h2>
+            <p className={DESC_CLASS}>Enter your workspace and email. The code expires in 15 minutes.</p>
+          </div>
+
+          {error && <div className="si"><ErrorAlert message={error} /></div>}
+
+          <form onSubmit={sendCode} className={FORM_CLASS}>
+            <div className="si">
+              <Field label="Company Name" placeholder="e.g. Beatific Studio" value={identity.company} onChange={setIdentityField('company')} />
+            </div>
+            <div className="si">
+              <Field label="Work Email" type="email" placeholder="jane@beatific.co" value={identity.email} onChange={setIdentityField('email')} />
+            </div>
+            <div className="si">
+              <button type="submit" disabled={loading} className="auth-btn-primary mt-1">
+                {loading ? <><Spinner />Sending code...</> : 'Send Reset Code'}
+              </button>
+            </div>
+          </form>
+
+          <div className="si">
+            <SwitchRow text="Remembered it?" linkText="Back to sign in" onClick={() => onSwitch('login')} />
+          </div>
+        </>
+      )}
+
+      {step === 'code' && (
+        <>
+          <div className="si">
+            <button type="button" onClick={() => setStep('request')} className={BACK_BUTTON_CLASS}>
+              <ArrowLeft /> Change email
+            </button>
+            <p className="auth-eyebrow">Check your email</p>
+            <h2 className={TITLE_CLASS}>Enter the reset code</h2>
+            <p className={DESC_CLASS}>Use the 6 digit code we sent. Request a new one only if the latest email does not arrive.</p>
+          </div>
+
+          {error && <div className="si"><ErrorAlert message={error} /></div>}
+          {info && <div className="si"><InfoNote>{info}</InfoNote></div>}
+
+          <form onSubmit={verifyCode} className={FORM_CLASS}>
+            <div className="si">
+              <CodeInput value={code} onChange={(value) => { setCode(value); setCodeError('') }} error={codeError} />
+            </div>
+            <div className="si">
+              <button type="submit" disabled={loading} className="auth-btn-primary mt-1">
+                {loading ? <><Spinner />Verifying...</> : <>Continue <ArrowRight /></>}
+              </button>
+            </div>
+          </form>
+
+          <div className="si flex flex-col items-center gap-2">
+            <button
+              type="button"
+              disabled={resendDisabled}
+              onClick={() => sendCode()}
+              className={cn(
+                'auth-link cursor-pointer border-0 bg-transparent p-0 text-sm font-semibold',
+                resendDisabled && 'cursor-not-allowed opacity-55'
+              )}
+            >
+              {blockSeconds > 0 || sendCount >= RESET_MAX_SENDS
+                ? `Send reset code again in ${formatWait(blockSeconds || RESET_SESSION_BLOCK_SECONDS)}`
+                : cooldown > 0
+                  ? `Send reset code again in ${cooldown}s`
+                  : 'Send reset code again'}
+            </button>
+            <p className="m-0 text-center text-xs text-[var(--c-text-3)]">
+              {remainingSends > 0
+                ? `${remainingSends} reset code request${remainingSends === 1 ? '' : 's'} left in this session.`
+                : 'Please wait 15 minutes before requesting another reset session.'}
+            </p>
+          </div>
+        </>
+      )}
+
+      {step === 'password' && (
+        <>
+          <div className="si">
+            {!complete && (
+              <button type="button" onClick={() => setStep('code')} className={BACK_BUTTON_CLASS}>
+                <ArrowLeft /> Back to code
+              </button>
+            )}
+            <p className="auth-eyebrow">Password reset</p>
+            <h2 className={TITLE_CLASS}>Set a new password</h2>
+            <p className={DESC_CLASS}>Choose a secure password for your next sign in.</p>
+          </div>
+
+          {error && <div className="si"><ErrorAlert message={error} /></div>}
+          {info && <div className="si"><InfoNote>{info}</InfoNote></div>}
+
+          {!complete ? (
+            <form onSubmit={submitNewPassword} className={FORM_CLASS}>
+              <div className="si">
+                <Field label="New Password" type="password" placeholder="Min. 8 characters" value={passwords.password} onChange={setPasswordField('password')} />
+                <StrengthBar password={passwords.password} />
+              </div>
+              <div className="si">
+                <Field label="Confirm Password" type="password" placeholder="Repeat your password" value={passwords.confirm} onChange={setPasswordField('confirm')} />
+              </div>
+              <div className="si">
+                <button type="submit" disabled={loading} className="auth-btn-primary mt-1">
+                  {loading ? <><Spinner />Resetting...</> : 'Reset Password'}
+                </button>
+              </div>
+            </form>
+          ) : (
+            <div className="si">
+              <button type="button" onClick={() => onSwitch('login')} className="auth-btn-primary">
+                Back to Sign In
+              </button>
+            </div>
+          )}
+
+          {!complete && (
+            <div className="si">
+              <SwitchRow text="Need a new code?" linkText="Go back" onClick={() => setStep('code')} />
+            </div>
+          )}
+        </>
+      )}
     </div>
   )
 }
@@ -585,7 +1005,8 @@ function RegisterView({ onSwitch }) {
 }
 
 export default function AuthPage({ defaultTab = 'login' }) {
-  const [view, setView] = useState(defaultTab)
+  const initialView = defaultTab === 'reset' ? 'forgot' : defaultTab
+  const [view, setView] = useState(initialView)
   const cardRef = useRef(null)
 
   const switchView = useCallback((next) => {
@@ -616,9 +1037,9 @@ export default function AuthPage({ defaultTab = 'login' }) {
     <AuthLayout>
       <div ref={cardRef}>
         <Card>
-          {view === 'login'
-            ? <LoginView onSwitch={switchView} />
-            : <RegisterView onSwitch={switchView} />}
+          {view === 'login' && <LoginView onSwitch={switchView} />}
+          {view === 'register' && <RegisterView onSwitch={switchView} />}
+          {view === 'forgot' && <ForgotPasswordView onSwitch={switchView} />}
         </Card>
       </div>
     </AuthLayout>

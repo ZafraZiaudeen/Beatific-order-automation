@@ -15,46 +15,36 @@ import TrendingUpIcon from '@mui/icons-material/TrendingUp'
 import UploadFileOutlinedIcon from '@mui/icons-material/UploadFileOutlined'
 import GroupAddOutlinedIcon from '@mui/icons-material/GroupAddOutlined'
 import useAuthStore from '../stores/authStore'
+import { canManageWorkspace } from '../lib/permissions'
 import { useNavigate } from 'react-router-dom'
 import api from '../lib/api'
 
 function StatCard({ title, value, change, icon, color, bgGradient, loading }) {
   const IconComponent = icon
   return (
-    <Card>
-      <CardContent sx={{ p: 3 }}>
-        <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-          <Box>
-            <Typography variant="subtitle2" sx={{ color: 'text.secondary', mb: 1 }}>
+    <Card sx={{ height: '100%', background: bgGradient }}>
+      <CardContent sx={{ p: 2.5, display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2 }}>
+          <Box sx={{ minWidth: 0 }}>
+            <Typography variant="subtitle1" sx={{ color: 'text.primary', fontWeight: 600 }}>
               {title}
             </Typography>
-            {loading ? (
-              <Skeleton width={60} height={40} />
-            ) : (
-              <Typography variant="h3" sx={{ fontWeight: 800, color: 'text.primary' }}>
-                {value}
-              </Typography>
-            )}
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 1 }}>
-              <TrendingUpIcon sx={{ fontSize: 16, color }} />
-              <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-                {change}
-              </Typography>
-            </Box>
           </Box>
-          <Box
-            sx={{
-              width: 56,
-              height: 56,
-              borderRadius: '16px',
-              background: bgGradient,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexShrink: 0,
-            }}
-          >
-            <IconComponent sx={{ fontSize: 28, color }} />
+          <IconComponent sx={{ fontSize: 26, color, flexShrink: 0 }} />
+        </Box>
+        <Box sx={{ lineHeight: 1, display: 'flex', flexDirection: 'column', gap: 1.25 }}>
+          {loading ? (
+            <Skeleton width={64} height={42} />
+          ) : (
+            <Typography variant="h2" sx={{ fontWeight: 700, color: 'text.primary', lineHeight: 1 }}>
+              {value}
+            </Typography>
+          )}
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+            <TrendingUpIcon sx={{ fontSize: 16, color }} />
+            <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+              {change}
+            </Typography>
           </Box>
         </Box>
       </CardContent>
@@ -72,20 +62,20 @@ function QuickActionCard({ icon, title, description, to, color }) {
         cursor: 'pointer',
         border: '1px solid',
         borderColor: 'divider',
+        boxShadow: 'none',
         transition: 'all 0.2s',
         '&:hover': {
-          borderColor: 'primary.light',
-          boxShadow: (t) => `0 8px 20px -4px ${alpha(t.palette.grey[500], 0.15)}`,
-          transform: 'translateY(-2px)',
+          bgcolor: 'grey.50',
+          boxShadow: (t) => `0 5px 12px ${alpha(t.palette.common.black, 0.12)}`,
         },
       }}
     >
       <CardContent sx={{ p: 2.5 }}>
         <Box
           sx={{
-            width: 44,
-            height: 44,
-            borderRadius: '12px',
+            width: 40,
+            height: 40,
+            borderRadius: 1,
             bgcolor: alpha(color, 0.1),
             display: 'flex',
             alignItems: 'center',
@@ -108,6 +98,7 @@ function QuickActionCard({ icon, title, description, to, color }) {
 
 export default function DashboardPage() {
   const { user, company, activeStore } = useAuthStore()
+  const canManage = canManageWorkspace(user)
   const [statsLoading, setStatsLoading] = useState(true)
   const [stats, setStats] = useState({
     totalOrders: 0,
@@ -168,15 +159,15 @@ export default function DashboardPage() {
       change: stats.totalOrders > 0 ? 'All time' : 'No orders yet',
       icon: ShoppingCartOutlinedIcon,
       color: '#00A76F',
-      bgGradient: 'linear-gradient(135deg, #C8FAD6 0%, #5BE49B 100%)',
+      bgGradient: 'linear-gradient(320deg, rgba(211, 252, 210, 0.7) 0%, #ffffff 70%)',
     },
     {
       title: 'Sent to Lulu',
       value: stats.sentToLulu,
       change: 'In progress + Completed',
       icon: LocalPrintshopOutlinedIcon,
-      color: '#3366FF',
-      bgGradient: 'linear-gradient(135deg, #D6E4FF 0%, #84A9FF 100%)',
+      color: '#00B8D9',
+      bgGradient: 'linear-gradient(320deg, rgba(202, 253, 245, 0.7) 0%, #ffffff 70%)',
     },
     {
       title: 'Products Mapped',
@@ -184,7 +175,7 @@ export default function DashboardPage() {
       change: 'With cover + Pod ID',
       icon: Inventory2OutlinedIcon,
       color: '#FFAB00',
-      bgGradient: 'linear-gradient(135deg, #FFF5CC 0%, #FFD666 100%)',
+      bgGradient: 'linear-gradient(320deg, rgba(255, 245, 204, 0.7) 0%, #ffffff 70%)',
     },
     {
       title: 'Pending Review',
@@ -192,12 +183,12 @@ export default function DashboardPage() {
       change: 'Waiting + Custom + Drawings',
       icon: PendingActionsOutlinedIcon,
       color: '#FF5630',
-      bgGradient: 'linear-gradient(135deg, #FFE9D5 0%, #FFAC82 100%)',
+      bgGradient: 'linear-gradient(320deg, rgba(255, 233, 213, 0.7) 0%, #ffffff 70%)',
     },
   ]
 
   const QUICK_ACTIONS = [
-    {
+    canManage && {
       icon: UploadFileOutlinedIcon,
       title: 'Import Orders',
       description: 'Upload an Etsy spreadsheet to import and process orders',
@@ -211,14 +202,14 @@ export default function DashboardPage() {
       to: '/products',
       color: '#FFAB00',
     },
-    {
+    canManage && {
       icon: GroupAddOutlinedIcon,
       title: 'Invite Team',
       description: 'Add designers and reviewers to your workspace',
       to: '/settings/team',
-      color: '#8E33FF',
+      color: '#637381',
     },
-  ]
+  ].filter(Boolean)
 
   const navigate = useNavigate()
 
@@ -227,26 +218,29 @@ export default function DashboardPage() {
       {/* Welcome banner */}
       <Card
         sx={{
-          mb: 4,
-          background: 'linear-gradient(135deg, #004B50 0%, #007867 100%)',
+          mb: 3,
+          background: 'linear-gradient(97.05deg, #008fba 0%, #00a76f 100%)',
           color: '#fff',
           overflow: 'hidden',
           position: 'relative',
         }}
       >
-        <CardContent sx={{ p: { xs: 3, md: 5 }, position: 'relative', zIndex: 1 }}>
-          <Typography variant="h4" sx={{ fontWeight: 800, mb: 1, color: '#fff' }}>
+        <CardContent sx={{ p: { xs: 3, md: 4 }, position: 'relative', zIndex: 1 }}>
+          <Typography variant="h3" sx={{ fontWeight: 700, mb: 1.25, color: '#fff', fontSize: 0 }}>
+            <Box component="span" sx={{ fontSize: { xs: '1.53125rem', sm: '1.75rem' }, lineHeight: 1.25 }}>
+              Welcome back, {user?.name?.split(' ')[0]}!
+            </Box>
             Welcome back, {user?.name?.split(' ')[0]}! 👋
           </Typography>
           <Typography variant="body1" sx={{ color: alpha('#fff', 0.72), maxWidth: 480, mb: 3, lineHeight: 1.7 }}>
-            Your order automation dashboard is ready. Import orders from Etsy, manage your product library, and send to Lulu Print, all in one place.
+            {canManage
+              ? 'Your order automation dashboard is ready. Import orders from Etsy, manage your product library, and send to Lulu Print, all in one place.'
+              : 'Your order dashboard is ready. Review Etsy and Lulu orders, check product mappings, and keep an eye on fulfillment progress.'}
           </Typography>
           <Typography variant="subtitle2" sx={{ color: alpha('#fff', 0.56) }}>
             {company?.name}
           </Typography>
         </CardContent>
-        <Box sx={{ position: 'absolute', top: -40, right: -40, width: 200, height: 200, borderRadius: '50%', bgcolor: alpha('#fff', 0.04) }} />
-        <Box sx={{ position: 'absolute', bottom: -60, right: 80, width: 160, height: 160, borderRadius: '50%', bgcolor: alpha('#fff', 0.04) }} />
       </Card>
 
       {/* Stat cards */}
@@ -277,9 +271,11 @@ export default function DashboardPage() {
                 <Box sx={{ textAlign: 'center', py: 4 }}>
                   <ShoppingCartOutlinedIcon sx={{ fontSize: 36, color: 'text.disabled', mb: 1 }} />
                   <Typography variant="body2" color="text.secondary">No orders yet</Typography>
-                  <Button variant="outlined" size="small" sx={{ mt: 2 }} onClick={() => navigate('/import')}>
-                    Import Orders
-                  </Button>
+                  {canManage && (
+                    <Button variant="outlined" size="small" sx={{ mt: 2 }} onClick={() => navigate('/import')}>
+                      Import Orders
+                    </Button>
+                  )}
                 </Box>
               ) : (
                 <>
@@ -322,7 +318,8 @@ export default function DashboardPage() {
                       </Box>
                     </Box>
                   ))}
-                  <Box sx={{ mt: 2, textAlign: 'center' }}>
+                  <Box sx={{ mt: 2, textAlign: 'center', '& .MuiButton-root:last-of-type': { display: 'none' } }}>
+                    <Button size="small" onClick={() => navigate('/orders/etsy')}>View all orders</Button>
                     <Button size="small" onClick={() => navigate('/orders/etsy')}>View all orders →</Button>
                   </Box>
                 </>

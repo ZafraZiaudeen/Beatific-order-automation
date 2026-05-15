@@ -10,13 +10,13 @@ import { ETSY_ORDER_STATUSES } from '../../lib/constants'
 import api from '../../lib/api'
 
 const STATUS_COLORS = {
-  custom_orders: '#7B1FA2',
-  waiting: '#F57F17',
-  in_progress: '#1565C0',
-  completed: '#1B5E20',
+  custom_orders: '#637381',
+  waiting: '#B76E00',
+  in_progress: '#006C9C',
+  completed: '#118D57',
 }
 
-function KanbanColumn({ status, orders, onCardClick, statusCounts }) {
+function KanbanColumn({ status, orders, onCardClick, statusCounts, readOnly }) {
   const color = STATUS_COLORS[status.value] || '#637381'
   const count = statusCounts[status.value] || orders.length
 
@@ -80,7 +80,7 @@ function KanbanColumn({ status, orders, onCardClick, statusCounts }) {
             }}
           >
             {orders.map((order, index) => (
-              <Draggable key={order._id} draggableId={order._id} index={index}>
+              <Draggable key={order._id} draggableId={order._id} index={index} isDragDisabled={readOnly}>
                 {(draggableProvided, draggableSnapshot) => (
                   <div
                     ref={draggableProvided.innerRef}
@@ -117,7 +117,7 @@ function KanbanColumn({ status, orders, onCardClick, statusCounts }) {
   )
 }
 
-export default function OrderKanban({ orders, onOrderClick, onOrdersChange, statusCounts }) {
+export default function OrderKanban({ orders, onOrderClick, onOrdersChange, statusCounts, readOnly = false }) {
   const [optimisticOrders, setOptimisticOrders] = useState(null)
   const [moving, setMoving] = useState(false)
 
@@ -132,6 +132,7 @@ export default function OrderKanban({ orders, onOrderClick, onOrdersChange, stat
   const handleDragEnd = useCallback(async (result) => {
     const { destination, source, draggableId } = result
 
+    if (readOnly) return
     if (!destination) return
     if (destination.droppableId === source.droppableId && destination.index === source.index) return
 
@@ -156,7 +157,7 @@ export default function OrderKanban({ orders, onOrderClick, onOrdersChange, stat
       setOptimisticOrders(null)
       setMoving(false)
     }
-  }, [displayOrders, onOrdersChange])
+  }, [displayOrders, onOrdersChange, readOnly])
 
   return (
     <Box sx={{ position: 'relative' }}>
@@ -197,6 +198,7 @@ export default function OrderKanban({ orders, onOrderClick, onOrdersChange, stat
               orders={grouped[status.value] || []}
               onCardClick={onOrderClick}
               statusCounts={statusCounts}
+              readOnly={readOnly}
             />
           ))}
         </Box>

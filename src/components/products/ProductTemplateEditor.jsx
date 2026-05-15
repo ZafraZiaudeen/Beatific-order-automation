@@ -177,8 +177,8 @@ function TemplateStage({
         flex: 1,
         minHeight: 0,
         overflow: 'auto',
-        backgroundColor: '#f0eeeb',
-        backgroundImage: 'radial-gradient(circle, rgba(120, 113, 108, 0.28) 1px, transparent 1px)',
+        backgroundColor: '#F4F6F8',
+        backgroundImage: 'radial-gradient(circle, rgba(145, 158, 171, 0.24) 1px, transparent 1px)',
         backgroundSize: '20px 20px',
       }}
     >
@@ -188,8 +188,8 @@ function TemplateStage({
             width: pageWidth * zoom,
             height: pageHeight * zoom,
             bgcolor: 'common.white',
-            boxShadow: '0 28px 80px rgba(28, 25, 23, 0.28)',
-            outline: '1px solid rgba(28, 25, 23, 0.08)',
+            boxShadow: '0 0 2px 0 rgba(145,158,171,0.20), 0 12px 24px -4px rgba(145,158,171,0.12)',
+            outline: '1px solid rgba(145, 158, 171, 0.28)',
             overflow: 'hidden',
             flexShrink: 0,
           }}
@@ -348,8 +348,8 @@ function EmptyCanvas({ target, onImport, inherited }) {
         justifyContent: 'center',
         textAlign: 'center',
         p: 4,
-        bgcolor: '#f0eeeb',
-        backgroundImage: 'radial-gradient(circle, rgba(120, 113, 108, 0.28) 1px, transparent 1px)',
+        bgcolor: '#F4F6F8',
+        backgroundImage: 'radial-gradient(circle, rgba(145, 158, 171, 0.24) 1px, transparent 1px)',
         backgroundSize: '20px 20px',
       }}
     >
@@ -824,8 +824,8 @@ export default function ProductTemplateEditor({ product, onBack, onSaved }) {
   )
 
   return (
-    <Box sx={{ position: 'fixed', inset: 0, zIndex: (theme) => theme.zIndex.modal - 1, display: 'flex', flexDirection: 'column', bgcolor: '#f8f7f4' }}>
-      <Box sx={{ height: 58, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 1.25, px: 1.5, bgcolor: 'background.paper', borderBottom: '1px solid', borderColor: 'divider' }}>
+    <Box sx={{ position: 'fixed', inset: 0, zIndex: (theme) => theme.zIndex.modal - 1, display: 'flex', flexDirection: 'column', bgcolor: 'background.default' }}>
+      <Box sx={{ height: 58, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 1.25, px: 1.5, bgcolor: 'background.paper', borderBottom: '1px dashed', borderColor: 'divider' }}>
         <Tooltip title="Back to product library">
           <IconButton onClick={onBack} size="small"><ArrowBackIcon /></IconButton>
         </Tooltip>
@@ -883,7 +883,7 @@ export default function ProductTemplateEditor({ product, onBack, onSaved }) {
       </Box>
 
       {selectedVariant && (
-        <Box sx={{ flexShrink: 0, px: 1.5, py: 1, bgcolor: 'background.paper', borderBottom: '1px solid', borderColor: 'divider', display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+        <Box sx={{ flexShrink: 0, px: 1.5, py: 1, bgcolor: 'background.paper', borderBottom: '1px dashed', borderColor: 'divider', display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
           <Chip size="small" label={selectedVariant.name} color="primary" variant="outlined" sx={{ maxWidth: 280 }} />
           {[
             ['cover', 'Cover'],
@@ -920,7 +920,7 @@ export default function ProductTemplateEditor({ product, onBack, onSaved }) {
       )}
 
       <Box sx={{ flex: 1, minHeight: 0, display: 'flex', overflow: 'hidden' }}>
-        <Box sx={{ width: 72, flexShrink: 0, bgcolor: 'background.paper', borderRight: '1px solid', borderColor: 'divider', display: 'flex', flexDirection: 'column', alignItems: 'center', py: 1.5, gap: 0.75 }}>
+        <Box sx={{ width: 72, flexShrink: 0, bgcolor: 'background.paper', borderRight: '1px dashed', borderColor: 'divider', display: 'flex', flexDirection: 'column', alignItems: 'center', py: 1.5, gap: 0.75 }}>
           <input ref={fileInputRef} type="file" accept=".pdf,application/pdf" hidden onChange={(event) => importPdf(event.target.files?.[0])} />
           <Tooltip title={`Import ${TARGETS[target].label} PDF`} placement="right">
             <span>

@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { gsap } from 'gsap'
-import ThreeBackground from './ThreeBackground'
+import bgImage from '../../assets/login_background.png'
 import BookBrandIcon from '../../assets/icons/auth/book-brand.svg?react'
 import CheckIcon from '../../assets/icons/auth/check.svg?react'
 
@@ -54,9 +54,13 @@ export default function AuthLayout({ children }) {
   }, [])
 
   return (
-    <div className="auth-shell min-h-screen">
+    <div className="auth-shell h-screen overflow-hidden">
       <div className="auth-left">
-        <ThreeBackground />
+        <div 
+          className="absolute inset-0 z-0 bg-cover bg-center bg-no-repeat"
+          style={{ backgroundImage: `url(${bgImage})` }}
+        />
+        <div className="absolute inset-0 z-0 bg-gradient-to-br from-slate-900/60 via-slate-900/40 to-slate-950/90 pointer-events-none" />
         <div className="auth-left-glow" />
         <div className="auth-left-overlay" />
 
@@ -102,7 +106,7 @@ export default function AuthLayout({ children }) {
 
       <div ref={rightRef} className="auth-right">
         <div className="auth-right-inner">
-          <div className="auth-mobile-brand mb-2 justify-center">
+          <div className="auth-mobile-brand mb-1 justify-center">
             <BrandMark dark={false} />
           </div>
 

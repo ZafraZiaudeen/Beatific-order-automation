@@ -101,7 +101,7 @@ export default function VerifyEmailPage() {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        bgcolor: '#f0f4f8',
+        bgcolor: 'background.default',
         px: 2,
       }}
     >
@@ -111,18 +111,18 @@ export default function VerifyEmailPage() {
           maxWidth: 440,
           width: '100%',
           p: { xs: 3, sm: 5 },
-          borderRadius: 3,
+          borderRadius: 2,
           textAlign: 'center',
           border: '1px solid',
           borderColor: 'divider',
-          boxShadow: '0 20px 60px rgba(15,23,42,0.10)',
+          boxShadow: '0 0 2px 0 rgba(145,158,171,0.20), 0 12px 24px -4px rgba(145,158,171,0.12)',
         }}
       >
         <Box
           sx={{
             width: 64,
             height: 64,
-            borderRadius: '16px',
+            borderRadius: 1,
             bgcolor: 'primary.lighter',
             display: 'flex',
             alignItems: 'center',

@@ -10,7 +10,6 @@ import IconButton from '@mui/material/IconButton'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import Divider from '@mui/material/Divider'
-import { alpha } from '@mui/material/styles'
 import DashboardIcon from '@mui/icons-material/DashboardOutlined'
 import ShoppingCartIcon from '@mui/icons-material/ShoppingCartOutlined'
 import LocalPrintshopIcon from '@mui/icons-material/LocalPrintshopOutlined'
@@ -23,10 +22,16 @@ import ChevronLeftIcon from '@mui/icons-material/ChevronLeft'
 import ChevronRightIcon from '@mui/icons-material/ChevronRight'
 import BookOutlinedIcon from '@mui/icons-material/AutoStoriesOutlined'
 import { SIDEBAR_WIDTH, SIDEBAR_COLLAPSED_WIDTH } from '../../lib/constants'
+import useAuthStore from '../../stores/authStore'
+import { canManageWorkspace } from '../../lib/permissions'
 
-const SIDEBAR_BG = '#1C252E'
-const SIDEBAR_HOVER = '#28343E'
+const SIDEBAR_BG = '#FFFFFF'
+const SIDEBAR_HOVER = '#F9FAFB'
 const ACTIVE_COLOR = '#00A76F'
+const ACTIVE_BG = '#C8FAD6'
+const SIDEBAR_BORDER = '#DFE3E8'
+const TEXT_COLOR = '#637381'
+const TEXT_DARK = '#1C252E'
 
 const NAV_SECTIONS = [
   {
@@ -75,21 +80,23 @@ function NavItem({ item, collapsed, isActive }) {
         sx={{
           minHeight: 44,
           borderRadius: 1,
-          mx: collapsed ? 1 : 1.5,
-          mb: 0.5,
-          px: collapsed ? 1.5 : 2,
+          mx: collapsed ? 1 : 1,
+          mb: 0.25,
+          px: collapsed ? 1.25 : 1.5,
           justifyContent: collapsed ? 'center' : 'flex-start',
-          color: isActive ? ACTIVE_COLOR : alpha('#fff', 0.64),
-          bgcolor: isActive ? alpha(ACTIVE_COLOR, 0.08) : 'transparent',
+          color: isActive ? '#007867' : TEXT_COLOR,
+          bgcolor: isActive ? ACTIVE_BG : 'transparent',
+          fontWeight: 500,
           '&:hover': {
-            bgcolor: isActive ? alpha(ACTIVE_COLOR, 0.12) : SIDEBAR_HOVER,
+            color: isActive ? '#007867' : TEXT_DARK,
+            bgcolor: isActive ? ACTIVE_BG : SIDEBAR_HOVER,
           },
         }}
       >
         <ListItemIcon
           sx={{
             minWidth: collapsed ? 0 : 36,
-            color: isActive ? ACTIVE_COLOR : alpha('#fff', 0.5),
+            color: isActive ? '#007867' : TEXT_COLOR,
             justifyContent: 'center',
           }}
         >
@@ -102,7 +109,7 @@ function NavItem({ item, collapsed, isActive }) {
               primary: {
                 sx: {
                   fontSize: '0.875rem',
-                  fontWeight: isActive ? 600 : 500,
+                  fontWeight: 500,
                 },
               },
             }}
@@ -115,6 +122,15 @@ function NavItem({ item, collapsed, isActive }) {
 
 export default function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose }) {
   const location = useLocation()
+  const { user } = useAuthStore()
+  const canManage = canManageWorkspace(user)
+  const sections = NAV_SECTIONS.map((section) => ({
+    ...section,
+    items: section.items.filter((item) => {
+      if (['/import', '/settings/team', '/settings/stores'].includes(item.path)) return canManage
+      return true
+    }),
+  })).filter((section) => section.items.length > 0)
 
   const content = (
     <Box
@@ -123,6 +139,8 @@ export default function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose
         display: 'flex',
         flexDirection: 'column',
         bgcolor: SIDEBAR_BG,
+        color: TEXT_COLOR,
+        borderRight: `1px dashed ${SIDEBAR_BORDER}`,
         overflow: 'hidden',
         minHeight: 0,
       }}
@@ -133,21 +151,21 @@ export default function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose
           display: 'flex',
           alignItems: 'center',
           gap: 1.5,
-          px: collapsed ? 2 : 3,
-          py: 2.5,
-          minHeight: 64,
+          px: collapsed ? 1.25 : 2,
+          py: 1.5,
+          minHeight: 72,
         }}
       >
         <Box
           sx={{
             width: 40,
             height: 40,
-            borderRadius: '12px',
+            borderRadius: '50%',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            background: `linear-gradient(135deg, ${ACTIVE_COLOR} 0%, #00d68f 100%)`,
-            boxShadow: `0 8px 16px ${alpha(ACTIVE_COLOR, 0.24)}`,
+            bgcolor: 'primary.main',
+            boxShadow: '0 8px 16px rgba(0, 167, 111, 0.24)',
             flexShrink: 0,
           }}
         >
@@ -161,20 +179,20 @@ export default function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose
                 fontWeight: 800,
                 letterSpacing: '0.14em',
                 textTransform: 'uppercase',
-                color: '#f8fafc',
+                color: TEXT_DARK,
                 lineHeight: 1.2,
               }}
             >
               Beatific.co
             </Typography>
-            <Typography sx={{ fontSize: '0.7rem', color: alpha('#fff', 0.45), mt: 0.2 }}>
+            <Typography sx={{ fontSize: '0.75rem', color: TEXT_COLOR, mt: 0.2 }}>
               Order Automation
             </Typography>
           </Box>
         )}
       </Box>
 
-      <Divider sx={{ borderColor: alpha('#fff', 0.08) }} />
+      <Divider sx={{ borderStyle: 'dashed', borderColor: SIDEBAR_BORDER }} />
 
       {/* Navigation */}
       <Box
@@ -193,7 +211,7 @@ export default function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose
           },
         }}
       >
-        {NAV_SECTIONS.map((section) => (
+        {sections.map((section) => (
           <List
             key={section.title}
             subheader={
@@ -201,7 +219,7 @@ export default function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose
                 <ListSubheader
                   sx={{
                     bgcolor: 'transparent',
-                    color: alpha('#fff', 0.32),
+                    color: TEXT_COLOR,
                     fontSize: '0.72rem',
                     fontWeight: 700,
                     letterSpacing: '0.08em',
@@ -235,7 +253,9 @@ export default function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose
         <IconButton
           onClick={onToggle}
           sx={{
-            color: alpha('#fff', 0.45),
+            width: 36,
+            height: 36,
+            color: TEXT_COLOR,
             '&:hover': { bgcolor: SIDEBAR_HOVER },
           }}
         >
@@ -282,7 +302,7 @@ export default function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose
         ModalProps={{ keepMounted: true }}
         sx={{
           display: { xs: 'block', lg: 'none' },
-          '& .MuiDrawer-paper': { width: SIDEBAR_WIDTH },
+          '& .MuiDrawer-paper': { width: SIDEBAR_WIDTH, bgcolor: SIDEBAR_BG },
         }}
       >
         {content}

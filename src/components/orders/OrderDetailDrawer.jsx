@@ -59,7 +59,7 @@ const getInitials = (name = '') =>
   name.split(' ').slice(0, 2).map((w) => w[0]?.toUpperCase()).join('')
 
 const avatarColor = (name = '') => {
-  const colors = ['#5C6BC0', '#0288D1', '#00897B', '#7B1FA2', '#C62828', '#E65100', '#2E7D32']
+  const colors = ['#00A76F', '#00B8D9', '#22C55E', '#637381', '#FF5630', '#FFAB00', '#118D57']
   const idx = name.charCodeAt(0) % colors.length
   return colors[idx]
 }
@@ -264,6 +264,7 @@ export default function OrderDetailDrawer({ order, open, onClose, onRefresh }) {
   const [shippingLevelSaving, setShippingLevelSaving] = useState(false)
   const [product, setProduct] = useState(null)
   const [templateDialogOpen, setTemplateDialogOpen] = useState(false)
+  const orderId = order?._id
 
   useEffect(() => { setLocalOrder(order) }, [order])
 
@@ -277,17 +278,17 @@ export default function OrderDetailDrawer({ order, open, onClose, onRefresh }) {
   }, [localOrder?.podPackageId])
 
   useEffect(() => {
-    if (open && order) {
+    if (open && orderId) {
       setStatusChange('')
       setStatusNote('')
       setStatusError('')
       setEventsLoading(true)
-      api.get(`/orders/${order._id}/events`)
+      api.get(`/orders/${orderId}/events`)
         .then(({ data }) => setEvents(data))
         .catch(() => setEvents([]))
         .finally(() => setEventsLoading(false))
     }
-  }, [open, order?._id])
+  }, [open, orderId])
 
   useEffect(() => {
     const productId = localOrder?.productId

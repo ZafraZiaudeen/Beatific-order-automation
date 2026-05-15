@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { clearAuthSessionStorage, getStoredToken } from './authSession'
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api'
 
@@ -12,7 +13,7 @@ const api = axios.create({
 // Request interceptor — attach token
 api.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('beatific_token')
+    const token = getStoredToken()
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
     }
@@ -26,11 +27,12 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      localStorage.removeItem('beatific_token')
-      localStorage.removeItem('beatific_user')
+      clearAuthSessionStorage()
       // Only redirect if not already on auth pages
       if (!window.location.pathname.startsWith('/login') &&
           !window.location.pathname.startsWith('/register') &&
+          !window.location.pathname.startsWith('/forgot-password') &&
+          !window.location.pathname.startsWith('/reset-password') &&
           !window.location.pathname.startsWith('/invite')) {
         window.location.href = '/login'
       }
