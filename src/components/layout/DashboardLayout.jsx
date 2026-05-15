@@ -3,7 +3,6 @@ import { Outlet } from 'react-router-dom'
 import Box from '@mui/material/Box'
 import Sidebar from './Sidebar'
 import Header from './Header'
-import { SIDEBAR_WIDTH, SIDEBAR_COLLAPSED_WIDTH } from '../../lib/constants'
 
 export default function DashboardLayout() {
   const [collapsed, setCollapsed] = useState(false)
@@ -34,9 +33,9 @@ export default function DashboardLayout() {
         <Box
           sx={{
             flex: 1,
-            px: { xs: 2, sm: 3, md: 4 },
-            py: { xs: 2, sm: 3 },
-            maxWidth: 1400,
+            px: { xs: 2, sm: 3, lg: 5 },
+            py: { xs: 2.5, lg: 4 },
+            maxWidth: 1536,
             width: '100%',
             mx: 'auto',
           }}

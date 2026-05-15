@@ -19,9 +19,10 @@ import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
 import LocalShippingOutlinedIcon from '@mui/icons-material/LocalShippingOutlined'
 import PersonOutlineOutlinedIcon from '@mui/icons-material/PersonOutlineOutlined'
 import PlayArrowRoundedIcon from '@mui/icons-material/PlayArrowRounded'
-import ReceiptLongOutlinedIcon from '@mui/icons-material/ReceiptLongOutlined'
+import WarningAmberOutlinedIcon from '@mui/icons-material/WarningAmberOutlined'
 import api from '../lib/api'
 import useAuthStore from '../stores/authStore'
+import { canManageWorkspace } from '../lib/permissions'
 import StatusBadge from '../components/orders/StatusBadge'
 import OrderFormDialog from '../components/orders/OrderFormDialog'
 import LuluReviewDialog from '../components/orders/LuluReviewDialog'
@@ -51,6 +52,13 @@ const detailLines = (address = {}) => [
   address.country,
 ].filter(Boolean)
 
+const waitingLabel = ({ status, hasUnmapped, hasAiFlags, isProductMapped }) => {
+  if (status !== 'waiting') return undefined
+  if (hasUnmapped || isProductMapped === false) return 'Waiting (Unmapped)'
+  if (hasAiFlags) return 'Waiting (AI Flagged)'
+  return 'Waiting'
+}
+
 function InfoPanel({ icon, title, children }) {
   return (
     <Card sx={{ p: 2.25, border: '1px solid', borderColor: 'divider', boxShadow: '0 8px 24px rgba(15, 23, 42, 0.04)', borderRadius: 2.5 }}>
@@ -63,10 +71,11 @@ function InfoPanel({ icon, title, children }) {
   )
 }
 
-function ItemCard({ item, index, onFillTemplate, onAssetChange }) {
+function ItemCard({ item, index, onFillTemplate, onAssetChange, canManage }) {
   const personalization = Object.entries(item.personalization || {})
   const isCustom = item.etsyStatus === 'custom_orders'
-  const canFillTemplate = item.etsyStatus === 'in_progress' && item.productId
+  const canFillTemplate = canManage && item.etsyStatus === 'in_progress' && item.productId
+  const itemAiFlags = (item.aiFlags || []).filter((flag) => flag !== 'Missing Product Mapping')
   return (
     <Card sx={{ p: 1.75, border: '1px solid', borderColor: 'divider', boxShadow: '0 8px 20px rgba(15, 23, 42, 0.035)', borderRadius: 2.5 }}>
       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '96px 1.4fr 1fr 1fr auto' }, gap: 2, alignItems: 'center' }}>
@@ -121,7 +130,25 @@ function ItemCard({ item, index, onFillTemplate, onAssetChange }) {
         </Box>
 
         <Box sx={{ textAlign: { xs: 'left', md: 'right' }, minWidth: 110 }}>
-          <StatusBadge status={item.etsyStatus} size="small" />
+          <StatusBadge
+            status={item.etsyStatus}
+            size="small"
+            label={waitingLabel({
+              status: item.etsyStatus,
+              isProductMapped: item.isProductMapped,
+              hasAiFlags: itemAiFlags.length > 0,
+            })}
+          />
+          {itemAiFlags.length > 0 && (
+            <Chip
+              icon={<WarningAmberOutlinedIcon sx={{ fontSize: '13px !important' }} />}
+              label={`${itemAiFlags.length} AI flag${itemAiFlags.length === 1 ? '' : 's'}`}
+              size="small"
+              color="warning"
+              variant="outlined"
+              sx={{ mt: 0.75, mb: 0.5, fontWeight: 700 }}
+            />
+          )}
           <Typography variant="subtitle2" sx={{ fontWeight: 900 }}>{money(item.price)}</Typography>
           <Typography variant="body2" color="text.secondary">x {item.quantity || 1}</Typography>
           <Typography variant="subtitle2" sx={{ fontWeight: 900, color: 'primary.main', mt: 0.5 }}>
@@ -130,7 +157,7 @@ function ItemCard({ item, index, onFillTemplate, onAssetChange }) {
         </Box>
       </Box>
 
-      {(canFillTemplate || isCustom) && (
+      {(canFillTemplate || (canManage && isCustom)) && (
         <Box sx={{ mt: 1.75, pt: 1.75, borderTop: '1px solid', borderColor: 'divider' }}>
           {canFillTemplate && (
             <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 1.5, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -146,7 +173,7 @@ function ItemCard({ item, index, onFillTemplate, onAssetChange }) {
             </Box>
           )}
 
-          {isCustom && (
+          {canManage && isCustom && (
             <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, 1fr)' }, gap: 2, mt: canFillTemplate ? 2 : 0 }}>
               <AssetInputField
                 label="Cover PDF"
@@ -179,7 +206,8 @@ function ItemCard({ item, index, onFillTemplate, onAssetChange }) {
 export default function EtsyOrderDetailPage() {
   const { etsyOrderId } = useParams()
   const navigate = useNavigate()
-  const { activeStore } = useAuthStore()
+  const { activeStore, user } = useAuthStore()
+  const canManage = canManageWorkspace(user)
   const [group, setGroup] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -206,6 +234,7 @@ export default function EtsyOrderDetailPage() {
   useEffect(() => { fetchGroup() }, [fetchGroup])
 
   const first = group?.firstOrder
+  const reviewFlags = (group?.aiFlags || []).filter((flag) => flag !== 'Missing Product Mapping')
   const pricing = first?.pricing || {}
   const subtotal = useMemo(() => (
     group?.items?.reduce((sum, item) => sum + Number(item.price || 0) * Number(item.quantity || 1), 0) || 0
@@ -293,7 +322,10 @@ export default function EtsyOrderDetailPage() {
         <Box>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25, flexWrap: 'wrap' }}>
             <Typography variant="h4" sx={{ fontWeight: 900, letterSpacing: '-0.03em' }}>Order #{group.etsyOrderId}</Typography>
-            <StatusBadge status={group.status} />
+            <StatusBadge
+              status={group.status}
+              label={waitingLabel({ status: group.status, hasUnmapped: group.hasUnmapped, hasAiFlags: reviewFlags.length > 0 })}
+            />
           </Box>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
             {fmtDate(group.orderedAt, true)} · {group.totalItems} item{group.totalItems === 1 ? '' : 's'}
@@ -301,26 +333,41 @@ export default function EtsyOrderDetailPage() {
         </Box>
 
         <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
-          <FormControl size="small" disabled={statusSaving} sx={{ minWidth: 180 }}>
-            <Select value="" displayEmpty onChange={(e) => handleBulkStatus(e.target.value)}>
-              <MenuItem value="" disabled>Move all items...</MenuItem>
-              {ETSY_ORDER_STATUSES.map((status) => (
-                <MenuItem key={status.value} value={status.value}>{status.label}</MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-          <Button variant="outlined" startIcon={<EditOutlinedIcon />} onClick={() => setEditOpen(true)}>Edit</Button>
-          {canSubmitToLulu ? (
-            <Button variant="contained" startIcon={<PlayArrowRoundedIcon />} onClick={() => setLuluOpen(true)}>
-              Send to Lulu
-            </Button>
-          ) : (
-            <Button variant="contained" startIcon={<PlayArrowRoundedIcon />} onClick={() => handleBulkStatus('in_progress')} disabled={statusSaving || group.status === 'in_progress'}>
-              Move to In Progress
-            </Button>
+          {canManage && (
+            <>
+              <FormControl size="small" disabled={statusSaving} sx={{ minWidth: 180 }}>
+                <Select value="" displayEmpty onChange={(e) => handleBulkStatus(e.target.value)}>
+                  <MenuItem value="" disabled>Move all items...</MenuItem>
+                  {ETSY_ORDER_STATUSES.map((status) => (
+                    <MenuItem key={status.value} value={status.value}>{status.label}</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+              <Button variant="outlined" startIcon={<EditOutlinedIcon />} onClick={() => setEditOpen(true)}>Edit</Button>
+              {canSubmitToLulu ? (
+                <Button variant="contained" startIcon={<PlayArrowRoundedIcon />} onClick={() => setLuluOpen(true)}>
+                  Send to Lulu
+                </Button>
+              ) : (
+                <Button variant="contained" startIcon={<PlayArrowRoundedIcon />} onClick={() => handleBulkStatus('in_progress')} disabled={statusSaving || group.status === 'in_progress'}>
+                  Move to In Progress
+                </Button>
+              )}
+            </>
           )}
         </Box>
       </Box>
+
+      {reviewFlags.length > 0 && (
+        <Alert severity="warning" icon={<WarningAmberOutlinedIcon />} sx={{ mb: 2 }}>
+          <Typography variant="subtitle2" sx={{ fontWeight: 800, mb: 0.5 }}>AI flagged personalization</Typography>
+          <Stack spacing={0.5}>
+            {reviewFlags.map((flag) => (
+              <Typography key={flag} variant="body2">{flag}</Typography>
+            ))}
+          </Stack>
+        </Alert>
+      )}
 
       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: '1fr 1fr 1.15fr' }, gap: 2, mb: 3 }}>
         <InfoPanel icon={<PersonOutlineOutlinedIcon fontSize="small" />} title="Customer">
@@ -337,7 +384,11 @@ export default function EtsyOrderDetailPage() {
         <InfoPanel icon={<CalendarTodayOutlinedIcon fontSize="small" />} title="Order Summary">
           <Box sx={{ display: 'grid', gridTemplateColumns: '1fr auto', rowGap: 0.8 }}>
             <Typography variant="body2" color="text.secondary">Status</Typography>
-            <StatusBadge status={group.status} size="small" />
+            <StatusBadge
+              status={group.status}
+              size="small"
+              label={waitingLabel({ status: group.status, hasUnmapped: group.hasUnmapped, hasAiFlags: reviewFlags.length > 0 })}
+            />
             <Typography variant="body2" color="text.secondary">Shop</Typography>
             <Typography variant="body2">{group.shop || '-'}</Typography>
             <Typography variant="body2" color="text.secondary">Payment Date</Typography>
@@ -357,6 +408,7 @@ export default function EtsyOrderDetailPage() {
             index={index}
             onFillTemplate={handleOpenTemplate}
             onAssetChange={handleAssetChange}
+            canManage={canManage}
           />
         ))}
       </Stack>
@@ -407,35 +459,41 @@ export default function EtsyOrderDetailPage() {
         </Card>
       </Box>
 
-      <OrderFormDialog
-        open={editOpen}
-        mode="edit"
-        orderGroup={group}
-        activeStore={activeStore}
-        onClose={() => setEditOpen(false)}
-        onSaved={fetchGroup}
-      />
+      {canManage && (
+        <OrderFormDialog
+          open={editOpen}
+          mode="edit"
+          orderGroup={group}
+          activeStore={activeStore}
+          onClose={() => setEditOpen(false)}
+          onSaved={fetchGroup}
+        />
+      )}
 
-      <LuluReviewDialog
-        open={luluOpen}
-        onClose={() => setLuluOpen(false)}
-        order={first}
-        onSubmitted={() => {
-          setLuluOpen(false)
-          fetchGroup()
-        }}
-      />
+      {canManage && (
+        <LuluReviewDialog
+          open={luluOpen}
+          onClose={() => setLuluOpen(false)}
+          order={first}
+          onSubmitted={() => {
+            setLuluOpen(false)
+            fetchGroup()
+          }}
+        />
+      )}
 
-      <TemplatePersonalizationDialog
-        open={templateOpen}
-        order={templateOrder}
-        product={templateProduct}
-        onClose={() => setTemplateOpen(false)}
-        onFinalized={() => {
-          setTemplateOpen(false)
-          fetchGroup()
-        }}
-      />
+      {canManage && (
+        <TemplatePersonalizationDialog
+          open={templateOpen}
+          order={templateOrder}
+          product={templateProduct}
+          onClose={() => setTemplateOpen(false)}
+          onFinalized={() => {
+            setTemplateOpen(false)
+            fetchGroup()
+          }}
+        />
+      )}
     </Box>
   )
 }

@@ -132,8 +132,9 @@ export default function NotificationCenter() {
             sx: {
               width: 360,
               mt: 1,
-              borderRadius: 2,
-              boxShadow: (t) => `0 20px 40px -4px ${alpha(t.palette.grey[500], 0.24)}`,
+              borderRadius: 1.5,
+              border: (t) => `1px solid ${t.palette.divider}`,
+              boxShadow: (t) => `0 12px 24px -4px ${alpha(t.palette.grey[500], 0.16)}`,
               overflow: 'hidden',
             },
           },

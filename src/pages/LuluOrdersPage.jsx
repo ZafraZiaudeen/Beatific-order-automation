@@ -33,6 +33,7 @@ import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutlined'
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined'
 import api from '../lib/api'
 import useAuthStore from '../stores/authStore'
+import { canManageWorkspace } from '../lib/permissions'
 import StatusBadge from '../components/orders/StatusBadge'
 import LuluReviewDialog from '../components/orders/LuluReviewDialog'
 import { LULU_ORDER_STATUSES } from '../lib/constants'
@@ -69,7 +70,8 @@ const getPresetDateRange = (preset) => {
 }
 
 export default function LuluOrdersPage() {
-  const { activeStore } = useAuthStore()
+  const { activeStore, user } = useAuthStore()
+  const canManage = canManageWorkspace(user)
   const [tab, setTab] = useState('')
   const [orders, setOrders] = useState([])
   const [readyOrders, setReadyOrders] = useState([])
@@ -212,7 +214,7 @@ export default function LuluOrdersPage() {
       </Box>
 
       {/* Ready to Submit */}
-      {readyOrders.length > 0 && (
+      {canManage && readyOrders.length > 0 && (
         <Card sx={{ mb: 3, border: '1px solid', borderColor: 'primary.light' }}>
           <CardContent sx={{ p: 3 }}>
             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
@@ -323,7 +325,7 @@ export default function LuluOrdersPage() {
           ))}
         </Tabs>
 
-        {selectedSubmitted.length > 0 && (
+        {canManage && selectedSubmitted.length > 0 && (
           <Box sx={{ px: 2, py: 1.5, display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 1 }}>
             <Typography variant="body2" color="text.secondary">{selectedSubmitted.length} selected</Typography>
             <Button
@@ -342,13 +344,15 @@ export default function LuluOrdersPage() {
           <Table>
             <TableHead>
               <TableRow>
-                <TableCell padding="checkbox">
-                  <Checkbox
-                    indeterminate={selectedSubmitted.length > 0 && selectedSubmitted.length < orders.length}
-                    checked={orders.length > 0 && selectedSubmitted.length === orders.length}
-                    onChange={(e) => setSelectedSubmitted(e.target.checked ? orders.map((o) => o._id) : [])}
-                  />
-                </TableCell>
+                {canManage && (
+                  <TableCell padding="checkbox">
+                    <Checkbox
+                      indeterminate={selectedSubmitted.length > 0 && selectedSubmitted.length < orders.length}
+                      checked={orders.length > 0 && selectedSubmitted.length === orders.length}
+                      onChange={(e) => setSelectedSubmitted(e.target.checked ? orders.map((o) => o._id) : [])}
+                    />
+                  </TableCell>
+                )}
                 <TableCell>Order ID</TableCell>
                 <TableCell>Customer</TableCell>
                 <TableCell>Product</TableCell>
@@ -356,21 +360,21 @@ export default function LuluOrdersPage() {
                 <TableCell>Lulu Status</TableCell>
                 <TableCell>Tracking</TableCell>
                 <TableCell>Updated</TableCell>
-                <TableCell align="right">Actions</TableCell>
+                {canManage && <TableCell align="right">Actions</TableCell>}
               </TableRow>
             </TableHead>
             <TableBody>
               {loading ? (
                 Array.from({ length: 5 }).map((_, i) => (
                   <TableRow key={i}>
-                    {Array.from({ length: 9 }).map((__, j) => (
+                    {Array.from({ length: canManage ? 9 : 7 }).map((__, j) => (
                       <TableCell key={j}><Skeleton /></TableCell>
                     ))}
                   </TableRow>
                 ))
               ) : orders.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={9} align="center" sx={{ py: 8 }}>
+                  <TableCell colSpan={canManage ? 9 : 7} align="center" sx={{ py: 8 }}>
                     <LocalPrintshopOutlinedIcon sx={{ fontSize: 48, color: 'text.disabled', mb: 1 }} />
                     <Typography variant="subtitle1" color="text.secondary">No Lulu orders yet</Typography>
                     <Typography variant="body2" color="text.disabled">
@@ -381,14 +385,16 @@ export default function LuluOrdersPage() {
               ) : (
                 orders.map((order) => (
                   <TableRow key={order._id} hover selected={selectedSubmitted.includes(order._id)}>
-                    <TableCell padding="checkbox">
-                      <Checkbox
-                        checked={selectedSubmitted.includes(order._id)}
-                        onChange={(e) => setSelectedSubmitted((prev) =>
-                          e.target.checked ? [...prev, order._id] : prev.filter((id) => id !== order._id)
-                        )}
-                      />
-                    </TableCell>
+                    {canManage && (
+                      <TableCell padding="checkbox">
+                        <Checkbox
+                          checked={selectedSubmitted.includes(order._id)}
+                          onChange={(e) => setSelectedSubmitted((prev) =>
+                            e.target.checked ? [...prev, order._id] : prev.filter((id) => id !== order._id)
+                          )}
+                        />
+                      </TableCell>
+                    )}
                     <TableCell>
                       <Typography variant="caption" sx={{ fontFamily: 'monospace' }}>#{order.etsyOrderId}</Typography>
                     </TableCell>
@@ -425,33 +431,35 @@ export default function LuluOrdersPage() {
                     <TableCell>
                       <Typography variant="body2" color="text.secondary">{formatDate(order.updatedAt)}</Typography>
                     </TableCell>
-                    <TableCell align="right">
-                      <Tooltip title={order.luluJobId ? 'Refresh status from Lulu' : 'Not submitted to Lulu'}>
-                        <IconButton
-                          size="small"
-                          disabled={refreshingId === order._id || !order.luluJobId}
-                          onClick={() => handleRefreshStatus(order._id)}
-                        >
-                          {refreshingId === order._id
-                            ? <CircularProgress size={14} />
-                            : <RefreshIcon fontSize="small" />}
-                        </IconButton>
-                      </Tooltip>
-                      {order.luluStatus === 'failed' && (
-                        <Tooltip title="Retry submission">
+                    {canManage && (
+                      <TableCell align="right">
+                        <Tooltip title={order.luluJobId ? 'Refresh status from Lulu' : 'Not submitted to Lulu'}>
                           <IconButton
                             size="small"
-                            color="warning"
-                            disabled={retryingId === order._id}
-                            onClick={() => handleRetry(order._id)}
+                            disabled={refreshingId === order._id || !order.luluJobId}
+                            onClick={() => handleRefreshStatus(order._id)}
                           >
-                            {retryingId === order._id
+                            {refreshingId === order._id
                               ? <CircularProgress size={14} />
-                              : <ReplayIcon fontSize="small" />}
+                              : <RefreshIcon fontSize="small" />}
                           </IconButton>
                         </Tooltip>
-                      )}
-                    </TableCell>
+                        {order.luluStatus === 'failed' && (
+                          <Tooltip title="Retry submission">
+                            <IconButton
+                              size="small"
+                              color="warning"
+                              disabled={retryingId === order._id}
+                              onClick={() => handleRetry(order._id)}
+                            >
+                              {retryingId === order._id
+                                ? <CircularProgress size={14} />
+                                : <ReplayIcon fontSize="small" />}
+                            </IconButton>
+                          </Tooltip>
+                        )}
+                      </TableCell>
+                    )}
                   </TableRow>
                 ))
               )}
@@ -460,12 +468,14 @@ export default function LuluOrdersPage() {
         </TableContainer>
       </Card>
 
-      <LuluReviewDialog
-        open={!!reviewOrder}
-        onClose={() => setReviewOrder(null)}
-        order={reviewOrder}
-        onSubmitted={() => { fetchOrders(); setReviewOrder(null) }}
-      />
+      {canManage && (
+        <LuluReviewDialog
+          open={!!reviewOrder}
+          onClose={() => setReviewOrder(null)}
+          order={reviewOrder}
+          onSubmitted={() => { fetchOrders(); setReviewOrder(null) }}
+        />
+      )}
 
       <Snackbar
         open={snack.open}

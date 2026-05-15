@@ -36,8 +36,10 @@ import ViewListOutlinedIcon from '@mui/icons-material/ViewListOutlined'
 import ViewKanbanOutlinedIcon from '@mui/icons-material/ViewKanbanOutlined'
 import CloudSyncOutlinedIcon from '@mui/icons-material/CloudSyncOutlined'
 import AddIcon from '@mui/icons-material/Add'
+import WarningAmberOutlinedIcon from '@mui/icons-material/WarningAmberOutlined'
 import api from '../lib/api'
 import useAuthStore from '../stores/authStore'
+import { canManageWorkspace } from '../lib/permissions'
 import StatusBadge from '../components/orders/StatusBadge'
 import OrderKanban from '../components/orders/OrderKanban'
 import OrderFormDialog from '../components/orders/OrderFormDialog'
@@ -55,7 +57,7 @@ const DATE_RANGE_OPTIONS = [
 
 const CATEGORY_DEFINITIONS = [
   { value: 'custom_orders', label: 'Custom Orders', description: 'Manual/custom artwork orders with uploaded PDFs.' },
-  { value: 'waiting', label: 'Waiting (Unmapped)', description: 'Unmapped orders that need product or variant mapping.' },
+  { value: 'waiting', label: 'Waiting / Review', description: 'Unmapped orders or AI-flagged personalization that needs review.' },
   { value: 'in_progress', label: 'In Progress', description: 'Mapped orders waiting for template input or PDF editing.' },
   { value: 'completed', label: 'Completed', description: 'Artwork/PDF preparation is complete and Lulu-ready.' },
 ]
@@ -138,6 +140,7 @@ const buildOrderGroups = (orders) => {
     .map((items) => {
       const first = firstGroupOrder(items)
       const aiFlags = [...new Set(items.flatMap((item) => item.aiFlags || []))]
+      const reviewFlags = aiFlags.filter((flag) => flag !== 'Missing Product Mapping')
       return {
         etsyOrderId: first.etsyOrderId,
         orderIds: items.map((item) => item._id),
@@ -153,7 +156,7 @@ const buildOrderGroups = (orders) => {
         totalQuantity: items.reduce((sum, item) => sum + Number(item.quantity || 1), 0),
         total: groupTotal(items),
         hasUnmapped: items.some((item) => !item.isProductMapped),
-        hasAiFlags: aiFlags.length > 0,
+        hasAiFlags: reviewFlags.length > 0,
         aiFlags,
         hasCustomArtwork: items.some((item) => item.hasCustomArtwork),
         updatedAt: items.reduce((latest, item) => Math.max(latest, new Date(item.updatedAt || 0).getTime()), 0),
@@ -170,9 +173,17 @@ const getGroupCategory = (group) => {
   return 'in_progress'
 }
 
+const getEtsyStatusLabel = (group) => {
+  if (group.status !== 'waiting') return undefined
+  if (group.hasUnmapped) return 'Waiting (Unmapped)'
+  if (group.hasAiFlags) return 'Waiting (AI Flagged)'
+  return 'Waiting'
+}
+
 export default function EtsyOrdersPage() {
   const navigate = useNavigate()
-  const { activeStore } = useAuthStore()
+  const { activeStore, user } = useAuthStore()
+  const canManage = canManageWorkspace(user)
   const [orders, setOrders] = useState([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -359,21 +370,25 @@ export default function EtsyOrdersPage() {
           </Typography>
         </Box>
         <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
-          <Button
-            variant="outlined"
-            startIcon={<AddIcon />}
-            onClick={() => setManualOpen(true)}
-          >
-            Add Order
-          </Button>
-          <Button
-            variant="contained"
-            startIcon={emailFetching ? <CircularProgress size={16} color="inherit" /> : <CloudSyncOutlinedIcon />}
-            disabled={emailFetching}
-            onClick={handleFetchEmailOrders}
-          >
-            {emailFetching ? 'Fetching...' : 'Fetch Email Orders'}
-          </Button>
+          {canManage && (
+            <>
+              <Button
+                variant="outlined"
+                startIcon={<AddIcon />}
+                onClick={() => setManualOpen(true)}
+              >
+                Add Order
+              </Button>
+              <Button
+                variant="contained"
+                startIcon={emailFetching ? <CircularProgress size={16} color="inherit" /> : <CloudSyncOutlinedIcon />}
+                disabled={emailFetching}
+                onClick={handleFetchEmailOrders}
+              >
+                {emailFetching ? 'Fetching...' : 'Fetch Email Orders'}
+              </Button>
+            </>
+          )}
           <ToggleButtonGroup value={view} exclusive onChange={handleViewChange} size="small">
             <ToggleButton value="list">
               <Tooltip title="List view">
@@ -420,7 +435,7 @@ export default function EtsyOrdersPage() {
               ))}
             </Select>
           </FormControl>
-          {selected.length > 0 && (
+          {canManage && selected.length > 0 && (
             <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
               <Typography variant="body2" color="text.secondary">{selected.length} selected</Typography>
               <FormControl size="small" sx={{ minWidth: 160 }}>
@@ -515,6 +530,7 @@ export default function EtsyOrdersPage() {
                 onOrderClick={openGroupDetail}
                 onOrdersChange={() => { fetchOrders(); fetchCounts() }}
                 statusCounts={statusCounts}
+                readOnly={!canManage}
               />
             )}
           </Box>
@@ -524,16 +540,18 @@ export default function EtsyOrdersPage() {
               <Table>
                 <TableHead>
                   <TableRow>
-                    <TableCell padding="checkbox">
-                      <Checkbox
-                        indeterminate={selected.length > 0 && selected.length < visibleGroups.flatMap((group) => group.orderIds).length}
-                        checked={visibleGroups.length > 0 && visibleGroups.every((group) => group.orderIds.every((id) => selected.includes(id)))}
-                        onChange={(e) => {
-                          const ids = visibleGroups.flatMap((group) => group.orderIds)
-                          setSelected(e.target.checked ? ids : [])
-                        }}
-                      />
-                    </TableCell>
+                    {canManage && (
+                      <TableCell padding="checkbox">
+                        <Checkbox
+                          indeterminate={selected.length > 0 && selected.length < visibleGroups.flatMap((group) => group.orderIds).length}
+                          checked={visibleGroups.length > 0 && visibleGroups.every((group) => group.orderIds.every((id) => selected.includes(id)))}
+                          onChange={(e) => {
+                            const ids = visibleGroups.flatMap((group) => group.orderIds)
+                            setSelected(e.target.checked ? ids : [])
+                          }}
+                        />
+                      </TableCell>
+                    )}
                     <TableCell>Order #</TableCell>
                     <TableCell>Customer</TableCell>
                     <TableCell>Shop</TableCell>
@@ -548,17 +566,19 @@ export default function EtsyOrdersPage() {
                   {loading ? (
                     Array.from({ length: 8 }).map((_, i) => (
                       <TableRow key={i}>
-                        {Array.from({ length: 9 }).map((__, j) => (
+                        {Array.from({ length: canManage ? 9 : 8 }).map((__, j) => (
                           <TableCell key={j}><Skeleton /></TableCell>
                         ))}
                       </TableRow>
                     ))
                   ) : visibleGroups.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={9} align="center" sx={{ py: 8 }}>
+                      <TableCell colSpan={canManage ? 9 : 8} align="center" sx={{ py: 8 }}>
                         <ShoppingCartOutlinedIcon sx={{ fontSize: 48, color: 'text.disabled', mb: 1 }} />
                         <Typography variant="subtitle1" color="text.secondary">No orders found</Typography>
-                        <Typography variant="body2" color="text.disabled">Fetch email orders or upload a spreadsheet to import orders.</Typography>
+                        <Typography variant="body2" color="text.disabled">
+                          {canManage ? 'Fetch email orders or upload a spreadsheet to import orders.' : 'No orders match this view.'}
+                        </Typography>
                       </TableCell>
                     </TableRow>
                   ) : (
@@ -567,16 +587,18 @@ export default function EtsyOrdersPage() {
                       const partiallyChecked = !checked && group.orderIds.some((id) => selected.includes(id))
                       return (
                         <TableRow key={group.etsyOrderId} hover selected={checked}>
-                          <TableCell padding="checkbox">
-                            <Checkbox
-                              checked={checked}
-                              indeterminate={partiallyChecked}
-                              onChange={(e) => setSelected((prev) => {
-                                if (e.target.checked) return [...new Set([...prev, ...group.orderIds])]
-                                return prev.filter((id) => !group.orderIds.includes(id))
-                              })}
-                            />
-                          </TableCell>
+                          {canManage && (
+                            <TableCell padding="checkbox">
+                              <Checkbox
+                                checked={checked}
+                                indeterminate={partiallyChecked}
+                                onChange={(e) => setSelected((prev) => {
+                                  if (e.target.checked) return [...new Set([...prev, ...group.orderIds])]
+                                  return prev.filter((id) => !group.orderIds.includes(id))
+                                })}
+                              />
+                            </TableCell>
+                          )}
                           <TableCell>
                             <Typography variant="subtitle2" sx={{ fontFamily: 'monospace', fontSize: '0.86rem', color: 'primary.main' }}>
                               #{group.etsyOrderId}
@@ -584,6 +606,16 @@ export default function EtsyOrdersPage() {
                             <Typography variant="caption" color="text.secondary">
                               {group.totalItems} item{group.totalItems === 1 ? '' : 's'} / Qty {group.totalQuantity}
                             </Typography>
+                            {group.hasAiFlags && (
+                              <Chip
+                                icon={<WarningAmberOutlinedIcon sx={{ fontSize: '13px !important' }} />}
+                                label="AI flagged"
+                                size="small"
+                                color="warning"
+                                variant="outlined"
+                                sx={{ display: 'flex', width: 'fit-content', mt: 0.5, height: 20, fontWeight: 700 }}
+                              />
+                            )}
                           </TableCell>
                           <TableCell>
                             <Typography variant="body2" sx={{ fontWeight: 700 }}>{group.customerName || '-'}</Typography>
@@ -605,16 +637,18 @@ export default function EtsyOrdersPage() {
                           <TableCell>
                             <Typography variant="body2" sx={{ fontWeight: 800 }}>{formatMoney(group.total)}</Typography>
                           </TableCell>
-                          <TableCell><StatusBadge status={group.status} /></TableCell>
+                          <TableCell><StatusBadge status={group.status} label={getEtsyStatusLabel(group)} /></TableCell>
                           <TableCell align="right">
                             <Tooltip title="View order details">
                               <IconButton size="small" onClick={() => openGroupDetail(group)}>
                                 <VisibilityOutlinedIcon fontSize="small" />
                               </IconButton>
                             </Tooltip>
-                            <IconButton size="small" onClick={(e) => { setMenuAnchor(e.currentTarget); setMenuOrder(group.firstOrder) }}>
-                              <MoreVertIcon fontSize="small" />
-                            </IconButton>
+                            {canManage && (
+                              <IconButton size="small" onClick={(e) => { setMenuAnchor(e.currentTarget); setMenuOrder(group.firstOrder) }}>
+                                <MoreVertIcon fontSize="small" />
+                              </IconButton>
+                            )}
                           </TableCell>
                         </TableRow>
                       )
@@ -636,7 +670,7 @@ export default function EtsyOrdersPage() {
         )}
       </Card>
 
-      <Menu anchorEl={menuAnchor} open={!!menuAnchor} onClose={() => setMenuAnchor(null)}
+      {canManage && <Menu anchorEl={menuAnchor} open={!!menuAnchor} onClose={() => setMenuAnchor(null)}
         slotProps={{ paper: { sx: { minWidth: 180 } } }}>
         <Typography variant="overline" sx={{ px: 2, py: 0.5, display: 'block', color: 'text.secondary' }}>Move first item to</Typography>
         {ETSY_ORDER_STATUSES.map((s) => (
@@ -648,15 +682,17 @@ export default function EtsyOrdersPage() {
             {s.label}
           </MenuItem>
         ))}
-      </Menu>
+      </Menu>}
 
-      <OrderFormDialog
-        open={manualOpen}
-        mode="create"
-        activeStore={activeStore}
-        onClose={() => setManualOpen(false)}
-        onSaved={() => { fetchOrders(); fetchCounts() }}
-      />
+      {canManage && (
+        <OrderFormDialog
+          open={manualOpen}
+          mode="create"
+          activeStore={activeStore}
+          onClose={() => setManualOpen(false)}
+          onSaved={() => { fetchOrders(); fetchCounts() }}
+        />
+      )}
 
       <Snackbar
         open={snack.open}

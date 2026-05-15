@@ -24,13 +24,13 @@ import useAuthStore from '../../stores/authStore'
 const ROLE_META = {
   admin: {
     label: 'Admin access',
-    bg: '#D6E4FF',
-    color: '#1939B7',
+    bg: '#CAFDF5',
+    color: '#006C9C',
   },
   member: {
     label: 'Member access',
-    bg: '#E9FCD4',
-    color: '#3F6212',
+    bg: '#F4F6F8',
+    color: '#637381',
   },
 }
 
@@ -105,8 +105,8 @@ export default function AcceptInvitePage() {
 
   if (loadingInvite) {
     return (
-      <Box sx={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: '#f0f4f8' }}>
-        <Paper sx={{ maxWidth: 440, width: '100%', p: 5, borderRadius: 3 }}>
+      <Box sx={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: 'background.default' }}>
+        <Paper sx={{ maxWidth: 440, width: '100%', p: 5, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
           <Skeleton variant="rectangular" height={40} sx={{ mb: 2, borderRadius: 1 }} />
           <Skeleton variant="text" width="60%" sx={{ mb: 3 }} />
           <Skeleton variant="rectangular" height={56} sx={{ mb: 2, borderRadius: 1 }} />
@@ -119,8 +119,8 @@ export default function AcceptInvitePage() {
 
   if (inviteError) {
     return (
-      <Box sx={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: '#f0f4f8', px: 2 }}>
-        <Paper sx={{ maxWidth: 440, width: '100%', p: 5, borderRadius: 3, textAlign: 'center', border: '1px solid', borderColor: 'divider' }}>
+      <Box sx={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: 'background.default', px: 2 }}>
+        <Paper sx={{ maxWidth: 440, width: '100%', p: 5, borderRadius: 2, textAlign: 'center', border: '1px solid', borderColor: 'divider' }}>
           <Typography variant="h5" sx={{ mb: 2 }}>Invitation Invalid</Typography>
           <Alert severity="error" sx={{ mb: 3 }}>{inviteError}</Alert>
           <Button variant="contained" onClick={() => navigate('/login')}>Go to Login</Button>
@@ -130,17 +130,17 @@ export default function AcceptInvitePage() {
   }
 
   return (
-    <Box sx={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: '#f0f4f8', px: 2 }}>
+    <Box sx={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: 'background.default', px: 2 }}>
       <Paper
         elevation={0}
         sx={{
           maxWidth: 440,
           width: '100%',
           p: { xs: 3, sm: 5 },
-          borderRadius: 3,
+          borderRadius: 2,
           border: '1px solid',
           borderColor: 'divider',
-          boxShadow: '0 20px 60px rgba(15,23,42,0.10)',
+          boxShadow: '0 0 2px 0 rgba(145,158,171,0.20), 0 12px 24px -4px rgba(145,158,171,0.12)',
         }}
       >
         <Box ref={formRef}>
@@ -149,7 +149,7 @@ export default function AcceptInvitePage() {
               sx={{
                 width: 56,
                 height: 56,
-                borderRadius: '14px',
+                borderRadius: 1,
                 bgcolor: 'primary.lighter',
                 display: 'flex',
                 alignItems: 'center',

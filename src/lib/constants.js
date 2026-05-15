@@ -2,7 +2,7 @@ export const ROLES = ['owner', 'admin', 'member']
 
 export const ETSY_ORDER_STATUSES = [
   { value: 'custom_orders', label: 'Custom Orders', color: 'secondary' },
-  { value: 'waiting', label: 'Waiting (Unmapped)', color: 'warning' },
+  { value: 'waiting', label: 'Waiting / Review', color: 'warning' },
   { value: 'in_progress', label: 'In Progress', color: 'info' },
   { value: 'completed', label: 'Completed', color: 'success' },
 ]
@@ -15,6 +15,6 @@ export const LULU_ORDER_STATUSES = [
   { value: 'failed', label: 'Failed', color: 'error' },
 ]
 
-export const SIDEBAR_WIDTH = 280
-export const SIDEBAR_COLLAPSED_WIDTH = 88
+export const SIDEBAR_WIDTH = 250
+export const SIDEBAR_COLLAPSED_WIDTH = 60
 export const HEADER_HEIGHT = 64

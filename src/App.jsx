@@ -14,6 +14,14 @@ import StoresPage from './pages/StoresPage'
 import ProfilePage from './pages/ProfilePage'
 import ProtectedRoute from './components/common/ProtectedRoute'
 import ErrorBoundary from './components/common/ErrorBoundary'
+import useAuthStore from './stores/authStore'
+import { canManageWorkspace } from './lib/permissions'
+
+function AdminOnly({ children }) {
+  const { user } = useAuthStore()
+  if (!canManageWorkspace(user)) return <Navigate to="/dashboard" replace />
+  return children
+}
 
 export default function App() {
   return (
@@ -22,6 +30,8 @@ export default function App() {
         {/* Auth routes */}
         <Route path="/login" element={<AuthPage defaultTab="login" />} />
         <Route path="/register" element={<AuthPage defaultTab="register" />} />
+        <Route path="/forgot-password" element={<AuthPage defaultTab="forgot" />} />
+        <Route path="/reset-password" element={<AuthPage defaultTab="reset" />} />
         <Route path="/verify-email" element={<VerifyEmailPage />} />
         <Route path="/invite/:token" element={<AcceptInvitePage />} />
 
@@ -44,11 +54,11 @@ export default function App() {
           <Route path="/products" element={<ProductLibraryPage />} />
 
           {/* Import */}
-          <Route path="/import" element={<ImportPage />} />
+          <Route path="/import" element={<AdminOnly><ImportPage /></AdminOnly>} />
 
           {/* Settings */}
-          <Route path="/settings/team" element={<TeamPage />} />
-          <Route path="/settings/stores" element={<StoresPage />} />
+          <Route path="/settings/team" element={<AdminOnly><TeamPage /></AdminOnly>} />
+          <Route path="/settings/stores" element={<AdminOnly><StoresPage /></AdminOnly>} />
           <Route path="/settings/profile" element={<ProfilePage />} />
         </Route>
 

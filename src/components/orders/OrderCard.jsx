@@ -26,6 +26,7 @@ export default function OrderCard({ order, onClick, isDragging }) {
   const overdue = isOverdue(order.shipByDate)
   const dueSoon = isDueSoon(order.shipByDate)
   const shipDate = formatShipDate(order.shipByDate)
+  const reviewFlags = (order.aiFlags || []).filter((flag) => flag !== 'Missing Product Mapping')
 
   return (
     <Card
@@ -106,6 +107,19 @@ export default function OrderCard({ order, onClick, isDragging }) {
               <Chip
                 icon={<WarningAmberIcon sx={{ fontSize: '11px !important' }} />}
                 label="Unmapped"
+                size="small"
+                color="warning"
+                variant="outlined"
+                sx={{ height: 18, fontSize: '0.65rem', '& .MuiChip-label': { px: 0.75 } }}
+              />
+            </Tooltip>
+          )}
+
+          {reviewFlags.length > 0 && (
+            <Tooltip title={reviewFlags.join('; ')}>
+              <Chip
+                icon={<WarningAmberIcon sx={{ fontSize: '11px !important' }} />}
+                label="AI"
                 size="small"
                 color="warning"
                 variant="outlined"

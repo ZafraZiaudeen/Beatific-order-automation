@@ -36,6 +36,7 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import ContentPasteIcon from '@mui/icons-material/ContentPasteOutlined'
 import api from '../lib/api'
 import useAuthStore from '../stores/authStore'
+import { canManageWorkspace } from '../lib/permissions'
 import ProductTemplateEditor from '../components/products/ProductTemplateEditor'
 
 const DEFAULT_TEMPLATE_POLICY = { cover: 'inherit', interior: 'inherit', fields: 'inherit' }
@@ -312,7 +313,8 @@ function ProductFormDialog({ open, onClose, product, onSaved }) {
 }
 
 export default function ProductLibraryPage() {
-  const { activeStore } = useAuthStore()
+  const { activeStore, user } = useAuthStore()
+  const canManage = canManageWorkspace(user)
   const [products, setProducts] = useState([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -351,7 +353,7 @@ export default function ProductLibraryPage() {
     p.title?.toLowerCase().includes(search.toLowerCase())
   )
 
-  if (templateProduct) {
+  if (templateProduct && canManage) {
     return (
       <ProductTemplateEditor
         product={templateProduct}
@@ -373,13 +375,15 @@ export default function ProductLibraryPage() {
             Map Etsy listings to shared print templates, labeled personalization fields, and Lulu print codes.
           </Typography>
         </Box>
-        <Button
-          variant="contained"
-          startIcon={<AddIcon />}
-          onClick={() => { setEditProduct(null); setDialogOpen(true) }}
-        >
-          Add Product
-        </Button>
+        {canManage && (
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={() => { setEditProduct(null); setDialogOpen(true) }}
+          >
+            Add Product
+          </Button>
+        )}
       </Box>
 
       <Card>
@@ -413,21 +417,21 @@ export default function ProductLibraryPage() {
                 <TableCell align="center">Template PDFs</TableCell>
                 <TableCell align="center">Fields</TableCell>
                 <TableCell align="center">Status</TableCell>
-                <TableCell align="right">Actions</TableCell>
+                {canManage && <TableCell align="right">Actions</TableCell>}
               </TableRow>
             </TableHead>
             <TableBody>
               {loading ? (
                 Array.from({ length: 5 }).map((_, i) => (
                   <TableRow key={i}>
-                    {Array.from({ length: 8 }).map((__, j) => (
+                    {Array.from({ length: canManage ? 8 : 7 }).map((__, j) => (
                       <TableCell key={j}><Skeleton /></TableCell>
                     ))}
                   </TableRow>
                 ))
               ) : filtered.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={8} align="center" sx={{ py: 8 }}>
+                  <TableCell colSpan={canManage ? 8 : 7} align="center" sx={{ py: 8 }}>
                     <ImageOutlinedIcon sx={{ fontSize: 48, color: 'text.disabled', mb: 1 }} />
                     <Typography variant="subtitle1" color="text.secondary">
                       {search ? 'No products match your search' : 'No products yet'}
@@ -530,23 +534,25 @@ export default function ProductLibraryPage() {
                           sx={{ fontWeight: 600 }}
                         />
                       </TableCell>
-                      <TableCell align="right">
-                        <Tooltip title="Template designer">
-                          <IconButton size="small" color="primary" onClick={() => setTemplateProduct(product)}>
-                            <DesignServicesIcon fontSize="small" />
-                          </IconButton>
-                        </Tooltip>
-                        <Tooltip title="Edit">
-                          <IconButton size="small" onClick={() => { setEditProduct(product); setDialogOpen(true) }}>
-                            <EditOutlinedIcon fontSize="small" />
-                          </IconButton>
-                        </Tooltip>
-                        <Tooltip title="Delete">
-                          <IconButton size="small" color="error" onClick={() => setDeleteId(product._id)}>
-                            <DeleteOutlineIcon fontSize="small" />
-                          </IconButton>
-                        </Tooltip>
-                      </TableCell>
+                      {canManage && (
+                        <TableCell align="right">
+                          <Tooltip title="Template designer">
+                            <IconButton size="small" color="primary" onClick={() => setTemplateProduct(product)}>
+                              <DesignServicesIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                          <Tooltip title="Edit">
+                            <IconButton size="small" onClick={() => { setEditProduct(product); setDialogOpen(true) }}>
+                              <EditOutlinedIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                          <Tooltip title="Delete">
+                            <IconButton size="small" color="error" onClick={() => setDeleteId(product._id)}>
+                              <DeleteOutlineIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                        </TableCell>
+                      )}
                     </TableRow>
                   )
                 })
@@ -556,15 +562,17 @@ export default function ProductLibraryPage() {
         </TableContainer>
       </Card>
 
-      <ProductFormDialog
-        open={dialogOpen}
-        onClose={() => setDialogOpen(false)}
-        product={editProduct}
-        onSaved={fetchProducts}
-      />
+      {canManage && (
+        <ProductFormDialog
+          open={dialogOpen}
+          onClose={() => setDialogOpen(false)}
+          product={editProduct}
+          onSaved={fetchProducts}
+        />
+      )}
 
       {/* Delete confirmation */}
-      <Dialog open={!!deleteId} onClose={() => setDeleteId(null)}>
+      <Dialog open={canManage && !!deleteId} onClose={() => setDeleteId(null)}>
         <DialogTitle>Delete Product</DialogTitle>
         <DialogContent>
           <Typography>Are you sure? This cannot be undone.</Typography>
