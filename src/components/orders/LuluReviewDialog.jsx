@@ -38,6 +38,65 @@ const SHIPPING_LEVELS = [
   { value: 'EXPRESS_OVERNIGHT', label: 'Express Overnight' },
 ]
 
+const COUNTRY_NAME_TO_CODE = {
+  'united states': 'US',
+  'united states of america': 'US',
+  canada: 'CA',
+  'united kingdom': 'GB',
+  'great britain': 'GB',
+  australia: 'AU',
+  germany: 'DE',
+  france: 'FR',
+  netherlands: 'NL',
+  italy: 'IT',
+  spain: 'ES',
+  sweden: 'SE',
+  norway: 'NO',
+  denmark: 'DK',
+  finland: 'FI',
+  switzerland: 'CH',
+  austria: 'AT',
+  belgium: 'BE',
+  ireland: 'IE',
+  'new zealand': 'NZ',
+  japan: 'JP',
+  mexico: 'MX',
+  brazil: 'BR',
+  india: 'IN',
+  singapore: 'SG',
+  'hong kong': 'HK',
+  'south korea': 'KR',
+  korea: 'KR',
+  israel: 'IL',
+  'south africa': 'ZA',
+  portugal: 'PT',
+  poland: 'PL',
+  'czech republic': 'CZ',
+  czechia: 'CZ',
+  hungary: 'HU',
+  romania: 'RO',
+  greece: 'GR',
+  turkey: 'TR',
+  ukraine: 'UA',
+  russia: 'RU',
+  china: 'CN',
+  taiwan: 'TW',
+  thailand: 'TH',
+  indonesia: 'ID',
+  malaysia: 'MY',
+  philippines: 'PH',
+  argentina: 'AR',
+  colombia: 'CO',
+  chile: 'CL',
+  peru: 'PE',
+  'united arab emirates': 'AE',
+  uae: 'AE',
+  'saudi arabia': 'SA',
+  egypt: 'EG',
+  nigeria: 'NG',
+  kenya: 'KE',
+}
+
 const cn = (...classes) => classes.filter(Boolean).join(' ')
 
 const formatDate = (value) => {
@@ -57,6 +116,15 @@ const formatStatusLabel = (value) => (
       .join(' ')
     : ''
 )
+
+const normalizeCountryCode = (country) => {
+  if (!country) return 'US'
+  const trimmed = country.trim()
+  if (/^[A-Z]{2}$/.test(trimmed)) return trimmed
+  return COUNTRY_NAME_TO_CODE[trimmed.toLowerCase()] || trimmed.slice(0, 2).toUpperCase()
+}
+
+const isValidLuluPodPackageId = (value) => /^\d{4}X\d{4}[A-Z0-9]{18}$/.test(String(value || '').trim().toUpperCase())
 
 const getInitials = (value) => {
   const parts = value?.trim().split(/\s+/).filter(Boolean) || []
@@ -192,10 +260,12 @@ export default function LuluReviewDialog({ open, onClose, order, onSubmitted }) 
   if (!order) return null
 
   const storeName = activeStore?.name || 'Beatific'
+  const resolvedPhone = order.shippingAddress?.phone || activeStore?.contactPhone || ''
 
   const luluPayload = {
     external_id: String(order.etsyOrderId),
     line_items: [{
+      title: order.productTitle || `Order ${order.etsyOrderId}`,
       pod_package_id: order.podPackageId,
       quantity: order.quantity,
       interior: { source_url: order.interiorPdfUrl },
@@ -208,8 +278,8 @@ export default function LuluReviewDialog({ open, onClose, order, onSubmitted }) 
       city: order.shippingAddress?.city,
       state_code: order.shippingAddress?.state,
       postcode: String(order.shippingAddress?.zip || ''),
-      country_code: order.shippingAddress?.country || 'US',
-      phone_number: '',
+      country_code: normalizeCountryCode(order.shippingAddress?.country),
+      phone_number: resolvedPhone,
     },
     shipping_level: shippingLevel,
     contact_email: order.customerEmail || 'orders@beatific.co',
@@ -246,7 +316,7 @@ export default function LuluReviewDialog({ open, onClose, order, onSubmitted }) 
   const isOverdue = shipByDate ? shipByDate < new Date() : false
 
   const missingRequirements = [
-    !order.coverImageUrl && 'cover image',
+    !order.coverImageUrl && 'cover PDF',
     !order.interiorPdfUrl && 'interior PDF',
     !order.podPackageId && 'Pod package ID',
   ].filter(Boolean)
@@ -254,13 +324,13 @@ export default function LuluReviewDialog({ open, onClose, order, onSubmitted }) 
   const readinessItems = [
     {
       icon: <ImageOutlinedIcon fontSize="small" />,
-      title: 'Cover artwork',
+      title: 'Cover PDF',
       description: order.coverImageUrl
-        ? 'The cover asset is linked and ready for Lulu to fetch.'
-        : 'Upload or link the final cover artwork before submitting this order.',
+        ? 'The print-ready cover PDF is linked and ready for Lulu to fetch.'
+        : 'Upload or link the final cover PDF before submitting this order.',
       ready: Boolean(order.coverImageUrl),
       href: order.coverImageUrl,
-      actionLabel: 'Open cover',
+      actionLabel: 'Open cover PDF',
     },
     {
       icon: <DescriptionOutlinedIcon fontSize="small" />,
@@ -276,17 +346,23 @@ export default function LuluReviewDialog({ open, onClose, order, onSubmitted }) 
       icon: <Inventory2OutlinedIcon fontSize="small" />,
       title: 'Pod package mapping',
       description: order.podPackageId
-        ? 'This product is mapped to a Lulu package and ready for production.'
+        ? isValidLuluPodPackageId(order.podPackageId)
+          ? 'This product is mapped to a Lulu package and ready for production.'
+          : 'This looks like a shorthand Lulu SKU. Replace it with the 27-character pod_package_id from Lulu.'
         : 'Assign a Lulu Pod package ID before sending the order.',
-      ready: Boolean(order.podPackageId),
+      ready: Boolean(order.podPackageId && isValidLuluPodPackageId(order.podPackageId)),
     },
     {
       icon: <LocalShippingOutlinedIcon fontSize="small" />,
       title: 'Shipping destination',
       description: addressLines.length > 2
-        ? 'The shipping address looks complete enough for fulfillment.'
+        ? resolvedPhone
+          ? order.shippingAddress?.phone
+            ? 'The shipping address and customer contact phone look ready for fulfillment.'
+            : 'The shipping address is ready and will use the store fallback contact phone.'
+          : 'Add a customer phone on this order or a default contact phone in Store settings so Lulu can accept this shipment.'
         : 'Add the shipping address details so the print order can be delivered.',
-      ready: Boolean(order.shippingAddress?.street1 && order.shippingAddress?.city && order.shippingAddress?.country),
+      ready: Boolean(order.shippingAddress?.street1 && order.shippingAddress?.city && order.shippingAddress?.country && resolvedPhone),
     },
   ]
 
@@ -513,7 +589,7 @@ export default function LuluReviewDialog({ open, onClose, order, onSubmitted }) 
                   ? 'The original cover URL will be sent to Lulu without compression.'
                   : hasCover
                     ? 'This cover file cannot be previewed here, but the original URL will still be sent to Lulu.'
-                    : 'Upload or link a final cover before sending this order.'}
+                    : 'Upload or link a final cover PDF before sending this order.'}
               >
                 <Box className="lulu-review-cover-frame">
                   {canPreviewCover ? (
@@ -541,7 +617,7 @@ export default function LuluReviewDialog({ open, onClose, order, onSubmitted }) 
                         No cover available
                       </Typography>
                       <Typography component="p" className="lulu-review-empty-copy">
-                        Add a cover image or cover URL to unlock Lulu submission for this order.
+                        Add a cover PDF URL to unlock Lulu submission for this order.
                       </Typography>
                     </Box>
                   )}
@@ -558,7 +634,7 @@ export default function LuluReviewDialog({ open, onClose, order, onSubmitted }) 
                       endIcon={<OpenInNewIcon fontSize="inherit" />}
                       className="lulu-review-file-button"
                     >
-                      Open cover
+                      Open cover PDF
                     </Button>
                   ) : (
                     <Box className="lulu-review-link-missing">Cover not uploaded</Box>

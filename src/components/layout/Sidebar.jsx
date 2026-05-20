@@ -14,7 +14,6 @@ import DashboardIcon from '@mui/icons-material/DashboardOutlined'
 import ShoppingCartIcon from '@mui/icons-material/ShoppingCartOutlined'
 import LocalPrintshopIcon from '@mui/icons-material/LocalPrintshopOutlined'
 import InventoryIcon from '@mui/icons-material/Inventory2Outlined'
-import UploadFileIcon from '@mui/icons-material/UploadFileOutlined'
 import GroupIcon from '@mui/icons-material/GroupOutlined'
 import StoreIcon from '@mui/icons-material/StorefrontOutlined'
 import PersonIcon from '@mui/icons-material/PersonOutlined'
@@ -51,12 +50,6 @@ const NAV_SECTIONS = [
     title: 'PRODUCTS',
     items: [
       { title: 'Product Library', path: '/products', icon: InventoryIcon },
-    ],
-  },
-  {
-    title: 'IMPORT',
-    items: [
-      { title: 'Upload Spreadsheet', path: '/import', icon: UploadFileIcon },
     ],
   },
   {
@@ -127,7 +120,7 @@ export default function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose
   const sections = NAV_SECTIONS.map((section) => ({
     ...section,
     items: section.items.filter((item) => {
-      if (['/import', '/settings/team', '/settings/stores'].includes(item.path)) return canManage
+      if (['/settings/team', '/settings/stores'].includes(item.path)) return canManage
       return true
     }),
   })).filter((section) => section.items.length > 0)

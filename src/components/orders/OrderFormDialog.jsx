@@ -12,8 +12,14 @@ import Alert from '@mui/material/Alert'
 import Divider from '@mui/material/Divider'
 import Stack from '@mui/material/Stack'
 import Chip from '@mui/material/Chip'
+import { alpha } from '@mui/material/styles'
 import AddIcon from '@mui/icons-material/Add'
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined'
+import ReceiptLongOutlinedIcon from '@mui/icons-material/ReceiptLongOutlined'
+import PersonOutlineOutlinedIcon from '@mui/icons-material/PersonOutlineOutlined'
+import LocalShippingOutlinedIcon from '@mui/icons-material/LocalShippingOutlined'
+import Inventory2OutlinedIcon from '@mui/icons-material/Inventory2Outlined'
+import StickyNote2OutlinedIcon from '@mui/icons-material/StickyNote2Outlined'
 import api from '../../lib/api'
 import AssetInputField from '../common/AssetInputField'
 
@@ -23,6 +29,7 @@ const blankCommon = {
   shop: '',
   customerName: '',
   customerEmail: '',
+  customerPhone: '',
   street1: '',
   street2: '',
   city: '',
@@ -85,6 +92,90 @@ const money = (value) => {
   return Number.isFinite(number) ? number : 0
 }
 
+const currency = (value) =>
+  money(value).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
+
+const dateFieldProps = {
+  type: 'date',
+  size: 'small',
+  slotProps: {
+    inputLabel: { shrink: true },
+  },
+  sx: {
+    '& .MuiInputLabel-root': {
+      px: 0.5,
+      bgcolor: 'background.paper',
+      transform: 'translate(14px, -9px) scale(0.75)',
+    },
+    '& .MuiInputLabel-root.Mui-focused': {
+      color: 'primary.main',
+    },
+  },
+}
+
+function FormSection({ icon, title, subtitle, action, children }) {
+  return (
+    <Box
+      sx={{
+        p: 2.5,
+        border: '1px solid',
+        borderColor: 'divider',
+        borderRadius: 1,
+        bgcolor: 'background.paper',
+        boxShadow: '0 10px 28px rgba(15, 23, 42, 0.04)',
+      }}
+    >
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 2, mb: 2 }}>
+        <Box sx={{ display: 'flex', gap: 1.25, alignItems: 'flex-start' }}>
+          <Box
+            sx={{
+              width: 34,
+              height: 34,
+              borderRadius: 1,
+              display: 'grid',
+              placeItems: 'center',
+              bgcolor: alpha('#00A76F', 0.1),
+              color: 'primary.dark',
+              flexShrink: 0,
+            }}
+          >
+            {icon}
+          </Box>
+          <Box>
+            <Typography variant="subtitle1" sx={{ fontWeight: 900 }}>{title}</Typography>
+            {subtitle && (
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
+                {subtitle}
+              </Typography>
+            )}
+          </Box>
+        </Box>
+        {action}
+      </Box>
+      {children}
+    </Box>
+  )
+}
+
+function FieldGrid({ children, columns = { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))' } }) {
+  return (
+    <Box sx={{ display: 'grid', gridTemplateColumns: columns, gap: 1.5 }}>
+      {children}
+    </Box>
+  )
+}
+
+function SummaryRow({ label, value, strong }) {
+  return (
+    <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2, alignItems: 'center' }}>
+      <Typography variant="body2" color="text.secondary">{label}</Typography>
+      <Typography variant={strong ? 'subtitle1' : 'body2'} sx={{ fontWeight: strong ? 900 : 700, textAlign: 'right' }}>
+        {value}
+      </Typography>
+    </Box>
+  )
+}
+
 export default function OrderFormDialog({ open, onClose, mode = 'create', activeStore, orderGroup, onSaved }) {
   const editing = mode === 'edit'
   const [common, setCommon] = useState(blankCommon)
@@ -107,6 +198,7 @@ export default function OrderFormDialog({ open, onClose, mode = 'create', active
         shop: first.shop || '',
         customerName: first.customerName || '',
         customerEmail: first.customerEmail || '',
+        customerPhone: first.shippingAddress?.phone || '',
         street1: first.shippingAddress?.street1 || '',
         street2: first.shippingAddress?.street2 || '',
         city: first.shippingAddress?.city || '',
@@ -204,6 +296,7 @@ export default function OrderFormDialog({ open, onClose, mode = 'create', active
     customer: {
       name: common.customerName || '',
       email: common.customerEmail || null,
+      phone: common.customerPhone || null,
       address: {
         name: common.customerName || '',
         street1: common.street1 || '',
@@ -212,6 +305,7 @@ export default function OrderFormDialog({ open, onClose, mode = 'create', active
         state: common.state || '',
         zip: common.zip || '',
         country: common.country || '',
+        phone: common.customerPhone || '',
       },
     },
     pricing: buildPricing(),
@@ -264,6 +358,7 @@ export default function OrderFormDialog({ open, onClose, mode = 'create', active
           state: common.state || '',
           zip: common.zip || '',
           country: common.country || '',
+          phone: common.customerPhone || '',
         },
         orderedAt: common.paymentDate || null,
         shipByDate: common.shipBy || null,
@@ -297,133 +392,254 @@ export default function OrderFormDialog({ open, onClose, mode = 'create', active
     }
   }
 
+  const previewPricing = buildPricing()
+  const requiredComplete = [
+    common.orderNumber.trim(),
+    common.storeId,
+    ...items.map((item) => item.transactionId.trim()),
+  ].filter(Boolean).length
+  const requiredTotal = 2 + items.length
+
   return (
-    <Dialog open={open} onClose={saving ? undefined : onClose} maxWidth="lg" fullWidth>
-      <DialogTitle sx={{ fontWeight: 800 }}>
-        {editing ? `Edit Order #${orderGroup?.etsyOrderId || ''}` : 'Add Manual Etsy Order'}
-      </DialogTitle>
-      <DialogContent sx={{ pt: '12px !important' }}>
-        <Stack spacing={2.5}>
-          {error && <Alert severity="error">{error}</Alert>}
-
-          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr 1fr' }, gap: 1.5 }}>
-            <TextField label="Order number" size="small" value={common.orderNumber} onChange={(e) => updateCommon('orderNumber', e.target.value)} />
-            <TextField label="Store ID" size="small" value={common.storeId} onChange={(e) => updateCommon('storeId', e.target.value)} disabled={Boolean(activeStore?._id)} />
-            <TextField label="Shop" size="small" value={common.shop} onChange={(e) => updateCommon('shop', e.target.value)} />
-            <TextField label="Customer name" size="small" value={common.customerName} onChange={(e) => updateCommon('customerName', e.target.value)} />
-            <TextField label="Customer email" size="small" value={common.customerEmail} onChange={(e) => updateCommon('customerEmail', e.target.value)} />
-            <TextField label="Payment date" type="date" size="small" value={common.paymentDate} onChange={(e) => updateCommon('paymentDate', e.target.value)} InputLabelProps={{ shrink: true }} />
-            <TextField label="Ship by" type="date" size="small" value={common.shipBy} onChange={(e) => updateCommon('shipBy', e.target.value)} InputLabelProps={{ shrink: true }} />
-            <TextField label="Shipping $" size="small" value={common.shipping} onChange={(e) => updateCommon('shipping', e.target.value)} />
-            <TextField label="Tax $" size="small" value={common.salesTax} onChange={(e) => updateCommon('salesTax', e.target.value)} />
-          </Box>
-
+    <Dialog
+      open={open}
+      onClose={saving ? undefined : onClose}
+      maxWidth="xl"
+      fullWidth
+      slotProps={{
+        paper: {
+          sx: {
+            width: { xs: 'calc(100% - 24px)', xl: 1240 },
+            maxHeight: '92vh',
+          },
+        },
+      }}
+    >
+      <DialogTitle sx={{ p: 0, borderBottom: '1px solid', borderColor: 'divider' }}>
+        <Box sx={{ px: 3, py: 2.5, display: 'flex', justifyContent: 'space-between', gap: 2, flexWrap: 'wrap' }}>
           <Box>
-            <Typography variant="subtitle2" sx={{ fontWeight: 800, mb: 1 }}>Shipping Address</Typography>
-            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1.5fr 1.5fr 1fr 0.7fr 0.8fr 1fr' }, gap: 1.25 }}>
-              <TextField label="Street 1" size="small" value={common.street1} onChange={(e) => updateCommon('street1', e.target.value)} />
-              <TextField label="Street 2" size="small" value={common.street2} onChange={(e) => updateCommon('street2', e.target.value)} />
-              <TextField label="City" size="small" value={common.city} onChange={(e) => updateCommon('city', e.target.value)} />
-              <TextField label="State" size="small" value={common.state} onChange={(e) => updateCommon('state', e.target.value)} />
-              <TextField label="ZIP" size="small" value={common.zip} onChange={(e) => updateCommon('zip', e.target.value)} />
-              <TextField label="Country" size="small" value={common.country} onChange={(e) => updateCommon('country', e.target.value)} />
-            </Box>
+            <Typography variant="h5" sx={{ fontWeight: 900, lineHeight: 1.2 }}>
+              {editing ? `Edit Order #${orderGroup?.etsyOrderId || ''}` : 'Add Manual Etsy Order'}
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+              Keep customer, shipment, product files, and totals organized in one order workspace.
+            </Typography>
           </Box>
-
-          <TextField
-            label="Buyer note / internal note"
-            size="small"
-            value={common.buyerNote}
-            onChange={(e) => updateCommon('buyerNote', e.target.value)}
-            multiline
-            minRows={2}
+          <Chip
+            label={`${items.length} item${items.length === 1 ? '' : 's'}`}
+            color="primary"
+            variant="outlined"
+            sx={{ alignSelf: 'flex-start', fontWeight: 800 }}
           />
+        </Box>
+      </DialogTitle>
+      <DialogContent sx={{ p: 0, bgcolor: 'grey.50' }}>
+        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: 'minmax(0, 1fr) 340px' }, gap: 2.5, p: { xs: 2, md: 3 } }}>
+          <Stack spacing={2.5}>
+            {error && <Alert severity="error">{error}</Alert>}
 
-          <Box>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-              <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>Items</Typography>
-              {!editing && (
-                <Button size="small" startIcon={<AddIcon />} onClick={() => setItems((current) => [...current, blankItem()])}>
+            <FormSection
+              icon={<ReceiptLongOutlinedIcon fontSize="small" />}
+              title="Order Details"
+              subtitle="Core Etsy identifiers, dates, and payment amounts."
+            >
+              <FieldGrid columns={{ xs: '1fr', md: '1fr 1fr', xl: '1fr 1fr 1fr' }}>
+                <TextField label="Order number" size="small" value={common.orderNumber} onChange={(e) => updateCommon('orderNumber', e.target.value)} />
+                <TextField label="Store ID" size="small" value={common.storeId} onChange={(e) => updateCommon('storeId', e.target.value)} disabled={Boolean(activeStore?._id)} />
+                <TextField label="Shop" size="small" value={common.shop} onChange={(e) => updateCommon('shop', e.target.value)} />
+                <TextField label="Payment date" value={common.paymentDate} onChange={(e) => updateCommon('paymentDate', e.target.value)} {...dateFieldProps} />
+                <TextField label="Ship by" value={common.shipBy} onChange={(e) => updateCommon('shipBy', e.target.value)} {...dateFieldProps} />
+                <TextField label="Shipping $" size="small" value={common.shipping} onChange={(e) => updateCommon('shipping', e.target.value)} />
+                <TextField label="Tax $" size="small" value={common.salesTax} onChange={(e) => updateCommon('salesTax', e.target.value)} />
+                <TextField label="Discount $" size="small" value={common.discount} onChange={(e) => updateCommon('discount', e.target.value)} />
+              </FieldGrid>
+            </FormSection>
+
+            <FormSection
+              icon={<PersonOutlineOutlinedIcon fontSize="small" />}
+              title="Customer"
+              subtitle="Contact details kept separate from the shipping address."
+            >
+              <FieldGrid columns={{ xs: '1fr', md: 'repeat(3, minmax(0, 1fr))' }}>
+                <TextField label="Customer name" size="small" value={common.customerName} onChange={(e) => updateCommon('customerName', e.target.value)} />
+                <TextField label="Customer email" size="small" value={common.customerEmail} onChange={(e) => updateCommon('customerEmail', e.target.value)} />
+                <TextField label="Customer phone" size="small" value={common.customerPhone} onChange={(e) => updateCommon('customerPhone', e.target.value)} />
+              </FieldGrid>
+            </FormSection>
+
+            <FormSection
+              icon={<LocalShippingOutlinedIcon fontSize="small" />}
+              title="Shipping Address"
+              subtitle="A wider layout gives long street lines and country names room to breathe."
+            >
+              <FieldGrid columns={{ xs: '1fr', md: '1.25fr 1.25fr', xl: '1.4fr 1.4fr 1fr 0.7fr 0.8fr 1fr' }}>
+                <TextField label="Street 1" size="small" value={common.street1} onChange={(e) => updateCommon('street1', e.target.value)} />
+                <TextField label="Street 2" size="small" value={common.street2} onChange={(e) => updateCommon('street2', e.target.value)} />
+                <TextField label="City" size="small" value={common.city} onChange={(e) => updateCommon('city', e.target.value)} />
+                <TextField label="State" size="small" value={common.state} onChange={(e) => updateCommon('state', e.target.value)} />
+                <TextField label="ZIP" size="small" value={common.zip} onChange={(e) => updateCommon('zip', e.target.value)} />
+                <TextField label="Country" size="small" value={common.country} onChange={(e) => updateCommon('country', e.target.value)} />
+              </FieldGrid>
+            </FormSection>
+
+            <FormSection
+              icon={<StickyNote2OutlinedIcon fontSize="small" />}
+              title="Order Note"
+              subtitle="Buyer notes and internal context stay visible as a dedicated block."
+            >
+              <TextField
+                label="Buyer note / internal note"
+                size="small"
+                value={common.buyerNote}
+                onChange={(e) => updateCommon('buyerNote', e.target.value)}
+                multiline
+                minRows={3}
+                fullWidth
+              />
+            </FormSection>
+
+            <FormSection
+              icon={<Inventory2OutlinedIcon fontSize="small" />}
+              title={`Products (${items.length})`}
+              subtitle="Each transaction is grouped into product details, options, files, and fulfillment."
+              action={!editing && (
+                <Button size="small" variant="outlined" startIcon={<AddIcon />} onClick={() => setItems((current) => [...current, blankItem()])}>
                   Add item
                 </Button>
               )}
-            </Box>
+            >
+              <Stack spacing={2}>
+                {items.map((item, index) => (
+                  <Box key={item._id || index} sx={{ p: 2, border: '1px solid', borderColor: 'divider', borderRadius: 1, bgcolor: 'grey.50' }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1.5, mb: 2 }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Chip label={`Item ${index + 1}`} size="small" sx={{ fontWeight: 800, bgcolor: 'background.paper' }} />
+                        {warnings[item.transactionId] && <Chip label="Needs attention" size="small" color="warning" variant="outlined" />}
+                      </Box>
+                      {!editing && items.length > 1 && (
+                        <IconButton size="small" color="error" onClick={() => setItems((current) => current.filter((_, itemIndex) => itemIndex !== index))}>
+                          <DeleteOutlineIcon fontSize="small" />
+                        </IconButton>
+                      )}
+                    </Box>
 
-            <Stack spacing={1.5}>
-              {items.map((item, index) => (
-                <Box key={item._id || index} sx={{ p: 1.75, border: '1px solid', borderColor: 'divider', borderRadius: 2, bgcolor: 'background.paper' }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.25 }}>
-                    <Chip label={`Item ${index + 1}`} size="small" sx={{ fontWeight: 700 }} />
-                    {!editing && items.length > 1 && (
-                      <IconButton size="small" color="error" onClick={() => setItems((current) => current.filter((_, itemIndex) => itemIndex !== index))}>
-                        <DeleteOutlineIcon fontSize="small" />
-                      </IconButton>
-                    )}
+                    <Stack spacing={2}>
+                      <FieldGrid columns={{ xs: '1fr', md: '1fr 1fr', xl: '1fr 1fr 2fr 0.6fr 0.7fr' }}>
+                        <TextField
+                          label="Transaction ID"
+                          size="small"
+                          value={item.transactionId}
+                          error={Boolean(warnings[item.transactionId])}
+                          helperText={warnings[item.transactionId] || ''}
+                          onChange={(e) => updateItem(index, 'transactionId', e.target.value)}
+                        />
+                        <TextField label="Listing ID" size="small" value={item.listingId} onChange={(e) => updateItem(index, 'listingId', e.target.value)} />
+                        <TextField label="Product title" size="small" value={item.cleanTitle} onChange={(e) => updateItem(index, 'cleanTitle', e.target.value)} />
+                        <TextField label="Qty" size="small" value={item.quantity} onChange={(e) => updateItem(index, 'quantity', e.target.value)} />
+                        <TextField label="Price $" size="small" value={item.itemPrice} onChange={(e) => updateItem(index, 'itemPrice', e.target.value)} />
+                      </FieldGrid>
+
+                      <FieldGrid columns={{ xs: '1fr', md: 'repeat(2, minmax(0, 1fr))', xl: 'repeat(4, minmax(0, 1fr))' }}>
+                        <TextField label="Option 1 name" size="small" value={item.option1Name} onChange={(e) => updateItem(index, 'option1Name', e.target.value)} />
+                        <TextField label="Option 1 value" size="small" value={item.option1Value} onChange={(e) => updateItem(index, 'option1Value', e.target.value)} />
+                        <TextField label="Option 2 name" size="small" value={item.option2Name} onChange={(e) => updateItem(index, 'option2Name', e.target.value)} />
+                        <TextField label="Option 2 value" size="small" value={item.option2Value} onChange={(e) => updateItem(index, 'option2Value', e.target.value)} />
+                      </FieldGrid>
+
+                      <TextField
+                        label="Personalization, one per line as Label: value"
+                        size="small"
+                        value={item.personalizationText}
+                        onChange={(e) => updateItem(index, 'personalizationText', e.target.value)}
+                        multiline
+                        minRows={3}
+                        fullWidth
+                      />
+
+                      <Divider />
+
+                      <FieldGrid columns={{ xs: '1fr', md: 'repeat(2, minmax(0, 1fr))' }}>
+                        <AssetInputField
+                          label="Cover PDF"
+                          value={item.coverImageUrl}
+                          folder="covers"
+                          accept="application/pdf,.pdf"
+                          allowPdf
+                          helperText="Upload/link the finished cover PDF for this transaction item."
+                          openLabel="Open cover PDF"
+                          onChange={(value) => updateItem(index, 'coverImageUrl', value)}
+                        />
+                        <AssetInputField
+                          label="Inside Pages PDF"
+                          value={item.interiorPdfUrl}
+                          folder="interiors"
+                          accept="application/pdf,.pdf"
+                          allowPdf
+                          helperText="Upload/link the finished inside-pages PDF for this transaction item."
+                          openLabel="Open inside pages PDF"
+                          onChange={(value) => updateItem(index, 'interiorPdfUrl', value)}
+                        />
+                      </FieldGrid>
+
+                      <FieldGrid columns={{ xs: '1fr', md: '1fr 0.6fr' }}>
+                        <TextField
+                          label="POD package ID"
+                          size="small"
+                          value={item.podPackageId}
+                          onChange={(e) => updateItem(index, 'podPackageId', e.target.value)}
+                          placeholder="0850X1100BWSTDLW060UW444MNG"
+                          helperText="Use Lulu's 27-character pod_package_id, not PB-... shorthand."
+                        />
+                        <TextField label="Shipping level" size="small" value={item.shippingLevel} onChange={(e) => updateItem(index, 'shippingLevel', e.target.value)} />
+                      </FieldGrid>
+                    </Stack>
                   </Box>
-                  <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr 2fr 0.6fr 0.7fr' }, gap: 1.25 }}>
-                    <TextField
-                      label="Transaction ID"
-                      size="small"
-                      value={item.transactionId}
-                      error={Boolean(warnings[item.transactionId])}
-                      helperText={warnings[item.transactionId] || ''}
-                      onChange={(e) => updateItem(index, 'transactionId', e.target.value)}
-                    />
-                    <TextField label="Listing ID" size="small" value={item.listingId} onChange={(e) => updateItem(index, 'listingId', e.target.value)} />
-                    <TextField label="Product title" size="small" value={item.cleanTitle} onChange={(e) => updateItem(index, 'cleanTitle', e.target.value)} />
-                    <TextField label="Qty" size="small" value={item.quantity} onChange={(e) => updateItem(index, 'quantity', e.target.value)} />
-                    <TextField label="Price $" size="small" value={item.itemPrice} onChange={(e) => updateItem(index, 'itemPrice', e.target.value)} />
-                  </Box>
-                  <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr 1fr 1fr' }, gap: 1.25, mt: 1.25 }}>
-                    <TextField label="Option 1 name" size="small" value={item.option1Name} onChange={(e) => updateItem(index, 'option1Name', e.target.value)} />
-                    <TextField label="Option 1 value" size="small" value={item.option1Value} onChange={(e) => updateItem(index, 'option1Value', e.target.value)} />
-                    <TextField label="Option 2 name" size="small" value={item.option2Name} onChange={(e) => updateItem(index, 'option2Name', e.target.value)} />
-                    <TextField label="Option 2 value" size="small" value={item.option2Value} onChange={(e) => updateItem(index, 'option2Value', e.target.value)} />
-                  </Box>
-                  <TextField
-                    label="Personalization, one per line as Label: value"
-                    size="small"
-                    value={item.personalizationText}
-                    onChange={(e) => updateItem(index, 'personalizationText', e.target.value)}
-                    multiline
-                    minRows={2}
-                    fullWidth
-                    sx={{ mt: 1.25 }}
-                  />
-                  <Divider sx={{ my: 1.5 }} />
-                  <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, 1fr)' }, gap: 1.25 }}>
-                    <AssetInputField
-                      label="Cover PDF"
-                      value={item.coverImageUrl}
-                      folder="covers"
-                      accept="application/pdf,.pdf"
-                      allowPdf
-                      helperText="Upload/link the finished cover PDF for this transaction item."
-                      openLabel="Open cover PDF"
-                      onChange={(value) => updateItem(index, 'coverImageUrl', value)}
-                    />
-                    <AssetInputField
-                      label="Inside Pages PDF"
-                      value={item.interiorPdfUrl}
-                      folder="interiors"
-                      accept="application/pdf,.pdf"
-                      allowPdf
-                      helperText="Upload/link the finished inside-pages PDF for this transaction item."
-                      openLabel="Open inside pages PDF"
-                      onChange={(value) => updateItem(index, 'interiorPdfUrl', value)}
-                    />
-                  </Box>
-                  <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 0.8fr' }, gap: 1.25, mt: 1.25 }}>
-                    <TextField label="POD package ID" size="small" value={item.podPackageId} onChange={(e) => updateItem(index, 'podPackageId', e.target.value)} />
-                    <TextField label="Shipping level" size="small" value={item.shippingLevel} onChange={(e) => updateItem(index, 'shippingLevel', e.target.value)} />
-                  </Box>
-                </Box>
-              ))}
-            </Stack>
+                ))}
+              </Stack>
+            </FormSection>
+          </Stack>
+
+          <Box sx={{ position: { lg: 'sticky' }, top: 24, alignSelf: 'start' }}>
+            <Box
+              sx={{
+                p: 2.5,
+                border: '1px solid',
+                borderColor: 'divider',
+                borderRadius: 1,
+                bgcolor: 'background.paper',
+                boxShadow: '0 14px 36px rgba(15, 23, 42, 0.06)',
+              }}
+            >
+              <Typography variant="subtitle1" sx={{ fontWeight: 900, mb: 0.5 }}>Order Preview</Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                Totals update as you edit the items and payment fields.
+              </Typography>
+
+              <Stack spacing={1.25}>
+                <SummaryRow label="Required fields" value={`${requiredComplete}/${requiredTotal}`} />
+                <SummaryRow label="Items" value={items.length} />
+                <Divider sx={{ my: 0.5 }} />
+                <SummaryRow label="Subtotal" value={currency(previewPricing.subtotal)} />
+                <SummaryRow label="Shipping" value={currency(previewPricing.shipping)} />
+                <SummaryRow label="Tax" value={currency(previewPricing.salesTax)} />
+                <SummaryRow label="Discount" value={`-${currency(previewPricing.discount)}`} />
+                <Divider sx={{ my: 0.5 }} />
+                <SummaryRow label="Order total" value={currency(previewPricing.orderTotal)} strong />
+              </Stack>
+
+              <Box sx={{ mt: 2, p: 1.5, borderRadius: 1, bgcolor: alpha('#00A76F', 0.08), border: '1px solid', borderColor: alpha('#00A76F', 0.18) }}>
+                <Typography variant="caption" sx={{ display: 'block', color: 'success.dark', fontWeight: 800 }}>
+                  {editing ? 'Editing existing order' : 'Manual Etsy order'}
+                </Typography>
+                <Typography variant="body2" sx={{ mt: 0.5, color: 'text.secondary' }}>
+                  {common.customerName || 'Customer not set'} / {common.shop || activeStore?.name || 'Shop not set'}
+                </Typography>
+              </Box>
+            </Box>
           </Box>
-        </Stack>
+        </Box>
       </DialogContent>
-      <DialogActions sx={{ px: 3, pb: 3 }}>
+      <DialogActions sx={{ px: 3, py: 2, bgcolor: 'background.paper' }}>
         <Button onClick={onClose} disabled={saving}>Cancel</Button>
         <Button variant="contained" onClick={handleSubmit} disabled={saving}>
           {saving ? 'Saving...' : editing ? 'Save Changes' : 'Create Order'}

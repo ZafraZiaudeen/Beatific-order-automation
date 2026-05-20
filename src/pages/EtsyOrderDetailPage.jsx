@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
+import Avatar from '@mui/material/Avatar'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
-import Card from '@mui/material/Card'
 import Chip from '@mui/material/Chip'
 import Divider from '@mui/material/Divider'
 import FormControl from '@mui/material/FormControl'
@@ -13,16 +13,25 @@ import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import Alert from '@mui/material/Alert'
 import IconButton from '@mui/material/IconButton'
+import { alpha } from '@mui/material/styles'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import CalendarTodayOutlinedIcon from '@mui/icons-material/CalendarTodayOutlined'
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
+import EmailOutlinedIcon from '@mui/icons-material/EmailOutlined'
+import Inventory2OutlinedIcon from '@mui/icons-material/Inventory2Outlined'
 import LocalShippingOutlinedIcon from '@mui/icons-material/LocalShippingOutlined'
+import LocationOnOutlinedIcon from '@mui/icons-material/LocationOnOutlined'
+import NotesOutlinedIcon from '@mui/icons-material/NotesOutlined'
 import PersonOutlineOutlinedIcon from '@mui/icons-material/PersonOutlineOutlined'
+import PhoneOutlinedIcon from '@mui/icons-material/PhoneOutlined'
 import PlayArrowRoundedIcon from '@mui/icons-material/PlayArrowRounded'
+import RadioButtonUncheckedIcon from '@mui/icons-material/RadioButtonUnchecked'
+import ReceiptLongOutlinedIcon from '@mui/icons-material/ReceiptLongOutlined'
 import WarningAmberOutlinedIcon from '@mui/icons-material/WarningAmberOutlined'
 import api from '../lib/api'
 import useAuthStore from '../stores/authStore'
 import { canManageWorkspace } from '../lib/permissions'
+import { buildAssetThumbnailUrl } from '../lib/assets'
 import StatusBadge from '../components/orders/StatusBadge'
 import OrderFormDialog from '../components/orders/OrderFormDialog'
 import LuluReviewDialog from '../components/orders/LuluReviewDialog'
@@ -59,15 +68,146 @@ const waitingLabel = ({ status, hasUnmapped, hasAiFlags, isProductMapped }) => {
   return 'Waiting'
 }
 
-function InfoPanel({ icon, title, children }) {
+const ORDER_FLOW = [
+  { label: 'Review order' },
+  { label: 'Preparing order' },
+  { label: 'Ready for Lulu' },
+  { label: 'Delivered' },
+]
+
+const flowIndex = (status) => {
+  if (status === 'completed') return 2
+  if (status === 'in_progress') return 1
+  return 0
+}
+
+const getInitials = (name = '') =>
+  name.split(' ').filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join('') || '?'
+
+const avatarColor = (name = '') => {
+  const colors = ['#00A76F', '#00B8D9', '#637381', '#FF5630', '#B64839']
+  return colors[(name.charCodeAt(0) || 0) % colors.length]
+}
+
+function DetailPanel({ icon, title, action, children, sx }) {
   return (
-    <Card sx={{ p: 2.25, border: '1px solid', borderColor: 'divider', boxShadow: '0 8px 24px rgba(15, 23, 42, 0.04)', borderRadius: 2.5 }}>
-      <Box sx={{ display: 'flex', gap: 1.25, alignItems: 'center', mb: 1.5, color: 'text.secondary' }}>
-        {icon}
-        <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>{title}</Typography>
+    <Box
+      sx={{
+        p: { xs: 2, md: 2.5 },
+        border: '1px solid',
+        borderColor: 'divider',
+        borderRadius: 1,
+        bgcolor: 'background.paper',
+        boxShadow: '0 10px 26px rgba(15, 23, 42, 0.035)',
+        ...sx,
+      }}
+    >
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2, alignItems: 'center', mb: 2 }}>
+        <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+          {icon && (
+            <Box sx={{ width: 30, height: 30, borderRadius: 1, display: 'grid', placeItems: 'center', bgcolor: 'grey.100', color: 'text.secondary' }}>
+              {icon}
+            </Box>
+          )}
+          <Typography variant="subtitle1" sx={{ fontWeight: 900 }}>{title}</Typography>
+        </Box>
+        {action}
       </Box>
       {children}
-    </Card>
+    </Box>
+  )
+}
+
+function SidePanel({ icon, title, children, accent = false }) {
+  return (
+    <Box
+      sx={{
+        p: 2,
+        border: '1px solid',
+        borderColor: accent ? alpha('#B64839', 0.24) : 'divider',
+        borderRadius: 1,
+        bgcolor: accent ? alpha('#B64839', 0.045) : 'background.paper',
+        boxShadow: '0 8px 22px rgba(15, 23, 42, 0.035)',
+      }}
+    >
+      <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', mb: 1.5 }}>
+        {icon}
+        <Typography variant="subtitle2" sx={{ fontWeight: 900 }}>{title}</Typography>
+      </Box>
+      {children}
+    </Box>
+  )
+}
+
+function ProgressStrip({ status, shop, shipByDate }) {
+  const activeIndex = flowIndex(status)
+  return (
+    <DetailPanel
+      title="Fulfillment Progress"
+      icon={<LocalShippingOutlinedIcon fontSize="small" />}
+      action={shipByDate && (
+        <Typography variant="caption" color="text.secondary">
+          Ship by {fmtDate(shipByDate)}
+        </Typography>
+      )}
+    >
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2, mb: 2, flexWrap: 'wrap' }}>
+        <Typography variant="body2" color="text.secondary">Return to {shop || 'store'}</Typography>
+        <Typography variant="body2" sx={{ fontWeight: 800 }}>Estimated print prep: 1-3 business days</Typography>
+      </Box>
+      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: `repeat(${ORDER_FLOW.length}, 1fr)` }, gap: { xs: 1.25, sm: 0 } }}>
+        {ORDER_FLOW.map((step, index) => {
+          const complete = index <= activeIndex
+          return (
+            <Box key={step.label} sx={{ position: 'relative', pb: { sm: 1 } }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                {complete ? (
+                  <Box sx={{ width: 18, height: 18, borderRadius: '50%', bgcolor: 'primary.main', display: 'grid', placeItems: 'center' }}>
+                    <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: 'background.paper' }} />
+                  </Box>
+                ) : (
+                  <RadioButtonUncheckedIcon sx={{ fontSize: 18, color: 'text.disabled' }} />
+                )}
+                <Typography variant="caption" sx={{ fontWeight: complete ? 900 : 700, color: complete ? 'text.primary' : 'text.secondary' }}>
+                  {step.label}
+                </Typography>
+              </Box>
+              <Box
+                sx={{
+                  height: 3,
+                  borderRadius: 999,
+                  bgcolor: complete ? 'primary.main' : 'grey.200',
+                  mr: { sm: index === ORDER_FLOW.length - 1 ? 0 : 1.25 },
+                }}
+              />
+            </Box>
+          )
+        })}
+      </Box>
+    </DetailPanel>
+  )
+}
+
+function InfoLine({ icon, label, value }) {
+  return (
+    <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start' }}>
+      <Box sx={{ color: 'text.disabled', lineHeight: 0, mt: 0.25 }}>{icon}</Box>
+      <Box sx={{ minWidth: 0 }}>
+        <Typography variant="caption" color="text.secondary">{label}</Typography>
+        <Typography variant="body2" sx={{ fontWeight: 700, wordBreak: 'break-word' }}>{value || '-'}</Typography>
+      </Box>
+    </Box>
+  )
+}
+
+function PaymentRow({ label, value, strong }) {
+  return (
+    <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2, alignItems: 'center' }}>
+      <Typography variant="body2" color="text.secondary">{label}</Typography>
+      <Typography variant={strong ? 'subtitle1' : 'body2'} sx={{ fontWeight: strong ? 900 : 800, textAlign: 'right' }}>
+        {value}
+      </Typography>
+    </Box>
   )
 }
 
@@ -76,14 +216,15 @@ function ItemCard({ item, index, onFillTemplate, onAssetChange, canManage }) {
   const isCustom = item.etsyStatus === 'custom_orders'
   const canFillTemplate = canManage && item.etsyStatus === 'in_progress' && item.productId
   const itemAiFlags = (item.aiFlags || []).filter((flag) => flag !== 'Missing Product Mapping')
+
   return (
-    <Card sx={{ p: 1.75, border: '1px solid', borderColor: 'divider', boxShadow: '0 8px 20px rgba(15, 23, 42, 0.035)', borderRadius: 2.5 }}>
-      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '96px 1.4fr 1fr 1fr auto' }, gap: 2, alignItems: 'center' }}>
+    <Box sx={{ py: 2.25, borderTop: index === 0 ? 0 : '1px solid', borderColor: 'divider' }}>
+      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '88px minmax(0, 1.4fr) minmax(180px, 0.8fr) auto' }, gap: 2, alignItems: 'center' }}>
         <Box
           sx={{
-            width: 96,
-            height: 96,
-            borderRadius: 2,
+            width: 88,
+            height: 88,
+            borderRadius: 1,
             border: '1px solid',
             borderColor: 'divider',
             bgcolor: 'grey.50',
@@ -94,42 +235,47 @@ function ItemCard({ item, index, onFillTemplate, onAssetChange, canManage }) {
           }}
         >
           {item.coverImageUrl ? (
-            <Box component="img" src={item.coverImageUrl} alt="" sx={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            <Box component="img" src={buildAssetThumbnailUrl(item.coverImageUrl)} alt="" sx={{ width: '100%', height: '100%', objectFit: 'cover' }} />
           ) : (
             <Typography variant="caption" color="text.disabled">No cover</Typography>
           )}
         </Box>
 
-        <Box>
-          <Typography variant="subtitle1" sx={{ fontWeight: 800, fontSize: '0.98rem', lineHeight: 1.35 }}>
+        <Box sx={{ minWidth: 0 }}>
+          <Typography variant="subtitle1" sx={{ fontWeight: 900, fontSize: '0.98rem', lineHeight: 1.35 }}>
             {item.productTitle || `Item ${index + 1}`}
           </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-            Listing ID: {item.listingId || '-'}
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            Transaction ID: {item.etsyItemId || '-'}
-          </Typography>
+          <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap', mt: 0.75 }}>
+            <Chip label={`SKU: ${item.listingId || '-'}`} size="small" variant="outlined" />
+            <Chip label={`Txn: ${item.etsyItemId || '-'}`} size="small" variant="outlined" />
+            {!item.isProductMapped && (
+              <Chip
+                icon={<WarningAmberOutlinedIcon sx={{ fontSize: '13px !important' }} />}
+                label="Unmapped"
+                size="small"
+                color="warning"
+                variant="outlined"
+              />
+            )}
+          </Stack>
         </Box>
 
         <Box>
-          <Typography variant="caption" sx={{ display: 'block', fontWeight: 800, color: 'text.secondary', mb: 0.75 }}>Options</Typography>
+          <Typography variant="caption" sx={{ display: 'block', fontWeight: 800, color: 'text.secondary', mb: 0.75 }}>Details</Typography>
           {[item.option1Value && [item.option1Name || 'Option 1', item.option1Value], item.option2Value && [item.option2Name || 'Option 2', item.option2Value]]
             .filter(Boolean)
             .map(([label, value]) => (
               <Typography key={label} variant="body2">{label}: {value}</Typography>
             ))}
           {!item.option1Value && !item.option2Value && <Typography variant="body2" color="text.disabled">No options</Typography>}
+          {personalization.length > 0 && (
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+              {personalization.length} personalization field{personalization.length === 1 ? '' : 's'}
+            </Typography>
+          )}
         </Box>
 
-        <Box>
-          <Typography variant="caption" sx={{ display: 'block', fontWeight: 800, color: 'text.secondary', mb: 0.75 }}>Personalization</Typography>
-          {personalization.length ? personalization.map(([label, value]) => (
-            <Typography key={label} variant="body2">{label}: {value}</Typography>
-          )) : <Typography variant="body2" color="text.disabled">No personalization</Typography>}
-        </Box>
-
-        <Box sx={{ textAlign: { xs: 'left', md: 'right' }, minWidth: 110 }}>
+        <Box sx={{ textAlign: { xs: 'left', md: 'right' }, minWidth: 112 }}>
           <StatusBadge
             status={item.etsyStatus}
             size="small"
@@ -156,6 +302,20 @@ function ItemCard({ item, index, onFillTemplate, onAssetChange, canManage }) {
           </Typography>
         </Box>
       </Box>
+
+      {personalization.length > 0 && (
+        <Box sx={{ mt: 1.5, ml: { md: '104px' }, p: 1.5, borderRadius: 1, bgcolor: 'grey.50', border: '1px solid', borderColor: 'divider' }}>
+          <Typography variant="caption" sx={{ display: 'block', fontWeight: 900, color: 'text.secondary', mb: 0.75 }}>Personalization</Typography>
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))' }, gap: 1 }}>
+            {personalization.map(([label, value]) => (
+              <Box key={label}>
+                <Typography variant="caption" color="text.secondary">{label}</Typography>
+                <Typography variant="body2" sx={{ fontWeight: 700, wordBreak: 'break-word' }}>{value}</Typography>
+              </Box>
+            ))}
+          </Box>
+        </Box>
+      )}
 
       {(canFillTemplate || (canManage && isCustom)) && (
         <Box sx={{ mt: 1.75, pt: 1.75, borderTop: '1px solid', borderColor: 'divider' }}>
@@ -199,7 +359,7 @@ function ItemCard({ item, index, onFillTemplate, onAssetChange, canManage }) {
           )}
         </Box>
       )}
-    </Card>
+    </Box>
   )
 }
 
@@ -244,6 +404,10 @@ export default function EtsyOrderDetailPage() {
   const discount = Number(pricing.discount || 0)
   const total = Number(pricing.orderTotal || subtotal + shipping + tax - discount)
   const canSubmitToLulu = first?.etsyStatus === 'completed' && first?.coverImageUrl && first?.interiorPdfUrl && first?.podPackageId
+  const shippingLines = detailLines(group?.shippingAddress)
+  const statusLabel = waitingLabel({ status: group?.status, hasUnmapped: group?.hasUnmapped, hasAiFlags: reviewFlags.length > 0 })
+  const orderNote = group?.notes || first?.buyerNote || first?.notes
+  const sideTags = [group?.shop, first?.shippingLevel, first?.luluStatus].filter(Boolean)
 
   const handleBulkStatus = async (status) => {
     if (!group?.orderIds?.length) return
@@ -291,12 +455,10 @@ export default function EtsyOrderDetailPage() {
       <Stack spacing={2}>
         <Skeleton width={180} height={32} />
         <Skeleton width="45%" height={58} />
-        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(3, 1fr)' }, gap: 2 }}>
-          <Skeleton height={160} />
-          <Skeleton height={160} />
-          <Skeleton height={160} />
+        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 1fr) 340px' }, gap: 3 }}>
+          <Skeleton height={380} />
+          <Skeleton height={380} />
         </Box>
-        <Skeleton height={160} />
       </Stack>
     )
   }
@@ -311,28 +473,32 @@ export default function EtsyOrderDetailPage() {
   }
 
   return (
-    <Box>
-      <Button startIcon={<ArrowBackIcon />} onClick={() => navigate('/orders/etsy')} sx={{ mb: 2, color: 'primary.main', fontWeight: 700 }}>
-        Back to Orders
-      </Button>
-
-      {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
-
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2, alignItems: { xs: 'stretch', md: 'center' }, flexDirection: { xs: 'column', md: 'row' }, mb: 3 }}>
-        <Box>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25, flexWrap: 'wrap' }}>
-            <Typography variant="h4" sx={{ fontWeight: 900, letterSpacing: '-0.03em' }}>Order #{group.etsyOrderId}</Typography>
-            <StatusBadge
-              status={group.status}
-              label={waitingLabel({ status: group.status, hasUnmapped: group.hasUnmapped, hasAiFlags: reviewFlags.length > 0 })}
-            />
+    <Box sx={{ maxWidth: 1280, mx: 'auto', pb: 4 }}>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2, alignItems: { xs: 'stretch', md: 'flex-start' }, flexDirection: { xs: 'column', md: 'row' }, mb: 3 }}>
+        <Box sx={{ display: 'flex', gap: 2, alignItems: 'flex-start' }}>
+          <IconButton
+            onClick={() => navigate('/orders/etsy')}
+            sx={{
+              mt: 0.25,
+              bgcolor: 'grey.100',
+              color: 'text.secondary',
+              '&:hover': { bgcolor: 'grey.200' },
+            }}
+          >
+            <ArrowBackIcon fontSize="small" />
+          </IconButton>
+          <Box>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+              <Typography variant="h4" sx={{ fontWeight: 900, lineHeight: 1.15 }}>Order #{group.etsyOrderId}</Typography>
+              <StatusBadge status={group.status} label={statusLabel} />
+            </Box>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
+              Order date {fmtDate(group.orderedAt, true)} / Order from {group.customerName || 'Unknown customer'} / {group.totalItems} item{group.totalItems === 1 ? '' : 's'}
+            </Typography>
           </Box>
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-            {fmtDate(group.orderedAt, true)} · {group.totalItems} item{group.totalItems === 1 ? '' : 's'}
-          </Typography>
         </Box>
 
-        <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
+        <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap', justifyContent: { xs: 'flex-start', md: 'flex-end' } }}>
           {canManage && (
             <>
               <FormControl size="small" disabled={statusSaving} sx={{ minWidth: 180 }}>
@@ -358,6 +524,8 @@ export default function EtsyOrderDetailPage() {
         </Box>
       </Box>
 
+      {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+
       {reviewFlags.length > 0 && (
         <Alert severity="warning" icon={<WarningAmberOutlinedIcon />} sx={{ mb: 2 }}>
           <Typography variant="subtitle2" sx={{ fontWeight: 800, mb: 0.5 }}>AI flagged personalization</Typography>
@@ -369,94 +537,112 @@ export default function EtsyOrderDetailPage() {
         </Alert>
       )}
 
-      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: '1fr 1fr 1.15fr' }, gap: 2, mb: 3 }}>
-        <InfoPanel icon={<PersonOutlineOutlinedIcon fontSize="small" />} title="Customer">
-          <Typography variant="body1" sx={{ fontWeight: 700 }}>{group.customerName || '-'}</Typography>
-          <Typography variant="body2" sx={{ color: 'primary.main', mt: 0.5 }}>{group.customerEmail || '-'}</Typography>
-        </InfoPanel>
+      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: 'minmax(0, 1fr) 340px' }, gap: 3, alignItems: 'start' }}>
+        <Stack spacing={2.5}>
+          <ProgressStrip status={group.status} shop={group.shop} shipByDate={group.shipByDate} />
 
-        <InfoPanel icon={<LocalShippingOutlinedIcon fontSize="small" />} title="Shipping Address">
-          {detailLines(group.shippingAddress).length ? detailLines(group.shippingAddress).map((line) => (
-            <Typography key={line} variant="body2">{line}</Typography>
-          )) : <Typography variant="body2" color="text.disabled">No shipping address</Typography>}
-        </InfoPanel>
+          <DetailPanel
+            title={`Products (${group.items.length})`}
+            icon={<Inventory2OutlinedIcon fontSize="small" />}
+            action={<StatusBadge status={group.status} size="small" label={statusLabel} />}
+          >
+            {group.items.map((item, index) => (
+              <ItemCard
+                key={item._id}
+                item={item}
+                index={index}
+                onFillTemplate={handleOpenTemplate}
+                onAssetChange={handleAssetChange}
+                canManage={canManage}
+              />
+            ))}
+          </DetailPanel>
 
-        <InfoPanel icon={<CalendarTodayOutlinedIcon fontSize="small" />} title="Order Summary">
-          <Box sx={{ display: 'grid', gridTemplateColumns: '1fr auto', rowGap: 0.8 }}>
-            <Typography variant="body2" color="text.secondary">Status</Typography>
-            <StatusBadge
-              status={group.status}
-              size="small"
-              label={waitingLabel({ status: group.status, hasUnmapped: group.hasUnmapped, hasAiFlags: reviewFlags.length > 0 })}
-            />
-            <Typography variant="body2" color="text.secondary">Shop</Typography>
-            <Typography variant="body2">{group.shop || '-'}</Typography>
-            <Typography variant="body2" color="text.secondary">Payment Date</Typography>
-            <Typography variant="body2">{fmtDate(group.orderedAt)}</Typography>
-            <Typography variant="body2" color="text.secondary">Ship By</Typography>
-            <Typography variant="body2">{fmtDate(group.shipByDate)}</Typography>
-          </Box>
-        </InfoPanel>
-      </Box>
+          <DetailPanel title="Payment Details" icon={<ReceiptLongOutlinedIcon fontSize="small" />}>
+            <Stack spacing={1.25}>
+              <PaymentRow label="Payment method" value={pricing.paymentMethod || first?.paymentMethod || 'Etsy checkout'} />
+              <PaymentRow label="Subtotal" value={money(subtotal)} />
+              <PaymentRow label="Shipping fee" value={money(shipping)} />
+              <PaymentRow label="Sales tax" value={money(tax)} />
+              <PaymentRow label="Discount" value={`-${money(discount)}`} />
+              <Divider sx={{ my: 0.75 }} />
+              <PaymentRow label={`${group.totalItems} item${group.totalItems === 1 ? '' : 's'} total`} value={money(total)} strong />
+            </Stack>
+          </DetailPanel>
 
-      <Typography variant="h6" sx={{ fontWeight: 900, mb: 1.5 }}>Items ({group.items.length})</Typography>
-      <Stack spacing={1.5}>
-        {group.items.map((item, index) => (
-          <ItemCard
-            key={item._id}
-            item={item}
-            index={index}
-            onFillTemplate={handleOpenTemplate}
-            onAssetChange={handleAssetChange}
-            canManage={canManage}
-          />
-        ))}
-      </Stack>
-
-      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: '1fr 0.8fr 0.8fr' }, gap: 2, mt: 2.5 }}>
-        <Card sx={{ p: 2.25, border: '1px solid', borderColor: 'divider', boxShadow: 'none', borderRadius: 2.5 }}>
-          <Typography variant="subtitle1" sx={{ fontWeight: 900, mb: 1 }}>Notes</Typography>
-          <Typography variant="body2" color={group.notes ? 'text.primary' : 'text.disabled'} sx={{ whiteSpace: 'pre-wrap', lineHeight: 1.7 }}>
-            {group.notes || 'No notes for this order yet.'}
-          </Typography>
-        </Card>
-
-        <Card sx={{ p: 2.25, border: '1px solid', borderColor: 'divider', boxShadow: 'none', borderRadius: 2.5 }}>
-          <Typography variant="subtitle1" sx={{ fontWeight: 900, mb: 1.5 }}>Totals</Typography>
-          {[
-            ['Subtotal', subtotal],
-            ['Shipping', shipping],
-            ['Tax', tax],
-            ['Discount', -discount],
-          ].map(([label, value]) => (
-            <Box key={label} sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-              <Typography variant="body2" color="text.secondary">{label}</Typography>
-              <Typography variant="body2">{money(value)}</Typography>
-            </Box>
-          ))}
-          <Divider sx={{ my: 1.5 }} />
-          <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-            <Typography variant="subtitle1" sx={{ fontWeight: 900 }}>Total</Typography>
-            <Typography variant="subtitle1" sx={{ fontWeight: 900, color: 'primary.main' }}>{money(total)} USD</Typography>
-          </Box>
-        </Card>
-
-        <Card sx={{ p: 2.25, border: '1px solid', borderColor: 'divider', boxShadow: 'none', borderRadius: 2.5 }}>
-          <Typography variant="subtitle1" sx={{ fontWeight: 900, mb: 1.5 }}>Order Timeline</Typography>
-          <Stack spacing={1.5}>
-            {group.events?.length ? group.events.slice(0, 6).map((event) => (
-              <Box key={event._id} sx={{ display: 'grid', gridTemplateColumns: '16px 1fr', gap: 1.5 }}>
-                <Box sx={{ width: 12, height: 12, borderRadius: '50%', bgcolor: event.toStatus === 'completed' ? 'success.main' : 'primary.main', mt: 0.5 }} />
-                <Box>
-                  <Typography variant="body2" sx={{ fontWeight: 700 }}>
-                    {event.toStatus ? event.toStatus.replace(/_/g, ' ') : 'Order updated'}
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">{fmtDate(event.createdAt, true)}</Typography>
+          <DetailPanel title="Order Timeline" icon={<CalendarTodayOutlinedIcon fontSize="small" />}>
+            <Stack spacing={0}>
+              {group.events?.length ? group.events.slice(0, 8).map((event, index) => (
+                <Box key={event._id} sx={{ display: 'grid', gridTemplateColumns: '28px 1fr', gap: 1.5 }}>
+                  <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                    <Box sx={{ width: 12, height: 12, borderRadius: '50%', bgcolor: event.toStatus === 'completed' ? 'success.main' : 'primary.main', mt: 0.5 }} />
+                    {index < Math.min(group.events.length, 8) - 1 && (
+                      <Box sx={{ width: 1, flex: 1, bgcolor: 'divider', my: 0.75 }} />
+                    )}
+                  </Box>
+                  <Box sx={{ pb: index < Math.min(group.events.length, 8) - 1 ? 2 : 0 }}>
+                    <Typography variant="body2" sx={{ fontWeight: 800 }}>
+                      {event.toStatus ? event.toStatus.replace(/_/g, ' ') : 'Order updated'}
+                    </Typography>
+                    {event.note && <Typography variant="body2" color="text.secondary">{event.note}</Typography>}
+                    <Typography variant="caption" color="text.secondary">{fmtDate(event.createdAt, true)}</Typography>
+                  </Box>
                 </Box>
+              )) : <Typography variant="body2" color="text.disabled">No activity yet.</Typography>}
+            </Stack>
+          </DetailPanel>
+        </Stack>
+
+        <Stack spacing={2}>
+          <SidePanel icon={<NotesOutlinedIcon fontSize="small" />} title="Order Note" accent>
+            <Typography variant="body2" sx={{ lineHeight: 1.65, whiteSpace: 'pre-wrap' }} color={orderNote ? 'text.primary' : 'text.secondary'}>
+              {orderNote || 'No note for this order yet.'}
+            </Typography>
+          </SidePanel>
+
+          <SidePanel icon={<PersonOutlineOutlinedIcon fontSize="small" />} title="Customer">
+            <Box sx={{ display: 'flex', gap: 1.25, alignItems: 'center' }}>
+              <Avatar sx={{ width: 46, height: 46, bgcolor: avatarColor(group.customerName), fontWeight: 900 }}>
+                {getInitials(group.customerName)}
+              </Avatar>
+              <Box sx={{ minWidth: 0 }}>
+                <Typography variant="subtitle2" sx={{ fontWeight: 900 }}>{group.customerName || '-'}</Typography>
+                <Typography variant="caption" color="text.secondary">Total: {group.totalItems} item{group.totalItems === 1 ? '' : 's'}</Typography>
               </Box>
-            )) : <Typography variant="body2" color="text.disabled">No activity yet.</Typography>}
-          </Stack>
-        </Card>
+            </Box>
+          </SidePanel>
+
+          <SidePanel icon={<LocationOnOutlinedIcon fontSize="small" />} title="Shipping Address">
+            {shippingLines.length ? shippingLines.map((line, index) => (
+              <Typography key={`${line}-${index}`} variant="body2" sx={{ color: index === 0 ? 'text.primary' : 'text.secondary', lineHeight: 1.65, fontWeight: index === 0 ? 800 : 500 }}>
+                {line}
+              </Typography>
+            )) : <Typography variant="body2" color="text.disabled">No shipping address</Typography>}
+          </SidePanel>
+
+          <SidePanel icon={<EmailOutlinedIcon fontSize="small" />} title="Contact Information">
+            <Stack spacing={1}>
+              <InfoLine icon={<EmailOutlinedIcon fontSize="small" />} label="Email" value={group.customerEmail} />
+              <InfoLine icon={<PhoneOutlinedIcon fontSize="small" />} label="Phone" value={group.shippingAddress?.phone} />
+            </Stack>
+          </SidePanel>
+
+          <SidePanel icon={<LocalShippingOutlinedIcon fontSize="small" />} title="Order Summary">
+            <Stack spacing={1}>
+              <PaymentRow label="Shop" value={group.shop || '-'} />
+              <PaymentRow label="Ordered" value={fmtDate(group.orderedAt)} />
+              <PaymentRow label="Ship by" value={fmtDate(group.shipByDate)} />
+              <PaymentRow label="Total" value={`${money(total)} USD`} strong />
+            </Stack>
+            {sideTags.length > 0 && (
+              <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: 'wrap', mt: 2 }}>
+                {sideTags.map((tag) => (
+                  <Chip key={tag} label={String(tag).replace(/_/g, ' ')} size="small" variant="outlined" />
+                ))}
+              </Stack>
+            )}
+          </SidePanel>
+        </Stack>
       </Box>
 
       {canManage && (

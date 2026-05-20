@@ -181,6 +181,11 @@ export default function StoresPage() {
                       Contact: {store.contactEmail}
                     </Typography>
                   )}
+                  {store.contactPhone && (
+                    <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block' }}>
+                      Phone: {store.contactPhone}
+                    </Typography>
+                  )}
 
                   {/* Lulu status badges */}
                   <Box sx={{ display: 'flex', gap: 0.75, flexWrap: 'wrap', mt: 1 }}>

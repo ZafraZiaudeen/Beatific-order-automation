@@ -18,7 +18,7 @@ import FormControlLabel from '@mui/material/FormControlLabel'
 import ToggleButton from '@mui/material/ToggleButton'
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
-import UploadFileIcon from '@mui/icons-material/UploadFileOutlined'
+import UploadFileIcon from '@mui/icons-material/CloudUploadOutlined'
 import SaveIcon from '@mui/icons-material/SaveOutlined'
 import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdfOutlined'
 import AddIcon from '@mui/icons-material/Add'
@@ -991,6 +991,7 @@ export default function ProductTemplateEditor({ product, onBack, onSaved }) {
           sampleOutputs={sampleOutputs}
         />
       </Box>
+
     </Box>
   )
 }

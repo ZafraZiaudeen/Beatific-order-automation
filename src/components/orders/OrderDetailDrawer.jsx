@@ -549,6 +549,11 @@ export default function OrderDetailDrawer({ order, open, onClose, onRefresh }) {
                     {localOrder.customerEmail && (
                       <Typography variant="caption" color="text.secondary">{localOrder.customerEmail}</Typography>
                     )}
+                    {localOrder.shippingAddress?.phone && (
+                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                        {localOrder.shippingAddress.phone}
+                      </Typography>
+                    )}
                   </Box>
                 </Box>
 
@@ -778,16 +783,14 @@ export default function OrderDetailDrawer({ order, open, onClose, onRefresh }) {
               <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 2 }}>
                 <InfoCard sx={{ p: 1.75 }}>
                   <AssetInputField
-                    label="Cover"
+                    label="Cover PDF"
                     value={localOrder.coverImageUrl}
                     onChange={(url) => handleArtworkChange('coverImageUrl', url)}
                     folder="covers"
-                    accept=".png,.jpg,.jpeg,.webp,.pdf"
-                    allowImages
+                    accept=".pdf"
                     allowPdf
-                    helperText="Upload an image or PDF, or paste a public URL for the final cover."
-                    showImagePreview
-                    openLabel="Open cover"
+                    helperText="Upload a print-ready PDF or paste a public URL for the final cover."
+                    openLabel="Open cover PDF"
                   />
                 </InfoCard>
                 <InfoCard sx={{ p: 1.75 }}>
@@ -812,7 +815,7 @@ export default function OrderDetailDrawer({ order, open, onClose, onRefresh }) {
                   fullWidth
                   size="small"
                   placeholder="e.g. 0850X1100BWSTDLW060UW444MNG"
-                  helperText={podPackageError || "From Lulu's product catalogue. Saves when you leave this field."}
+                  helperText={podPackageError || "Use the 27-character pod_package_id from Lulu's catalog, not shorthand codes like PB-0850X1100-STDCOLOR-PBW-GL. Saves when you leave this field."}
                   error={Boolean(podPackageError)}
                 />
                 {podPackageSaving && (

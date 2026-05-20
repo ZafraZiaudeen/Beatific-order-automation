@@ -196,7 +196,7 @@ function ProductFormDialog({ open, onClose, product, onSaved }) {
           onChange={set('podPackageId')}
           fullWidth
           placeholder="e.g. 0850X1100BWSTDLW060UW444MNG"
-          helperText="Used unless a matched variant has its own print code. PDFs are imported in Template Designer."
+          helperText="Use Lulu's 27-character pod_package_id. Do not paste shorthand codes like PB-0850X1100-STDCOLOR-PBW-GL."
         />
 
         {/* Variants section */}
@@ -276,7 +276,7 @@ function ProductFormDialog({ open, onClose, product, onSaved }) {
                       size="small"
                       fullWidth
                       placeholder="e.g. 0850X1100BWSTDLW060UW444MNG"
-                      helperText={v.priceLabel ? `Etsy price: ${v.priceLabel}` : 'Falls back to default POD ID when left blank'}
+                      helperText={v.priceLabel ? `Etsy price: ${v.priceLabel}. Use the 27-character Lulu pod_package_id.` : 'Falls back to default POD ID when left blank'}
                     />
                     <TextField
                       label="Etsy price label"
