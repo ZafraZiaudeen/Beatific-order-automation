@@ -32,11 +32,11 @@ const TYPE_ICONS = {
 }
 
 const TYPE_COLORS = {
-  import_complete: '#00A76F',
-  lulu_submitted: '#0288D1',
+  import_complete: '#F97316',
+  lulu_submitted: '#0EA5E9',
   order_shipped: '#22C55E',
-  lulu_failed: '#FF5630',
-  default: '#637381',
+  lulu_failed: '#EF4444',
+  default: '#71717A',
 }
 
 const formatTime = (d) => {
@@ -185,7 +185,7 @@ export default function NotificationCenter() {
                   key={notification._id}
                   disablePadding
                   sx={{
-                    bgcolor: notification.read ? 'transparent' : alpha('#00A76F', 0.04),
+                    bgcolor: notification.read ? 'transparent' : alpha('#F97316', 0.05),
                     borderLeft: notification.read ? '3px solid transparent' : '3px solid',
                     borderLeftColor: notification.read ? 'transparent' : 'primary.main',
                   }}

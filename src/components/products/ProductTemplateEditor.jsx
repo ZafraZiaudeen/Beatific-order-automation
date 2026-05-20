@@ -264,8 +264,8 @@ function TemplateStage({
                       width={field.width}
                       height={field.height}
                       rotation={field.rotation || 0}
-                      fill={selected ? 'rgba(0, 167, 111, 0.12)' : 'rgba(0, 167, 111, 0.04)'}
-                      stroke={selected ? '#00A76F' : 'rgba(0, 167, 111, 0.74)'}
+                      fill={selected ? 'rgba(249, 115, 22, 0.12)' : 'rgba(249, 115, 22, 0.04)'}
+                      stroke={selected ? '#F97316' : 'rgba(249, 115, 22, 0.74)'}
                       strokeWidth={selected ? 1.5 : 1}
                       dash={selected ? [] : [4, 3]}
                       draggable={fieldsEditable}
@@ -320,9 +320,9 @@ function TemplateStage({
                 rotateEnabled={false}
                 keepRatio={false}
                 anchorSize={8}
-                borderStroke="#00A76F"
+                borderStroke="#F97316"
                 borderDash={[4, 2]}
-                anchorStroke="#00A76F"
+                anchorStroke="#F97316"
                 anchorFill="#ffffff"
                 boundBoxFunc={(oldBox, newBox) => {
                   if (newBox.width < 6 || newBox.height < 6) return oldBox

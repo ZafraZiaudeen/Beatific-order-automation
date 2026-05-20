@@ -134,7 +134,7 @@ function FormSection({ icon, title, subtitle, action, children }) {
               borderRadius: 1,
               display: 'grid',
               placeItems: 'center',
-              bgcolor: alpha('#00A76F', 0.1),
+              bgcolor: alpha('#F97316', 0.1),
               color: 'primary.dark',
               flexShrink: 0,
             }}
@@ -627,7 +627,7 @@ export default function OrderFormDialog({ open, onClose, mode = 'create', active
                 <SummaryRow label="Order total" value={currency(previewPricing.orderTotal)} strong />
               </Stack>
 
-              <Box sx={{ mt: 2, p: 1.5, borderRadius: 1, bgcolor: alpha('#00A76F', 0.08), border: '1px solid', borderColor: alpha('#00A76F', 0.18) }}>
+              <Box sx={{ mt: 2, p: 1.5, borderRadius: 1, bgcolor: alpha('#F97316', 0.08), border: '1px solid', borderColor: alpha('#F97316', 0.18) }}>
                 <Typography variant="caption" sx={{ display: 'block', color: 'success.dark', fontWeight: 800 }}>
                   {editing ? 'Editing existing order' : 'Manual Etsy order'}
                 </Typography>

@@ -1,22 +1,13 @@
 import { useState, useEffect, useCallback } from 'react'
 import Box from '@mui/material/Box'
+import Chip from '@mui/material/Chip'
 import Typography from '@mui/material/Typography'
-import Button from '@mui/material/Button'
-import Card from '@mui/material/Card'
 import Collapse from '@mui/material/Collapse'
 import Divider from '@mui/material/Divider'
 import Stack from '@mui/material/Stack'
-import Table from '@mui/material/Table'
-import TableBody from '@mui/material/TableBody'
-import TableCell from '@mui/material/TableCell'
-import TableContainer from '@mui/material/TableContainer'
-import TableHead from '@mui/material/TableHead'
-import TableRow from '@mui/material/TableRow'
-import Chip from '@mui/material/Chip'
 import IconButton from '@mui/material/IconButton'
 import Tooltip from '@mui/material/Tooltip'
 import TextField from '@mui/material/TextField'
-import InputAdornment from '@mui/material/InputAdornment'
 import Dialog from '@mui/material/Dialog'
 import DialogTitle from '@mui/material/DialogTitle'
 import DialogContent from '@mui/material/DialogContent'
@@ -25,7 +16,6 @@ import Alert from '@mui/material/Alert'
 import Skeleton from '@mui/material/Skeleton'
 import CircularProgress from '@mui/material/CircularProgress'
 import AddIcon from '@mui/icons-material/Add'
-import SearchIcon from '@mui/icons-material/SearchOutlined'
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined'
 import ImageOutlinedIcon from '@mui/icons-material/ImageOutlined'
@@ -38,6 +28,20 @@ import api from '../lib/api'
 import useAuthStore from '../stores/authStore'
 import { canManageWorkspace } from '../lib/permissions'
 import ProductTemplateEditor from '../components/products/ProductTemplateEditor'
+import {
+  SoftPageHeader,
+  SoftCard,
+  SoftButton,
+  SoftBadge,
+  SoftAvatar,
+  SoftInput,
+  SoftTable,
+  SoftTableHead,
+  SoftTableBody,
+  SoftTableRow,
+  SoftTableCell,
+  SoftEmptyState,
+} from '../components/soft-ui'
 
 const DEFAULT_TEMPLATE_POLICY = { cover: 'inherit', interior: 'inherit', fields: 'inherit' }
 const BLANK_VARIANT = { name: '', podPackageId: '', priceLabel: '', templatePolicy: DEFAULT_TEMPLATE_POLICY }
@@ -49,6 +53,9 @@ const normalizeVariant = (variant = {}) => ({
   priceLabel: variant.priceLabel || '',
   templatePolicy: { ...DEFAULT_TEMPLATE_POLICY, ...(variant.templatePolicy || {}) },
 })
+
+const productInitials = (title = '') =>
+  title.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join('') || 'P'
 
 const parseVariantPaste = (text) =>
   String(text || '')
@@ -221,15 +228,14 @@ function ProductFormDialog({ open, onClose, product, onSaved }) {
               Lulu Pod Package ID; template PDFs can inherit defaults or override in Template Designer.
             </Typography>
             <Stack spacing={1.5} sx={{ mb: 2 }}>
-              <Button
+              <SoftButton
                 variant="outlined"
                 size="small"
                 startIcon={<ContentPasteIcon />}
                 onClick={() => setPasteOpen((value) => !value)}
-                sx={{ alignSelf: 'flex-start' }}
               >
                 Paste Etsy Variants
-              </Button>
+              </SoftButton>
               <Collapse in={pasteOpen}>
                 <Stack spacing={1}>
                   <TextField
@@ -242,9 +248,9 @@ function ProductFormDialog({ open, onClose, product, onSaved }) {
                     helperText="One line per option. Price text in parentheses is stored separately."
                     fullWidth
                   />
-                  <Button variant="contained" size="small" onClick={applyVariantPaste} sx={{ alignSelf: 'flex-start' }}>
+                  <SoftButton variant="contained" size="small" onClick={applyVariantPaste}>
                     Add Parsed Variants
-                  </Button>
+                  </SoftButton>
                 </Stack>
               </Collapse>
             </Stack>
@@ -289,24 +295,23 @@ function ProductFormDialog({ open, onClose, product, onSaved }) {
                   </Stack>
                 </Box>
               ))}
-              <Button
+              <SoftButton
                 variant="outlined"
                 size="small"
                 startIcon={<AddIcon />}
                 onClick={addVariant}
-                sx={{ alignSelf: 'flex-start' }}
               >
                 Add Variant
-              </Button>
+              </SoftButton>
             </Stack>
           </Collapse>
         </Box>
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 3 }}>
-        <Button onClick={onClose} color="inherit">Cancel</Button>
-        <Button onClick={handleSubmit} variant="contained" disabled={loading}>
+        <SoftButton onClick={onClose} color="dark" variant="outlined">Cancel</SoftButton>
+        <SoftButton onClick={handleSubmit} variant="contained" disabled={loading}>
           {loading ? <CircularProgress size={20} /> : product ? 'Update' : 'Add Product'}
-        </Button>
+        </SoftButton>
       </DialogActions>
     </Dialog>
   )
@@ -368,79 +373,71 @@ export default function ProductLibraryPage() {
 
   return (
     <Box>
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 4 }}>
-        <Box>
-          <Typography variant="h4" sx={{ fontWeight: 800, mb: 0.5 }}>Product Library</Typography>
-          <Typography variant="body2" color="text.secondary">
-            Map Etsy listings to shared print templates, labeled personalization fields, and Lulu print codes.
-          </Typography>
-        </Box>
-        {canManage && (
-          <Button
+      <SoftPageHeader
+        title="Product Library"
+        subtitle="Map Etsy listings to shared print templates, labeled personalization fields, and Lulu print codes."
+        actions={canManage && (
+          <SoftButton
             variant="contained"
             startIcon={<AddIcon />}
             onClick={() => { setEditProduct(null); setDialogOpen(true) }}
           >
             Add Product
-          </Button>
+          </SoftButton>
         )}
+      />
+
+      <Box sx={{ mb: 3 }}>
+        <SoftInput
+          placeholder="Search by listing ID or title..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          fullWidth
+        />
       </Box>
 
-      <Card>
-        <Box sx={{ p: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
-          <TextField
-            placeholder="Search by listing ID or title..."
-            size="small"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            slotProps={{
-              input: {
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <SearchIcon sx={{ fontSize: 20, color: 'text.disabled' }} />
-                  </InputAdornment>
-                ),
-              },
-            }}
-            sx={{ width: 320 }}
-          />
+      <SoftCard>
+        <Box sx={{ p: 2.5, borderBottom: '1px solid', borderColor: 'divider' }}>
+          <Typography variant="h6" sx={{ fontWeight: 700 }}>
+            Products
+          </Typography>
+          <Typography variant="body2" sx={{ color: '#71717a' }}>
+            Etsy listings, template readiness, and Lulu print package mappings.
+          </Typography>
         </Box>
-
-        <TableContainer>
-          <Table>
-            <TableHead>
-              <TableRow>
-                <TableCell>Listing ID</TableCell>
-                <TableCell>Title</TableCell>
-                <TableCell>Pod Package ID</TableCell>
-                <TableCell align="center">Variants</TableCell>
-                <TableCell align="center">Template PDFs</TableCell>
-                <TableCell align="center">Fields</TableCell>
-                <TableCell align="center">Status</TableCell>
-                {canManage && <TableCell align="right">Actions</TableCell>}
-              </TableRow>
-            </TableHead>
-            <TableBody>
+        <Box>
+          <SoftTable>
+            <SoftTableHead>
+              <SoftTableRow>
+                <SoftTableCell>Listing ID</SoftTableCell>
+                <SoftTableCell>Title</SoftTableCell>
+                <SoftTableCell>Pod Package ID</SoftTableCell>
+                <SoftTableCell align="center">Variants</SoftTableCell>
+                <SoftTableCell align="center">Template PDFs</SoftTableCell>
+                <SoftTableCell align="center">Fields</SoftTableCell>
+                <SoftTableCell align="center">Status</SoftTableCell>
+                {canManage && <SoftTableCell align="right">Actions</SoftTableCell>}
+              </SoftTableRow>
+            </SoftTableHead>
+            <SoftTableBody>
               {loading ? (
                 Array.from({ length: 5 }).map((_, i) => (
-                  <TableRow key={i}>
+                  <SoftTableRow key={i}>
                     {Array.from({ length: canManage ? 8 : 7 }).map((__, j) => (
-                      <TableCell key={j}><Skeleton /></TableCell>
+                      <SoftTableCell key={j}><Skeleton /></SoftTableCell>
                     ))}
-                  </TableRow>
+                  </SoftTableRow>
                 ))
               ) : filtered.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={canManage ? 8 : 7} align="center" sx={{ py: 8 }}>
-                    <ImageOutlinedIcon sx={{ fontSize: 48, color: 'text.disabled', mb: 1 }} />
-                    <Typography variant="subtitle1" color="text.secondary">
-                      {search ? 'No products match your search' : 'No products yet'}
-                    </Typography>
-                    <Typography variant="body2" color="text.disabled">
-                      Add your first product to get started
-                    </Typography>
-                  </TableCell>
-                </TableRow>
+                <SoftTableRow>
+                  <SoftTableCell colSpan={canManage ? 8 : 7} sx={{ p: 0 }}>
+                    <SoftEmptyState
+                      icon={ImageOutlinedIcon}
+                      title={search ? 'No products match your search' : 'No products yet'}
+                      description="Add your first product to get started."
+                    />
+                  </SoftTableCell>
+                </SoftTableRow>
               ) : (
                 filtered.map((product) => {
                   const variants = product.variants || []
@@ -477,65 +474,70 @@ export default function ProductLibraryPage() {
                         ? 'Legacy assets'
                         : 'Not imported'
                   return (
-                    <TableRow key={product._id} hover>
-                      <TableCell>
+                    <SoftTableRow key={product._id}>
+                      <SoftTableCell>
                         <Typography variant="subtitle2" sx={{ fontFamily: 'monospace' }}>
                           {product.listingId}
                         </Typography>
-                      </TableCell>
-                      <TableCell>
-                        <Typography variant="body2" sx={{ maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {product.title}
-                        </Typography>
-                      </TableCell>
-                      <TableCell>
+                      </SoftTableCell>
+                      <SoftTableCell>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, py: 0.5, minWidth: 0 }}>
+                          <SoftAvatar
+                            size={34}
+                            color="dark"
+                          >
+                            {productInitials(product.title)}
+                          </SoftAvatar>
+                          <Box sx={{ minWidth: 0 }}>
+                            <Typography variant="subtitle2" sx={{ maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {product.title}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              Etsy listing {product.listingId}
+                            </Typography>
+                          </Box>
+                        </Box>
+                      </SoftTableCell>
+                      <SoftTableCell>
                         <Typography variant="caption" sx={{ fontFamily: 'monospace', color: hasPodPackage ? 'text.primary' : 'text.disabled' }}>
                           {podPackageDisplay}
                         </Typography>
-                      </TableCell>
-                      <TableCell align="center">
+                      </SoftTableCell>
+                      <SoftTableCell align="center">
                         {variants.length > 0 ? (
-                          <Chip
+                          <SoftBadge
                             label={`${variants.length}${overrideCount ? ` / ${overrideCount} override` : ''}`}
                             size="small"
-                            color={overrideCount ? 'secondary' : 'primary'}
-                            variant="outlined"
-                            sx={{ fontWeight: 600 }}
+                            color={overrideCount ? 'info' : 'primary'}
                           />
                         ) : (
                           <Typography variant="caption" color="text.disabled">-</Typography>
                         )}
-                      </TableCell>
-                      <TableCell align="center">
-                        <Chip
+                      </SoftTableCell>
+                      <SoftTableCell align="center">
+                        <SoftBadge
                           icon={templateSourcesReady || hasLegacyAssets ? <CheckCircleIcon /> : <ErrorOutlineIcon />}
                           label={templatePdfLabel}
                           size="small"
                           color={templateSourcesReady ? 'success' : hasLegacyAssets ? 'info' : 'default'}
-                          variant="outlined"
-                          sx={{ fontWeight: 600 }}
                         />
-                      </TableCell>
-                      <TableCell align="center">
-                        <Chip
+                      </SoftTableCell>
+                      <SoftTableCell align="center">
+                        <SoftBadge
                           label={templateFieldCount ? `Default ${templateFieldCount}` : 'None'}
                           size="small"
                           color={templateFieldCount ? 'success' : 'warning'}
-                          variant="outlined"
-                          sx={{ fontWeight: 600 }}
                         />
-                      </TableCell>
-                      <TableCell align="center">
-                        <Chip
+                      </SoftTableCell>
+                      <SoftTableCell align="center">
+                        <SoftBadge
                           label={isReady ? 'Ready' : missingPodCount ? `${missingPodCount} missing POD` : 'Needs template'}
                           size="small"
                           color={isReady ? 'success' : 'warning'}
-                          variant="outlined"
-                          sx={{ fontWeight: 600 }}
                         />
-                      </TableCell>
+                      </SoftTableCell>
                       {canManage && (
-                        <TableCell align="right">
+                        <SoftTableCell align="right">
                           <Tooltip title="Template designer">
                             <IconButton size="small" color="primary" onClick={() => setTemplateProduct(product)}>
                               <DesignServicesIcon fontSize="small" />
@@ -551,16 +553,16 @@ export default function ProductLibraryPage() {
                               <DeleteOutlineIcon fontSize="small" />
                             </IconButton>
                           </Tooltip>
-                        </TableCell>
+                        </SoftTableCell>
                       )}
-                    </TableRow>
+                    </SoftTableRow>
                   )
                 })
               )}
-            </TableBody>
-          </Table>
-        </TableContainer>
-      </Card>
+            </SoftTableBody>
+          </SoftTable>
+        </Box>
+      </SoftCard>
 
       {canManage && (
         <ProductFormDialog
@@ -578,8 +580,8 @@ export default function ProductLibraryPage() {
           <Typography>Are you sure? This cannot be undone.</Typography>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setDeleteId(null)} color="inherit">Cancel</Button>
-          <Button onClick={() => handleDelete(deleteId)} color="error" variant="contained">Delete</Button>
+          <SoftButton onClick={() => setDeleteId(null)} color="dark" variant="outlined">Cancel</SoftButton>
+          <SoftButton onClick={() => handleDelete(deleteId)} color="error" variant="contained">Delete</SoftButton>
         </DialogActions>
       </Dialog>
     </Box>

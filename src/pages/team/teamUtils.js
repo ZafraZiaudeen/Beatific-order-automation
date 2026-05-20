@@ -1,6 +1,6 @@
 export const ROLE_COLORS = {
-  owner: { bgcolor: '#D3FCD2', color: '#118D57' },
-  admin: { bgcolor: '#CAFDF5', color: '#006C9C' },
+  owner: { bgcolor: '#FFF7ED', color: '#EA580C' },
+  admin: { bgcolor: '#E0F2FE', color: '#0369A1' },
   member: { bgcolor: '#F4F6F8', color: '#637381' },
 }
 

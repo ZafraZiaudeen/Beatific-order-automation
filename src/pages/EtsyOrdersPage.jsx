@@ -2,22 +2,12 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Box from '@mui/material/Box'
 import Typography from '@mui/material/Typography'
-import Card from '@mui/material/Card'
-import Table from '@mui/material/Table'
-import TableBody from '@mui/material/TableBody'
-import TableCell from '@mui/material/TableCell'
-import TableContainer from '@mui/material/TableContainer'
-import TableHead from '@mui/material/TableHead'
-import TableRow from '@mui/material/TableRow'
 import Checkbox from '@mui/material/Checkbox'
 import IconButton from '@mui/material/IconButton'
 import Tooltip from '@mui/material/Tooltip'
-import TextField from '@mui/material/TextField'
-import InputAdornment from '@mui/material/InputAdornment'
 import Button from '@mui/material/Button'
 import Menu from '@mui/material/Menu'
 import MenuItem from '@mui/material/MenuItem'
-import Chip from '@mui/material/Chip'
 import Skeleton from '@mui/material/Skeleton'
 import Select from '@mui/material/Select'
 import FormControl from '@mui/material/FormControl'
@@ -27,7 +17,6 @@ import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import Snackbar from '@mui/material/Snackbar'
 import CircularProgress from '@mui/material/CircularProgress'
 import { alpha } from '@mui/material/styles'
-import SearchIcon from '@mui/icons-material/SearchOutlined'
 import MoreVertIcon from '@mui/icons-material/MoreVert'
 import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined'
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined'
@@ -44,6 +33,21 @@ import StatusBadge from '../components/orders/StatusBadge'
 import OrderKanban from '../components/orders/OrderKanban'
 import OrderFormDialog from '../components/orders/OrderFormDialog'
 import { ETSY_ORDER_STATUSES } from '../lib/constants'
+import {
+  DataToolbar,
+  EmptyState,
+  PageHeader,
+  SoftCard,
+  SoftTableCard,
+  SoftTable,
+  SoftTableHead,
+  SoftTableBody,
+  SoftTableRow,
+  SoftTableCell,
+  SoftBadge,
+  SoftAvatar,
+  SoftButton,
+} from '../components/common/soft-ui'
 
 const PAGE_SIZE = 25
 
@@ -104,6 +108,9 @@ const formatMoney = (value) => {
   if (!Number.isFinite(number) || number <= 0) return '-'
   return number.toLocaleString('en-US', { style: 'currency', currency: 'USD' })
 }
+
+const initials = (name = '') =>
+  name.split(' ').filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join('') || '?'
 
 const firstGroupOrder = (orders) =>
   [...orders].sort((a, b) => {
@@ -362,31 +369,28 @@ export default function EtsyOrdersPage() {
 
   return (
     <Box>
-      <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', mb: 3, gap: 2, flexWrap: 'wrap' }}>
-        <Box>
-          <Typography variant="h4" sx={{ fontWeight: 800, mb: 0.5 }}>Etsy Orders</Typography>
-          <Typography variant="body2" color="text.secondary">
-            {view === 'board' ? `${total} order items total` : `${groups.length} grouped orders from ${allCount || total} order items`}
-          </Typography>
-        </Box>
-        <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
+      <PageHeader
+        title="Etsy Orders"
+        subtitle={view === 'board' ? `${total} order items total` : `${groups.length} grouped orders from ${allCount || total} order items`}
+        actions={
+          <>
           {canManage && (
             <>
-              <Button
+              <SoftButton
                 variant="outlined"
                 startIcon={<AddIcon />}
                 onClick={() => setManualOpen(true)}
               >
                 Add Order
-              </Button>
-              <Button
+              </SoftButton>
+              <SoftButton
                 variant="contained"
                 startIcon={emailFetching ? <CircularProgress size={16} color="inherit" /> : <CloudSyncOutlinedIcon />}
                 disabled={emailFetching}
                 onClick={handleFetchEmailOrders}
               >
                 {emailFetching ? 'Fetching...' : 'Fetch Email Orders'}
-              </Button>
+              </SoftButton>
             </>
           )}
           <ToggleButtonGroup value={view} exclusive onChange={handleViewChange} size="small">
@@ -401,26 +405,18 @@ export default function EtsyOrdersPage() {
               </Tooltip>
             </ToggleButton>
           </ToggleButtonGroup>
-        </Box>
-      </Box>
+          </>
+        }
+      />
 
-      <Card sx={{ mb: 2, p: 2, border: '1px solid', borderColor: 'divider', boxShadow: 'none' }}>
-        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'minmax(280px, 1fr) 180px auto' }, gap: 1.5, alignItems: 'center' }}>
-          <TextField
-            placeholder="Search by order #, customer, listing, product, email, or shop..."
-            size="small"
-            value={search}
-            onChange={(e) => { setSearch(e.target.value); setPage(1) }}
-            slotProps={{
-              input: {
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <SearchIcon sx={{ fontSize: 20, color: 'text.disabled' }} />
-                  </InputAdornment>
-                ),
-              },
-            }}
-          />
+      <DataToolbar
+        search={{
+          placeholder: 'Search by order #, customer, listing, product, email, or shop...',
+          value: search,
+          onChange: (e) => { setSearch(e.target.value); setPage(1) },
+        }}
+        filters={
+          <>
           <FormControl size="small">
             <Select
               value={dateRange}
@@ -435,7 +431,10 @@ export default function EtsyOrdersPage() {
               ))}
             </Select>
           </FormControl>
-          {canManage && selected.length > 0 && (
+          </>
+        }
+        selection={
+          canManage && selected.length > 0 && (
             <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
               <Typography variant="body2" color="text.secondary">{selected.length} selected</Typography>
               <FormControl size="small" sx={{ minWidth: 160 }}>
@@ -461,16 +460,16 @@ export default function EtsyOrdersPage() {
                 Delete selected
               </Button>
             </Box>
-          )}
-        </Box>
-      </Card>
+          )
+        }
+      />
 
       {view === 'list' && (
         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', lg: 'repeat(4, 1fr)' }, gap: 1.5, mb: 2 }}>
           {CATEGORY_DEFINITIONS.map((definition) => {
             const active = category === definition.value
             return (
-              <Card
+              <SoftCard
                 key={definition.value}
                 onClick={() => setCategory(definition.value)}
                 sx={{
@@ -479,45 +478,47 @@ export default function EtsyOrdersPage() {
                   borderColor: active ? 'primary.main' : 'divider',
                   boxShadow: 'none',
                   cursor: 'pointer',
-                  bgcolor: active ? alpha('#00A76F', 0.08) : 'background.paper',
+                  bgcolor: active ? alpha('#f97316', 0.1) : '#fff',
                 }}
               >
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 1, alignItems: 'center' }}>
-                  <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>{definition.label}</Typography>
-                  <Chip
+                  <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#27272a' }}>{definition.label}</Typography>
+                  <SoftBadge
                     label={categoryCounts[definition.value] || 0}
+                    color={active ? 'primary' : 'default'}
                     size="small"
-                    sx={{ bgcolor: active ? 'primary.main' : alpha('#919EAB', 0.16), color: active ? '#fff' : 'text.secondary', fontWeight: 800 }}
                   />
                 </Box>
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                <Typography variant="caption" sx={{ display: 'block', mt: 0.75, color: '#71717a', fontSize: '0.875rem', lineHeight: 1.5 }}>
                   {definition.description}
                 </Typography>
-              </Card>
+              </SoftCard>
             )
           })}
         </Box>
       )}
 
       {emailLogs.length > 0 && view === 'list' && (
-        <Card sx={{ mb: 2, p: 1.5, border: '1px solid', borderColor: 'divider', boxShadow: 'none', bgcolor: alpha('#0F172A', 0.015) }}>
+        <SoftCard sx={{ mb: 2, p: 2 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-            <Typography variant="subtitle2" sx={{ fontWeight: 800, mr: 0.5 }}>Recent Email Imports</Typography>
+            <Typography variant="subtitle2" sx={{ fontWeight: 700, mr: 0.5, color: '#27272a' }}>Recent Email Imports</Typography>
             {emailLogs.slice(0, 4).map((log) => (
-              <Chip
+              <SoftBadge
                 key={log._id}
-                size="small"
                 label={`${log.status}: ${log.orderNumbers?.[0] || log.subject || 'email'}`}
                 color={log.status === 'failed' ? 'error' : log.status === 'skipped' ? 'default' : 'success'}
-                variant="outlined"
+                size="small"
                 sx={{ maxWidth: 260 }}
               />
             ))}
           </Box>
-        </Card>
+        </SoftCard>
       )}
 
-      <Card>
+      <SoftTableCard
+        title={view === 'board' ? 'Orders board' : 'Orders table'}
+        subtitle={view === 'board' ? 'Move work between production stages.' : 'Grouped Etsy orders styled after the Soft UI author table.'}
+      >
         {view === 'board' ? (
           <Box sx={{ p: 2 }}>
             {loading ? (
@@ -536,12 +537,11 @@ export default function EtsyOrdersPage() {
           </Box>
         ) : (
           <>
-            <TableContainer>
-              <Table>
-                <TableHead>
-                  <TableRow>
+            <SoftTable>
+              <SoftTableHead>
+                <SoftTableRow>
                     {canManage && (
-                      <TableCell padding="checkbox">
+                      <SoftTableCell padding="checkbox">
                         <Checkbox
                           indeterminate={selected.length > 0 && selected.length < visibleGroups.flatMap((group) => group.orderIds).length}
                           checked={visibleGroups.length > 0 && visibleGroups.every((group) => group.orderIds.every((id) => selected.includes(id)))}
@@ -550,45 +550,45 @@ export default function EtsyOrdersPage() {
                             setSelected(e.target.checked ? ids : [])
                           }}
                         />
-                      </TableCell>
+                      </SoftTableCell>
                     )}
-                    <TableCell>Order #</TableCell>
-                    <TableCell>Customer</TableCell>
-                    <TableCell>Shop</TableCell>
-                    <TableCell>Payment Date</TableCell>
-                    <TableCell>Ship By</TableCell>
-                    <TableCell>Total</TableCell>
-                    <TableCell>Status</TableCell>
-                    <TableCell align="right">Actions</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
+                    <SoftTableCell>Order #</SoftTableCell>
+                    <SoftTableCell>Customer</SoftTableCell>
+                    <SoftTableCell>Shop</SoftTableCell>
+                    <SoftTableCell>Payment Date</SoftTableCell>
+                    <SoftTableCell>Ship By</SoftTableCell>
+                    <SoftTableCell>Total</SoftTableCell>
+                    <SoftTableCell>Status</SoftTableCell>
+                    <SoftTableCell align="right">Actions</SoftTableCell>
+                  </SoftTableRow>
+                </SoftTableHead>
+                <SoftTableBody>
                   {loading ? (
                     Array.from({ length: 8 }).map((_, i) => (
-                      <TableRow key={i}>
+                      <SoftTableRow key={i}>
                         {Array.from({ length: canManage ? 9 : 8 }).map((__, j) => (
-                          <TableCell key={j}><Skeleton /></TableCell>
+                          <SoftTableCell key={j}><Skeleton /></SoftTableCell>
                         ))}
-                      </TableRow>
+                      </SoftTableRow>
                     ))
                   ) : visibleGroups.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={canManage ? 9 : 8} align="center" sx={{ py: 8 }}>
-                        <ShoppingCartOutlinedIcon sx={{ fontSize: 48, color: 'text.disabled', mb: 1 }} />
-                        <Typography variant="subtitle1" color="text.secondary">No orders found</Typography>
-                        <Typography variant="body2" color="text.disabled">
-                          {canManage ? 'Fetch email orders or add a manual order to get started.' : 'No orders match this view.'}
-                        </Typography>
-                      </TableCell>
-                    </TableRow>
+                    <SoftTableRow>
+                      <SoftTableCell colSpan={canManage ? 9 : 8} sx={{ p: 0 }}>
+                        <EmptyState
+                          icon={ShoppingCartOutlinedIcon}
+                          title="No orders found"
+                          description={canManage ? 'Fetch email orders or add a manual order to get started.' : 'No orders match this view.'}
+                        />
+                      </SoftTableCell>
+                    </SoftTableRow>
                   ) : (
                     visibleGroups.map((group) => {
                       const checked = group.orderIds.every((id) => selected.includes(id))
                       const partiallyChecked = !checked && group.orderIds.some((id) => selected.includes(id))
                       return (
-                        <TableRow key={group.etsyOrderId} hover selected={checked}>
+                        <SoftTableRow key={group.etsyOrderId} selected={checked}>
                           {canManage && (
-                            <TableCell padding="checkbox">
+                            <SoftTableCell padding="checkbox">
                               <Checkbox
                                 checked={checked}
                                 indeterminate={partiallyChecked}
@@ -597,48 +597,66 @@ export default function EtsyOrdersPage() {
                                   return prev.filter((id) => !group.orderIds.includes(id))
                                 })}
                               />
-                            </TableCell>
+                            </SoftTableCell>
                           )}
-                          <TableCell>
-                            <Typography variant="subtitle2" sx={{ fontFamily: 'monospace', fontSize: '0.86rem', color: 'primary.main' }}>
+                          <SoftTableCell>
+                            <Typography variant="subtitle2" sx={{ fontFamily: 'monospace', fontSize: '0.875rem', color: '#f97316', fontWeight: 700 }}>
                               #{group.etsyOrderId}
                             </Typography>
-                            <Typography variant="caption" color="text.secondary">
+                            <Typography variant="caption" sx={{ color: '#71717a', fontSize: '0.8125rem' }}>
                               {group.totalItems} item{group.totalItems === 1 ? '' : 's'} / Qty {group.totalQuantity}
                             </Typography>
                             {group.hasAiFlags && (
-                              <Chip
+                              <SoftBadge
                                 icon={<WarningAmberOutlinedIcon sx={{ fontSize: '13px !important' }} />}
                                 label="AI flagged"
-                                size="small"
                                 color="warning"
-                                variant="outlined"
-                                sx={{ display: 'flex', width: 'fit-content', mt: 0.5, height: 20, fontWeight: 700 }}
+                                size="small"
+                                sx={{ display: 'flex', width: 'fit-content', mt: 0.5 }}
                               />
                             )}
-                          </TableCell>
-                          <TableCell>
-                            <Typography variant="body2" sx={{ fontWeight: 700 }}>{group.customerName || '-'}</Typography>
-                            {group.customerEmail && (
-                              <Typography variant="caption" color="text.secondary">{group.customerEmail}</Typography>
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            <Typography variant="body2">{group.shop || '-'}</Typography>
-                          </TableCell>
-                          <TableCell>
-                            <Typography variant="body2">{formatDate(group.orderedAt, true)}</Typography>
-                          </TableCell>
-                          <TableCell>
-                            <Typography variant="body2" sx={{ color: group.shipByDate && new Date(group.shipByDate) < new Date() && group.status !== 'completed' ? 'error.main' : 'text.primary' }}>
+                          </SoftTableCell>
+                          <SoftTableCell>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, py: 0.5 }}>
+                              <SoftAvatar size={36}>
+                                {initials(group.customerName)}
+                              </SoftAvatar>
+                              <Box sx={{ minWidth: 0 }}>
+                                <Typography variant="subtitle2" sx={{ fontSize: '0.875rem', fontWeight: 600, color: '#27272a' }}>
+                                  {group.customerName || '-'}
+                                </Typography>
+                                {group.customerEmail && (
+                                  <Typography variant="caption" sx={{ color: '#71717a', fontSize: '0.8125rem' }}>
+                                    {group.customerEmail}
+                                  </Typography>
+                                )}
+                              </Box>
+                            </Box>
+                          </SoftTableCell>
+                          <SoftTableCell>
+                            <Typography variant="body2" sx={{ color: '#27272a' }}>{group.shop || '-'}</Typography>
+                          </SoftTableCell>
+                          <SoftTableCell>
+                            <Typography variant="body2" sx={{ color: '#27272a' }}>{formatDate(group.orderedAt, true)}</Typography>
+                          </SoftTableCell>
+                          <SoftTableCell>
+                            <Typography
+                              variant="body2"
+                              sx={{
+                                color: group.shipByDate && new Date(group.shipByDate) < new Date() && group.status !== 'completed' ? '#ef4444' : '#27272a',
+                                fontWeight: group.shipByDate && new Date(group.shipByDate) < new Date() && group.status !== 'completed' ? 600 : 400,
+                              }}
+                            >
                               {formatDate(group.shipByDate)}
                             </Typography>
-                          </TableCell>
-                          <TableCell>
-                            <Typography variant="body2" sx={{ fontWeight: 800 }}>{formatMoney(group.total)}</Typography>
-                          </TableCell>
-                          <TableCell><StatusBadge status={group.status} label={getEtsyStatusLabel(group)} /></TableCell>
-                          <TableCell align="right">
+                          </SoftTableCell>
+                          <SoftTableCell>
+                            <Typography variant="body2" sx={{ fontWeight: 700, color: '#27272a' }}>{formatMoney(group.total)}</Typography>
+                          </SoftTableCell>
+                          <SoftTableCell>
+                            <StatusBadge status={group.status} label={getEtsyStatusLabel(group)} />
+                          </SoftTableCell>
+                          <SoftTableCell align="right">
                             <Tooltip title="View order details">
                               <IconButton size="small" onClick={() => openGroupDetail(group)}>
                                 <VisibilityOutlinedIcon fontSize="small" />
@@ -649,14 +667,13 @@ export default function EtsyOrdersPage() {
                                 <MoreVertIcon fontSize="small" />
                               </IconButton>
                             )}
-                          </TableCell>
-                        </TableRow>
+                          </SoftTableCell>
+                        </SoftTableRow>
                       )
                     })
                   )}
-                </TableBody>
-              </Table>
-            </TableContainer>
+                </SoftTableBody>
+              </SoftTable>
 
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 2, py: 2, px: 2, flexWrap: 'wrap' }}>
               <Typography color="text.secondary">
@@ -668,7 +685,7 @@ export default function EtsyOrdersPage() {
             </Box>
           </>
         )}
-      </Card>
+      </SoftTableCard>
 
       {canManage && <Menu anchorEl={menuAnchor} open={!!menuAnchor} onClose={() => setMenuAnchor(null)}
         slotProps={{ paper: { sx: { minWidth: 180 } } }}>

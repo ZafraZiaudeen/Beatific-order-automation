@@ -59,7 +59,7 @@ const getInitials = (name = '') =>
   name.split(' ').slice(0, 2).map((w) => w[0]?.toUpperCase()).join('')
 
 const avatarColor = (name = '') => {
-  const colors = ['#00A76F', '#00B8D9', '#22C55E', '#637381', '#FF5630', '#FFAB00', '#118D57']
+  const colors = ['#F97316', '#EAB308', '#0EA5E9', '#22C55E', '#71717A', '#EF4444', '#CA8A04']
   const idx = name.charCodeAt(0) % colors.length
   return colors[idx]
 }
@@ -213,13 +213,13 @@ function ArtworkUploadZone({ orderId, currentUrl, onUploaded, label }) {
         sx={{
           p: 1.75,
           border: '1.5px dashed',
-          borderColor: dragging ? 'primary.main' : currentUrl ? alpha('#00A76F', 0.4) : 'divider',
+          borderColor: dragging ? 'primary.main' : currentUrl ? alpha('#F97316', 0.4) : 'divider',
           borderRadius: 1.5,
           textAlign: 'center',
-          bgcolor: dragging ? alpha('#00A76F', 0.04) : currentUrl ? alpha('#00A76F', 0.02) : 'transparent',
+          bgcolor: dragging ? alpha('#F97316', 0.05) : currentUrl ? alpha('#F97316', 0.03) : 'transparent',
           cursor: 'pointer',
           transition: 'all 0.15s',
-          '&:hover': { borderColor: 'primary.light', bgcolor: alpha('#00A76F', 0.03) },
+          '&:hover': { borderColor: 'primary.light', bgcolor: alpha('#F97316', 0.04) },
         }}
       >
         <input
@@ -490,9 +490,9 @@ export default function OrderDetailDrawer({ order, open, onClose, onRefresh }) {
               flexShrink: 0,
               px: 3,
               py: 1.75,
-              bgcolor: alpha('#00A76F', 0.06),
+              bgcolor: alpha('#F97316', 0.07),
               borderBottom: '1px solid',
-              borderColor: alpha('#00A76F', 0.2),
+              borderColor: alpha('#F97316', 0.2),
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
@@ -975,7 +975,7 @@ export default function OrderDetailDrawer({ order, open, onClose, onRefresh }) {
                             width: 28,
                             height: 28,
                             borderRadius: '50%',
-                            bgcolor: alpha('#00A76F', 0.12),
+                            bgcolor: alpha('#F97316', 0.12),
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',

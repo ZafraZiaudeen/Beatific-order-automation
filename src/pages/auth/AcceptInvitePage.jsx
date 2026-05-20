@@ -24,8 +24,8 @@ import useAuthStore from '../../stores/authStore'
 const ROLE_META = {
   admin: {
     label: 'Admin access',
-    bg: '#CAFDF5',
-    color: '#006C9C',
+    bg: '#E0F2FE',
+    color: '#0369A1',
   },
   member: {
     label: 'Member access',

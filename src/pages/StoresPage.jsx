@@ -1,9 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import Box from '@mui/material/Box'
 import Typography from '@mui/material/Typography'
-import Button from '@mui/material/Button'
-import Card from '@mui/material/Card'
-import CardContent from '@mui/material/CardContent'
 import Grid from '@mui/material/Grid'
 import Switch from '@mui/material/Switch'
 import FormControlLabel from '@mui/material/FormControlLabel'
@@ -15,9 +12,7 @@ import DialogContent from '@mui/material/DialogContent'
 import DialogActions from '@mui/material/DialogActions'
 import Alert from '@mui/material/Alert'
 import Skeleton from '@mui/material/Skeleton'
-import Chip from '@mui/material/Chip'
 import CircularProgress from '@mui/material/CircularProgress'
-import { alpha } from '@mui/material/styles'
 import AddIcon from '@mui/icons-material/Add'
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined'
@@ -27,6 +22,8 @@ import EmailOutlinedIcon from '@mui/icons-material/EmailOutlined'
 import api from '../lib/api'
 import useAuthStore from '../stores/authStore'
 import StoreFormDialog from './stores/StoreFormDialog'
+import { SoftPageHeader, SoftCard, SoftButton, SoftBadge, SoftEmptyState } from '../components/soft-ui'
+import { softGradients } from '../components/common/soft-gradients'
 
 export default function StoresPage() {
   const { user } = useAuthStore()
@@ -78,23 +75,19 @@ export default function StoresPage() {
 
   return (
     <Box>
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 4 }}>
-        <Box>
-          <Typography variant="h4" sx={{ fontWeight: 800, mb: 0.5 }}>Stores</Typography>
-          <Typography variant="body2" color="text.secondary">
-            Manage your Etsy shops and per-store Lulu API settings.
-          </Typography>
-        </Box>
-        {canManage && (
-          <Button
+      <SoftPageHeader
+        title="Stores"
+        subtitle="Manage Etsy shops, email import, and per-store Lulu API settings."
+        actions={canManage && (
+          <SoftButton
             variant="contained"
             startIcon={<AddIcon />}
             onClick={() => { setEditStore(null); setDialogOpen(true) }}
           >
             Add Store
-          </Button>
+          </SoftButton>
         )}
-      </Box>
+      />
 
       {error && <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError('')}>{error}</Alert>}
 
@@ -102,51 +95,50 @@ export default function StoresPage() {
         <Grid container spacing={3}>
           {Array.from({ length: 2 }).map((_, i) => (
             <Grid key={i} size={{ xs: 12, sm: 6 }}>
-              <Card><CardContent><Skeleton height={120} /></CardContent></Card>
+              <SoftCard><Box sx={{ p: 3 }}><Skeleton height={120} /></Box></SoftCard>
             </Grid>
           ))}
         </Grid>
       ) : stores.length === 0 ? (
-        <Card>
-          <CardContent sx={{ textAlign: 'center', py: 6 }}>
-            <StorefrontOutlinedIcon sx={{ fontSize: 48, color: 'text.disabled', mb: 2 }} />
-            <Typography variant="h6" sx={{ mb: 1 }}>No stores yet</Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-              Create your first store to start managing orders.
-            </Typography>
-            {canManage && (
-              <Button variant="contained" startIcon={<AddIcon />} onClick={() => setDialogOpen(true)}>
+        <SoftCard>
+          <SoftEmptyState
+            icon={StorefrontOutlinedIcon}
+            title="No stores yet"
+            description="Create your first store to start managing orders."
+            action={canManage && (
+              <SoftButton variant="contained" startIcon={<AddIcon />} onClick={() => setDialogOpen(true)}>
                 Add Store
-              </Button>
+              </SoftButton>
             )}
-          </CardContent>
-        </Card>
+          />
+        </SoftCard>
       ) : (
         <Grid container spacing={3}>
           {stores.map((store) => (
             <Grid key={store._id} size={{ xs: 12, sm: 6, md: 4 }}>
-              <Card
+              <SoftCard
                 sx={{
                   height: '100%',
                   border: '1px solid',
-                  borderColor: store.isActive ? 'primary.light' : 'divider',
+                  borderColor: store.isActive ? 'primary.light' : 'transparent',
                   transition: 'border-color 0.2s',
                 }}
               >
-                <CardContent sx={{ p: 3 }}>
+                <Box sx={{ p: 3 }}>
                   <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', mb: 2 }}>
                     <Box
                       sx={{
                         width: 44,
                         height: 44,
                         borderRadius: '12px',
-                        bgcolor: store.isActive ? alpha('#00A76F', 0.1) : 'grey.100',
+                        backgroundImage: store.isActive ? softGradients.primary : 'none',
+                        bgcolor: store.isActive ? 'transparent' : 'grey.100',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
                       }}
                     >
-                      <StorefrontOutlinedIcon sx={{ fontSize: 22, color: store.isActive ? 'primary.main' : 'text.disabled' }} />
+                      <StorefrontOutlinedIcon sx={{ fontSize: 22, color: store.isActive ? '#fff' : 'text.disabled' }} />
                     </Box>
 
                     {canManage && (
@@ -189,39 +181,32 @@ export default function StoresPage() {
 
                   {/* Lulu status badges */}
                   <Box sx={{ display: 'flex', gap: 0.75, flexWrap: 'wrap', mt: 1 }}>
-                    <Chip
+                    <SoftBadge
                       size="small"
                       icon={<LocalPrintshopOutlinedIcon sx={{ fontSize: '13px !important' }} />}
                       label={store.luluApiKeyConfigured ? (store.luluSandboxMode ? 'Lulu sandbox' : 'Lulu production') : 'Lulu (global key)'}
                       color={store.luluApiKeyConfigured ? (store.luluSandboxMode ? 'warning' : 'success') : 'default'}
-                      variant="outlined"
-                      sx={{ fontWeight: 600, fontSize: '0.7rem' }}
                     />
-                    <Chip
+                    <SoftBadge
                       size="small"
                       icon={<EmailOutlinedIcon sx={{ fontSize: '13px !important' }} />}
                       label={store.emailImportPasswordConfigured ? (store.emailImportPollingEnabled ? 'Email auto-sync' : 'Email manual') : 'Email not set'}
                       color={store.emailImportPasswordConfigured ? (store.emailImportPollingEnabled ? 'success' : 'info') : 'default'}
-                      variant="outlined"
-                      sx={{ fontWeight: 600, fontSize: '0.7rem' }}
                     />
                     {store.shippingLevel && store.shippingLevel !== 'MAIL' && (
-                      <Chip
+                      <SoftBadge
                         size="small"
                         label={store.shippingLevel}
-                        variant="outlined"
-                        sx={{ fontWeight: 600, fontSize: '0.7rem', fontFamily: 'monospace' }}
+                        sx={{ fontFamily: 'monospace' }}
                       />
                     )}
                   </Box>
 
                   <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mt: 2 }}>
-                    <Chip
+                    <SoftBadge
                       label={store.isActive ? 'Active' : 'Inactive'}
                       size="small"
                       color={store.isActive ? 'success' : 'default'}
-                      variant="outlined"
-                      sx={{ fontWeight: 600 }}
                     />
                     {canManage && (
                       <FormControlLabel
@@ -246,8 +231,8 @@ export default function StoresPage() {
                         ? `Email synced ${new Date(store.emailImportLastSyncedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
                         : `Created ${new Date(store.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`}
                   </Typography>
-                </CardContent>
-              </Card>
+                </Box>
+              </SoftCard>
             </Grid>
           ))}
         </Grid>
@@ -271,10 +256,10 @@ export default function StoresPage() {
           </Typography>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setDeleteConfirm(null)} color="inherit">Cancel</Button>
-          <Button onClick={() => handleDelete(deleteConfirm?._id)} color="error" variant="contained" disabled={deleteLoading}>
+          <SoftButton onClick={() => setDeleteConfirm(null)} color="dark" variant="outlined">Cancel</SoftButton>
+          <SoftButton onClick={() => handleDelete(deleteConfirm?._id)} color="error" variant="contained" disabled={deleteLoading}>
             {deleteLoading ? <CircularProgress size={20} /> : 'Delete Store'}
-          </Button>
+          </SoftButton>
         </DialogActions>
       </Dialog>
     </Box>

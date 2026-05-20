@@ -28,7 +28,7 @@ export default function ThreeBackground() {
 
     const palette = [
       '#ffffff', '#d1fae5', '#a7f3d0', '#6ee7b7',
-      '#34d399', '#10b981', '#c7f0e0', '#e8fdf5',
+      '#fb923c', '#f97316', '#facc15', '#fff7ed',
     ]
     const pages = []
 
@@ -84,7 +84,7 @@ export default function ThreeBackground() {
 
     /* ── Soft ring ── */
     const rGeo = new THREE.TorusGeometry(14, 0.05, 8, 120)
-    const rMat = new THREE.MeshBasicMaterial({ color: 0x00a76f, transparent: true, opacity: 0.1 })
+    const rMat = new THREE.MeshBasicMaterial({ color: 0xf97316, transparent: true, opacity: 0.1 })
     const ring = new THREE.Mesh(rGeo, rMat)
     ring.rotation.x = Math.PI / 2.6
     scene.add(ring)

@@ -1,21 +1,11 @@
 import { useState, useEffect, useCallback } from 'react'
 import Box from '@mui/material/Box'
 import Typography from '@mui/material/Typography'
-import Card from '@mui/material/Card'
-import CardContent from '@mui/material/CardContent'
-import Table from '@mui/material/Table'
-import TableBody from '@mui/material/TableBody'
-import TableCell from '@mui/material/TableCell'
-import TableContainer from '@mui/material/TableContainer'
-import TableHead from '@mui/material/TableHead'
-import TableRow from '@mui/material/TableRow'
 import Tabs from '@mui/material/Tabs'
 import Tab from '@mui/material/Tab'
-import Chip from '@mui/material/Chip'
 import Skeleton from '@mui/material/Skeleton'
 import Tooltip from '@mui/material/Tooltip'
 import IconButton from '@mui/material/IconButton'
-import Button from '@mui/material/Button'
 import Checkbox from '@mui/material/Checkbox'
 import Alert from '@mui/material/Alert'
 import Snackbar from '@mui/material/Snackbar'
@@ -34,9 +24,20 @@ import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined'
 import api from '../lib/api'
 import useAuthStore from '../stores/authStore'
 import { canManageWorkspace } from '../lib/permissions'
-import StatusBadge from '../components/orders/StatusBadge'
 import LuluReviewDialog from '../components/orders/LuluReviewDialog'
 import { LULU_ORDER_STATUSES } from '../lib/constants'
+import {
+  SoftPageHeader,
+  SoftCard,
+  SoftButton,
+  SoftBadge,
+  SoftTable,
+  SoftTableHead,
+  SoftTableBody,
+  SoftTableRow,
+  SoftTableCell,
+  SoftEmptyState,
+} from '../components/soft-ui'
 
 const LULU_TABS = [
   { value: '', label: 'All' },
@@ -189,14 +190,10 @@ export default function LuluOrdersPage() {
 
   return (
     <Box>
-      <Box sx={{ mb: 4 }}>
-        <Typography variant="h4" sx={{ fontWeight: 800, mb: 0.5 }}>Lulu Orders</Typography>
-        <Typography variant="body2" color="text.secondary">
-          Submit orders to Lulu Print API and track their production status.
-        </Typography>
-      </Box>
-
-      <Box sx={{ mb: 2, display: 'flex', justifyContent: 'flex-end' }}>
+      <SoftPageHeader
+        title="Lulu Orders"
+        subtitle="Submit orders to Lulu Print API and track production, shipping, and failed submissions."
+        actions={
         <FormControl size="small" sx={{ minWidth: 180 }}>
           <Select
             value={dateRange}
@@ -211,12 +208,13 @@ export default function LuluOrdersPage() {
             ))}
           </Select>
         </FormControl>
-      </Box>
+        }
+      />
 
       {/* Ready to Submit */}
       {canManage && readyOrders.length > 0 && (
-        <Card sx={{ mb: 3, border: '1px solid', borderColor: 'primary.light' }}>
-          <CardContent sx={{ p: 3 }}>
+        <SoftCard sx={{ mb: 3, border: '1px solid', borderColor: 'primary.light' }}>
+          <Box sx={{ p: 3 }}>
             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                 <SendOutlinedIcon color="primary" />
@@ -224,14 +222,15 @@ export default function LuluOrdersPage() {
                   Ready to Submit ({readyOrders.length})
                 </Typography>
               </Box>
-              <Button
+              <SoftButton
                 variant="contained"
                 startIcon={submitting ? <CircularProgress size={16} color="inherit" /> : <LocalPrintshopOutlinedIcon />}
                 disabled={submitting || selected.length === 0}
                 onClick={handleBulkSubmit}
+                sx={{ color: '#fff', '&.Mui-disabled': { color: '#fff' } }}
               >
                 {submitting ? 'Submitting...' : `Submit ${selected.length > 0 ? selected.length : ''} to Lulu`}
-              </Button>
+              </SoftButton>
             </Box>
 
             {missingFiles.length > 0 && (
@@ -241,30 +240,30 @@ export default function LuluOrdersPage() {
               </Alert>
             )}
 
-            <Table size="small">
-              <TableHead>
-                <TableRow>
-                  <TableCell padding="checkbox">
+            <SoftTable size="small">
+              <SoftTableHead>
+                <SoftTableRow>
+                  <SoftTableCell padding="checkbox">
                     <Checkbox
                       indeterminate={selected.length > 0 && selected.length < eligibleForSubmit.length}
                       checked={eligibleForSubmit.length > 0 && selected.length === eligibleForSubmit.length}
                       onChange={(e) => setSelected(e.target.checked ? eligibleForSubmit.map((o) => o._id) : [])}
                     />
-                  </TableCell>
-                  <TableCell>Order ID</TableCell>
-                  <TableCell>Customer</TableCell>
-                  <TableCell>Product</TableCell>
-                  <TableCell>Cover</TableCell>
-                  <TableCell>Interior</TableCell>
-                  <TableCell>Preview</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
+                  </SoftTableCell>
+                  <SoftTableCell>Order ID</SoftTableCell>
+                  <SoftTableCell>Customer</SoftTableCell>
+                  <SoftTableCell>Product</SoftTableCell>
+                  <SoftTableCell>Cover</SoftTableCell>
+                  <SoftTableCell>Interior</SoftTableCell>
+                  <SoftTableCell>Preview</SoftTableCell>
+                </SoftTableRow>
+              </SoftTableHead>
+              <SoftTableBody>
                 {readyOrders.map((order) => {
                   const isEligible = Boolean(order.coverImageUrl && order.interiorPdfUrl && order.podPackageId)
                   return (
-                    <TableRow key={order._id} sx={{ opacity: isEligible ? 1 : 0.5 }}>
-                      <TableCell padding="checkbox">
+                    <SoftTableRow key={order._id} sx={{ opacity: isEligible ? 1 : 0.5 }}>
+                      <SoftTableCell padding="checkbox">
                         <Checkbox
                           checked={selected.includes(order._id)}
                           disabled={!isEligible}
@@ -272,44 +271,53 @@ export default function LuluOrdersPage() {
                             e.target.checked ? [...prev, order._id] : prev.filter((id) => id !== order._id)
                           )}
                         />
-                      </TableCell>
-                      <TableCell>
+                      </SoftTableCell>
+                      <SoftTableCell>
                         <Typography variant="caption" sx={{ fontFamily: 'monospace' }}>#{order.etsyOrderId}</Typography>
-                      </TableCell>
-                      <TableCell><Typography variant="body2">{order.customerName}</Typography></TableCell>
-                      <TableCell>
+                      </SoftTableCell>
+                      <SoftTableCell><Typography variant="body2">{order.customerName}</Typography></SoftTableCell>
+                      <SoftTableCell>
                         <Typography variant="body2" sx={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {order.productTitle}
                         </Typography>
-                      </TableCell>
-                      <TableCell>
+                      </SoftTableCell>
+                      <SoftTableCell>
                         {order.coverImageUrl
                           ? <CheckCircleOutlineIcon sx={{ fontSize: 18, color: 'success.main' }} />
                           : <WarningAmberIcon sx={{ fontSize: 18, color: 'warning.main' }} />}
-                      </TableCell>
-                      <TableCell>
+                      </SoftTableCell>
+                      <SoftTableCell>
                         {order.interiorPdfUrl
                           ? <CheckCircleOutlineIcon sx={{ fontSize: 18, color: 'success.main' }} />
                           : <WarningAmberIcon sx={{ fontSize: 18, color: 'warning.main' }} />}
-                      </TableCell>
-                      <TableCell>
+                      </SoftTableCell>
+                      <SoftTableCell>
                         {isEligible && (
-                          <Button size="small" variant="outlined" onClick={() => setReviewOrder(order)} sx={{ fontSize: '0.72rem', py: 0.25 }}>
+                          <SoftButton size="small" variant="outlined" onClick={() => setReviewOrder(order)}>
                             Review
-                          </Button>
+                          </SoftButton>
                         )}
-                      </TableCell>
-                    </TableRow>
+                      </SoftTableCell>
+                    </SoftTableRow>
                   )
                 })}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
+              </SoftTableBody>
+            </SoftTable>
+          </Box>
+        </SoftCard>
       )}
 
       {/* Submitted orders */}
-      <Card>
+      <SoftCard>
+        <Box sx={{ p: 2.5, borderBottom: '1px solid', borderColor: 'divider' }}>
+          <Typography variant="h6" sx={{ fontWeight: 700 }}>
+            Submitted Orders
+          </Typography>
+          <Typography variant="body2" sx={{ color: '#71717a' }}>
+            Lulu jobs, production states, and tracking references.
+          </Typography>
+        </Box>
+
         <Tabs
           value={tab}
           onChange={(_, v) => {
@@ -328,7 +336,7 @@ export default function LuluOrdersPage() {
         {canManage && selectedSubmitted.length > 0 && (
           <Box sx={{ px: 2, py: 1.5, display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 1 }}>
             <Typography variant="body2" color="text.secondary">{selectedSubmitted.length} selected</Typography>
-            <Button
+            <SoftButton
               size="small"
               color="error"
               variant="outlined"
@@ -336,75 +344,75 @@ export default function LuluOrdersPage() {
               onClick={handleBulkDeleteSubmitted}
             >
               Delete selected
-            </Button>
+            </SoftButton>
           </Box>
         )}
 
-        <TableContainer>
-          <Table>
-            <TableHead>
-              <TableRow>
+        <Box>
+          <SoftTable>
+            <SoftTableHead>
+              <SoftTableRow>
                 {canManage && (
-                  <TableCell padding="checkbox">
+                  <SoftTableCell padding="checkbox">
                     <Checkbox
                       indeterminate={selectedSubmitted.length > 0 && selectedSubmitted.length < orders.length}
                       checked={orders.length > 0 && selectedSubmitted.length === orders.length}
                       onChange={(e) => setSelectedSubmitted(e.target.checked ? orders.map((o) => o._id) : [])}
                     />
-                  </TableCell>
+                  </SoftTableCell>
                 )}
-                <TableCell>Order ID</TableCell>
-                <TableCell>Customer</TableCell>
-                <TableCell>Product</TableCell>
-                <TableCell>Lulu Job ID</TableCell>
-                <TableCell>Lulu Status</TableCell>
-                <TableCell>Tracking</TableCell>
-                <TableCell>Updated</TableCell>
-                {canManage && <TableCell align="right">Actions</TableCell>}
-              </TableRow>
-            </TableHead>
-            <TableBody>
+                <SoftTableCell>Order ID</SoftTableCell>
+                <SoftTableCell>Customer</SoftTableCell>
+                <SoftTableCell>Product</SoftTableCell>
+                <SoftTableCell>Lulu Job ID</SoftTableCell>
+                <SoftTableCell>Lulu Status</SoftTableCell>
+                <SoftTableCell>Tracking</SoftTableCell>
+                <SoftTableCell>Updated</SoftTableCell>
+                {canManage && <SoftTableCell align="right">Actions</SoftTableCell>}
+              </SoftTableRow>
+            </SoftTableHead>
+            <SoftTableBody>
               {loading ? (
                 Array.from({ length: 5 }).map((_, i) => (
-                  <TableRow key={i}>
+                  <SoftTableRow key={i}>
                     {Array.from({ length: canManage ? 9 : 7 }).map((__, j) => (
-                      <TableCell key={j}><Skeleton /></TableCell>
+                      <SoftTableCell key={j}><Skeleton /></SoftTableCell>
                     ))}
-                  </TableRow>
+                  </SoftTableRow>
                 ))
               ) : orders.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={canManage ? 9 : 7} align="center" sx={{ py: 8 }}>
-                    <LocalPrintshopOutlinedIcon sx={{ fontSize: 48, color: 'text.disabled', mb: 1 }} />
-                    <Typography variant="subtitle1" color="text.secondary">No Lulu orders yet</Typography>
-                    <Typography variant="body2" color="text.disabled">
-                      Orders will appear here once submitted to Lulu Print
-                    </Typography>
-                  </TableCell>
-                </TableRow>
+                <SoftTableRow>
+                  <SoftTableCell colSpan={canManage ? 9 : 7} sx={{ p: 0 }}>
+                    <SoftEmptyState
+                      icon={LocalPrintshopOutlinedIcon}
+                      title="No Lulu orders yet"
+                      description="Orders will appear here once submitted to Lulu Print."
+                    />
+                  </SoftTableCell>
+                </SoftTableRow>
               ) : (
                 orders.map((order) => (
-                  <TableRow key={order._id} hover selected={selectedSubmitted.includes(order._id)}>
+                  <SoftTableRow key={order._id} selected={selectedSubmitted.includes(order._id)}>
                     {canManage && (
-                      <TableCell padding="checkbox">
+                      <SoftTableCell padding="checkbox">
                         <Checkbox
                           checked={selectedSubmitted.includes(order._id)}
                           onChange={(e) => setSelectedSubmitted((prev) =>
                             e.target.checked ? [...prev, order._id] : prev.filter((id) => id !== order._id)
                           )}
                         />
-                      </TableCell>
+                      </SoftTableCell>
                     )}
-                    <TableCell>
+                    <SoftTableCell>
                       <Typography variant="caption" sx={{ fontFamily: 'monospace' }}>#{order.etsyOrderId}</Typography>
-                    </TableCell>
-                    <TableCell><Typography variant="body2">{order.customerName}</Typography></TableCell>
-                    <TableCell>
+                    </SoftTableCell>
+                    <SoftTableCell><Typography variant="body2">{order.customerName}</Typography></SoftTableCell>
+                    <SoftTableCell>
                       <Typography variant="body2" sx={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {order.productTitle}
                       </Typography>
-                    </TableCell>
-                    <TableCell>
+                    </SoftTableCell>
+                    <SoftTableCell>
                       {order.luluJobId ? (
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                           <Typography variant="caption" sx={{ fontFamily: 'monospace' }}>{order.luluJobId}</Typography>
@@ -417,22 +425,27 @@ export default function LuluOrdersPage() {
                       ) : (
                         <Typography variant="caption" color="text.disabled"></Typography>
                       )}
-                    </TableCell>
-                    <TableCell>
-                      <StatusBadge status={order.luluStatus || 'pending'} />
-                    </TableCell>
-                    <TableCell>
+                    </SoftTableCell>
+                    <SoftTableCell>
+                      <SoftBadge label={order.luluStatus || 'pending'} color={
+                        order.luluStatus === 'completed' ? 'success' :
+                        order.luluStatus === 'failed' ? 'error' :
+                        order.luluStatus === 'in_production' ? 'info' :
+                        'default'
+                      } />
+                    </SoftTableCell>
+                    <SoftTableCell>
                       {order.trackingNumber ? (
-                        <Chip label={order.trackingNumber} size="small" variant="outlined" sx={{ fontFamily: 'monospace', fontWeight: 600 }} />
+                        <SoftBadge label={order.trackingNumber} variant="outlined" sx={{ fontFamily: 'monospace', fontWeight: 600 }} />
                       ) : (
                         <Typography variant="caption" color="text.disabled"></Typography>
                       )}
-                    </TableCell>
-                    <TableCell>
+                    </SoftTableCell>
+                    <SoftTableCell>
                       <Typography variant="body2" color="text.secondary">{formatDate(order.updatedAt)}</Typography>
-                    </TableCell>
+                    </SoftTableCell>
                     {canManage && (
-                      <TableCell align="right">
+                      <SoftTableCell align="right">
                         <Tooltip title={order.luluJobId ? 'Refresh status from Lulu' : 'Not submitted to Lulu'}>
                           <IconButton
                             size="small"
@@ -458,15 +471,15 @@ export default function LuluOrdersPage() {
                             </IconButton>
                           </Tooltip>
                         )}
-                      </TableCell>
+                      </SoftTableCell>
                     )}
-                  </TableRow>
+                  </SoftTableRow>
                 ))
               )}
-            </TableBody>
-          </Table>
-        </TableContainer>
-      </Card>
+            </SoftTableBody>
+          </SoftTable>
+        </Box>
+      </SoftCard>
 
       {canManage && (
         <LuluReviewDialog

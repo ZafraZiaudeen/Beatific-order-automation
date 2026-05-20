@@ -267,15 +267,15 @@ export default function AssetInputField({
         sx={{
           p: 1.75,
           border: '1.5px dashed',
-          borderColor: dragging ? 'primary.main' : currentUrl ? alpha('#00A76F', 0.35) : 'divider',
+          borderColor: dragging ? 'primary.main' : currentUrl ? alpha('#F97316', 0.35) : 'divider',
           borderRadius: 1.5,
           textAlign: 'center',
-          bgcolor: dragging ? alpha('#00A76F', 0.04) : currentUrl ? alpha('#00A76F', 0.02) : 'transparent',
+          bgcolor: dragging ? alpha('#F97316', 0.05) : currentUrl ? alpha('#F97316', 0.03) : 'transparent',
           cursor: isBusy ? 'progress' : 'pointer',
           transition: 'all 0.15s ease',
           '&:hover': {
             borderColor: isBusy ? undefined : 'primary.light',
-            bgcolor: isBusy ? undefined : alpha('#00A76F', 0.03),
+            bgcolor: isBusy ? undefined : alpha('#F97316', 0.04),
           },
         }}
       >

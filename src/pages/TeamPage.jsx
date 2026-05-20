@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
-import Button from '@mui/material/Button'
 import CircularProgress from '@mui/material/CircularProgress'
 import Dialog from '@mui/material/Dialog'
 import DialogActions from '@mui/material/DialogActions'
@@ -20,6 +19,7 @@ import InviteDialog from './team/InviteDialog'
 import PendingInvitesCard from './team/PendingInvitesCard'
 import TeamMembersCard from './team/TeamMembersCard'
 import { TEAM_ROLES, canManageTeam } from './team/teamUtils'
+import { SoftPageHeader, SoftButton } from '../components/soft-ui'
 
 export default function TeamPage() {
   const { user } = useAuthStore()
@@ -140,23 +140,19 @@ export default function TeamPage() {
 
   return (
     <Box>
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 4 }}>
-        <Box>
-          <Typography variant="h4" sx={{ fontWeight: 800, mb: 0.5 }}>Team</Typography>
-          <Typography variant="body2" color="text.secondary">
-            Manage your team members and invitations.
-          </Typography>
-        </Box>
-        {canManage && (
-          <Button
+      <SoftPageHeader
+        title="Team"
+        subtitle="Manage team members, invitations, and workspace roles."
+        actions={canManage && (
+          <SoftButton
             variant="contained"
             startIcon={<PersonAddOutlinedIcon />}
             onClick={() => setInviteOpen(true)}
           >
             Invite Member
-          </Button>
+          </SoftButton>
         )}
-      </Box>
+      />
 
       {error && <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError('')}>{error}</Alert>}
       {inviteStatus && (
@@ -165,9 +161,9 @@ export default function TeamPage() {
           sx={{ mb: 3 }}
           onClose={() => setInviteStatus(null)}
           action={inviteStatus.inviteLink ? (
-            <Button color="inherit" size="small" onClick={handleCopyInviteLink}>
+            <SoftButton color="inherit" size="small" onClick={handleCopyInviteLink}>
               Copy Invite Link
-            </Button>
+            </SoftButton>
           ) : null}
         >
           <Box>
@@ -242,10 +238,10 @@ export default function TeamPage() {
           </Typography>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setDeleteConfirm(null)} color="inherit">Cancel</Button>
-          <Button onClick={() => handleRemove(deleteConfirm?._id)} color="error" variant="contained" disabled={actionLoading}>
+          <SoftButton onClick={() => setDeleteConfirm(null)} color="dark" variant="outlined">Cancel</SoftButton>
+          <SoftButton onClick={() => handleRemove(deleteConfirm?._id)} color="error" variant="contained" disabled={actionLoading}>
             {actionLoading ? <CircularProgress size={20} /> : 'Remove'}
-          </Button>
+          </SoftButton>
         </DialogActions>
       </Dialog>
 

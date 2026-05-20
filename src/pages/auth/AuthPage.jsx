@@ -157,7 +157,7 @@ function StrengthBar({ password }) {
 
 function InfoNote({ children }) {
   return (
-    <div className="flex items-start gap-2.5 rounded-xl border border-[rgba(0,167,111,0.16)] bg-[rgba(0,167,111,0.07)] px-4 py-3 text-[0.8rem] leading-[1.55] text-[#065f46]">
+    <div className="flex items-start gap-2.5 rounded-xl border border-[rgba(249,115,22,0.18)] bg-[rgba(249,115,22,0.08)] px-4 py-3 text-[0.8rem] leading-[1.55] text-[#9a3412]">
       <AlertCircleGreenIcon className="mt-px shrink-0" width={14} height={14} aria-hidden="true" />
       <span>{children}</span>
     </div>
@@ -1034,7 +1034,7 @@ export default function AuthPage({ defaultTab = 'login' }) {
   }, [view])
 
   return (
-    <AuthLayout>
+    <AuthLayout mode={view}>
       <div ref={cardRef}>
         <Card>
           {view === 'login' && <LoginView onSwitch={switchView} />}

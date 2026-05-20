@@ -177,8 +177,8 @@ function StoreFormDialog({ open, onClose, store, onSaved }) {
                 px: 2,
                 py: 1.5,
                 cursor: 'pointer',
-                bgcolor: luluExpanded ? alpha('#00A76F', 0.04) : 'transparent',
-                '&:hover': { bgcolor: alpha('#00A76F', 0.06) },
+                bgcolor: luluExpanded ? alpha('#F97316', 0.06) : 'transparent',
+                '&:hover': { bgcolor: alpha('#F97316', 0.08) },
               }}
             >
               <LocalPrintshopOutlinedIcon sx={{ fontSize: 18, color: 'primary.main' }} />
@@ -317,8 +317,8 @@ function StoreFormDialog({ open, onClose, store, onSaved }) {
                 px: 2,
                 py: 1.5,
                 cursor: 'pointer',
-                bgcolor: emailExpanded ? alpha('#00A76F', 0.04) : 'transparent',
-                '&:hover': { bgcolor: alpha('#00A76F', 0.06) },
+                bgcolor: emailExpanded ? alpha('#F97316', 0.06) : 'transparent',
+                '&:hover': { bgcolor: alpha('#F97316', 0.08) },
               }}
             >
               <EmailOutlinedIcon sx={{ fontSize: 18, color: 'primary.main' }} />

@@ -10,10 +10,10 @@ import { ETSY_ORDER_STATUSES } from '../../lib/constants'
 import api from '../../lib/api'
 
 const STATUS_COLORS = {
-  custom_orders: '#637381',
-  waiting: '#B76E00',
-  in_progress: '#006C9C',
-  completed: '#118D57',
+  custom_orders: '#71717A',
+  waiting: '#CA8A04',
+  in_progress: '#0369A1',
+  completed: '#16A34A',
 }
 
 function KanbanColumn({ status, orders, onCardClick, statusCounts, readOnly }) {
@@ -37,15 +37,15 @@ function KanbanColumn({ status, orders, onCardClick, statusCounts, readOnly }) {
           py: 1.25,
           mb: 1,
           borderRadius: 2,
-          bgcolor: alpha(color, 0.06),
+          bgcolor: alpha(color, 0.07),
           border: '1px solid',
-          borderColor: alpha(color, 0.12),
+          borderColor: alpha(color, 0.14),
           display: 'flex',
           alignItems: 'center',
           gap: 1,
         }}
       >
-        <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: color, flexShrink: 0 }} />
+        <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: color, flexShrink: 0, boxShadow: `0 0 0 4px ${alpha(color, 0.12)}` }} />
         <Typography variant="subtitle2" sx={{ fontWeight: 700, fontSize: '0.8rem', flex: 1 }}>
           {status.label}
         </Typography>
