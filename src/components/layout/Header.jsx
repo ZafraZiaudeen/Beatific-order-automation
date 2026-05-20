@@ -161,7 +161,9 @@ export default function Header({ onMenuToggle }) {
         {/* Profile Avatar */}
         <Tooltip title={user?.name || 'Profile'}>
           <IconButton onClick={(e) => setAnchorEl(e.currentTarget)} sx={{ ml: 0.25, p: 0.2 }}>
-            <SoftAvatar size={40}>{initials}</SoftAvatar>
+            <SoftAvatar size={40} src={user?.profileImageUrl || undefined} alt={user?.name || 'Profile'}>
+              {initials}
+            </SoftAvatar>
           </IconButton>
         </Tooltip>
 

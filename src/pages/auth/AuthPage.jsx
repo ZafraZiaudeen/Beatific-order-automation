@@ -175,22 +175,9 @@ function ErrorAlert({ message }) {
   )
 }
 
-function Card({ children, mode }) {
+function Card({ children }) {
   return (
     <div className="auth-card">
-      {mode === 'register' && (
-        <>
-          <div className="auth-card-header">
-            <h5>Register with</h5>
-          </div>
-          <div className="auth-social-row" aria-hidden="true">
-            <div className="auth-social-button">f</div>
-            <div className="auth-social-button">A</div>
-            <div className="auth-social-button">G</div>
-          </div>
-          <div className="auth-or"><span>or</span></div>
-        </>
-      )}
       <div className="auth-card-body">{children}</div>
     </div>
   )
@@ -1049,7 +1036,7 @@ export default function AuthPage({ defaultTab = 'login' }) {
   return (
     <AuthLayout mode={view}>
       <div ref={cardRef}>
-        <Card mode={view}>
+        <Card>
           {view === 'login' && <LoginView onSwitch={switchView} />}
           {view === 'register' && <RegisterView onSwitch={switchView} />}
           {view === 'forgot' && <ForgotPasswordView onSwitch={switchView} />}

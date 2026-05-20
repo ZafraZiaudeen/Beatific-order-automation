@@ -1,37 +1,125 @@
-import { useState } from 'react'
-import Box from '@mui/material/Box'
-import Grid from '@mui/material/Grid'
-import Typography from '@mui/material/Typography'
-import TextField from '@mui/material/TextField'
+import { useMemo, useRef, useState } from 'react'
 import Alert from '@mui/material/Alert'
-import Divider from '@mui/material/Divider'
-import InputAdornment from '@mui/material/InputAdornment'
-import IconButton from '@mui/material/IconButton'
+import Box from '@mui/material/Box'
+import Chip from '@mui/material/Chip'
 import CircularProgress from '@mui/material/CircularProgress'
+import Divider from '@mui/material/Divider'
+import Grid from '@mui/material/Grid'
+import IconButton from '@mui/material/IconButton'
+import InputAdornment from '@mui/material/InputAdornment'
+import LinearProgress from '@mui/material/LinearProgress'
 import Stack from '@mui/material/Stack'
+import TextField from '@mui/material/TextField'
+import Tooltip from '@mui/material/Tooltip'
+import Typography from '@mui/material/Typography'
+import { alpha } from '@mui/material/styles'
+import AddPhotoAlternateOutlinedIcon from '@mui/icons-material/AddPhotoAlternateOutlined'
+import BadgeOutlinedIcon from '@mui/icons-material/BadgeOutlined'
+import BusinessOutlinedIcon from '@mui/icons-material/BusinessOutlined'
+import EmailOutlinedIcon from '@mui/icons-material/EmailOutlined'
+import LockOutlinedIcon from '@mui/icons-material/LockOutlined'
+import PhotoCameraOutlinedIcon from '@mui/icons-material/PhotoCameraOutlined'
+import ShieldOutlinedIcon from '@mui/icons-material/ShieldOutlined'
 import Visibility from '@mui/icons-material/Visibility'
 import VisibilityOff from '@mui/icons-material/VisibilityOff'
-import PersonOutlineIcon from '@mui/icons-material/PersonOutlined'
-import LockOutlinedIcon from '@mui/icons-material/LockOutlined'
-import EmailOutlinedIcon from '@mui/icons-material/EmailOutlined'
-import BusinessOutlinedIcon from '@mui/icons-material/BusinessOutlined'
-import ShieldOutlinedIcon from '@mui/icons-material/ShieldOutlined'
-import useAuthStore from '../stores/authStore'
 import api from '../lib/api'
-import { SoftPageHeader, SoftCard, SoftButton, SoftAvatar, SoftBadge } from '../components/soft-ui'
+import { buildAssetThumbnailUrl, uploadAssetFile, validateAssetFile } from '../lib/assets'
+import { canManageWorkspace } from '../lib/permissions'
+import useAuthStore from '../stores/authStore'
+import defaultProfileImage from '../assets/profile.svg'
+import { SoftButton, SoftCard } from '../components/soft-ui'
 
-const ROLE_COLORS = {
-  owner: { bgcolor: '#fff7ed', color: '#ea580c', border: '1px solid #ea580c' },
-  admin: { bgcolor: '#e0f2fe', color: '#0369a1', border: '1px solid #0369a1' },
-  member: { bgcolor: '#f4f6f8', color: '#637381', border: '1px solid #637381' },
+const MAX_PROFILE_IMAGE_SIZE = 5 * 1024 * 1024
+const LOCAL_IMAGE_PREFIX = 'beatific_profile_image_'
+
+const roleStyles = {
+  owner: { color: '#9a3412', bgcolor: '#fff7ed', borderColor: '#fed7aa' },
+  admin: { color: '#075985', bgcolor: '#e0f2fe', borderColor: '#bae6fd' },
+  member: { color: '#3f3f46', bgcolor: '#f4f4f5', borderColor: '#e4e4e7' },
 }
 
 const getInitials = (name) =>
   name ? name.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2) : '??'
 
+const getLocalImage = (userId) => {
+  if (!userId) return ''
+  return localStorage.getItem(`${LOCAL_IMAGE_PREFIX}${userId}`) || ''
+}
+
+const fileToDataUrl = (file) =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result)
+    reader.onerror = () => reject(new Error('Could not read image'))
+    reader.readAsDataURL(file)
+  })
+
+function ProfileMetric({ icon, label, value }) {
+  return (
+    <Box
+      sx={{
+        minWidth: 0,
+        p: 1.55,
+        borderRadius: '0.875rem',
+        bgcolor: '#fafafa',
+        border: '1px solid',
+        borderColor: alpha('#000', 0.06),
+      }}
+    >
+      <Stack direction="row" spacing={1.25} alignItems="center">
+        <Box sx={{ color: '#f97316', display: 'flex' }}>{icon}</Box>
+        <Box sx={{ minWidth: 0 }}>
+          <Typography sx={{ fontSize: '0.75rem', color: '#71717a', fontWeight: 600 }}>
+            {label}
+          </Typography>
+          <Typography noWrap sx={{ fontSize: '0.875rem', color: '#27272a', fontWeight: 700 }}>
+            {value || 'Not set'}
+          </Typography>
+        </Box>
+      </Stack>
+    </Box>
+  )
+}
+
+function SectionHeader({ icon, title, subtitle }) {
+  return (
+    <Stack direction="row" spacing={1.5} alignItems="center" sx={{ mb: 2.25 }}>
+      <Box
+        sx={{
+          width: 38,
+          height: 38,
+          borderRadius: '0.75rem',
+          bgcolor: '#fff7ed',
+          color: '#ea580c',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        {icon}
+      </Box>
+      <Box>
+        <Typography sx={{ fontSize: '1rem', fontWeight: 800, color: '#18181b', lineHeight: 1.2 }}>
+          {title}
+        </Typography>
+        <Typography sx={{ fontSize: '0.8125rem', color: '#71717a', mt: 0.35 }}>
+          {subtitle}
+        </Typography>
+      </Box>
+    </Stack>
+  )
+}
+
 export default function ProfilePage() {
   const { user, company, fetchMe } = useAuthStore()
+  const canUploadProfileImage = canManageWorkspace(user)
+  const fileInputRef = useRef(null)
+  const localImageKey = `${LOCAL_IMAGE_PREFIX}${user?._id || 'guest'}`
+
   const [name, setName] = useState(user?.name || '')
+  const [profileImageUrl, setProfileImageUrl] = useState(user?.profileImageUrl || getLocalImage(user?._id))
+  const [imageUploading, setImageUploading] = useState(false)
+  const [imageProgress, setImageProgress] = useState(0)
   const [nameLoading, setNameLoading] = useState(false)
   const [nameSuccess, setNameSuccess] = useState('')
   const [nameError, setNameError] = useState('')
@@ -41,6 +129,13 @@ export default function ProfilePage() {
   const [pwLoading, setPwLoading] = useState(false)
   const [pwSuccess, setPwSuccess] = useState('')
   const [pwError, setPwError] = useState('')
+
+  const roleStyle = roleStyles[user?.role] || roleStyles.member
+  const displayImage = useMemo(() => {
+    if (!profileImageUrl) return defaultProfileImage
+    if (profileImageUrl.startsWith('data:') || profileImageUrl.startsWith('blob:')) return profileImageUrl
+    return buildAssetThumbnailUrl(profileImageUrl, 600)
+  }, [profileImageUrl])
 
   const handleNameSave = async (e) => {
     e.preventDefault()
@@ -55,6 +150,52 @@ export default function ProfilePage() {
       setNameError(err.response?.data?.message || 'Failed to update profile')
     } finally {
       setNameLoading(false)
+    }
+  }
+
+  const handleProfileImageSelect = async (event) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+
+    const validation = validateAssetFile(file, {
+      allowImages: true,
+      allowPdf: false,
+      maxSize: MAX_PROFILE_IMAGE_SIZE,
+    })
+    if (validation) { setNameError(validation); return }
+
+    setImageUploading(true)
+    setImageProgress(0)
+    setNameError('')
+    setNameSuccess('')
+
+    try {
+      const uploadedUrl = await uploadAssetFile({
+        file,
+        folder: 'profiles',
+        onProgress: setImageProgress,
+      })
+
+      if (uploadedUrl?.startsWith('blob:')) {
+        const dataUrl = await fileToDataUrl(file)
+        localStorage.setItem(localImageKey, dataUrl)
+        setProfileImageUrl(dataUrl)
+        setNameSuccess('Profile image preview saved for this browser')
+        return
+      }
+
+      await api.patch('/auth/profile', { profileImageUrl: uploadedUrl })
+      localStorage.removeItem(localImageKey)
+      setProfileImageUrl(uploadedUrl)
+      await fetchMe()
+      setNameSuccess('Profile image updated successfully')
+    } catch (err) {
+      setNameError(err.response?.data?.message || err.message || 'Failed to upload profile image')
+    } finally {
+      setImageUploading(false)
+      setImageProgress(0)
+      setTimeout(() => setNameSuccess(''), 3000)
     }
   }
 
@@ -78,236 +219,285 @@ export default function ProfilePage() {
   const togglePw = (field) => () => setShowPw((v) => ({ ...v, [field]: !v[field] }))
 
   return (
-    <Box>
-      <SoftPageHeader
-        title="My Profile"
-        subtitle="Manage your account settings, preferences, and security."
-      />
-
-      <Grid container spacing={3}>
-        {/* Left Column - Identity Card */}
-        <Grid item xs={12} md={4}>
-          <SoftCard 
-            elevation={0} 
-            sx={{ 
-              borderRadius: 3, 
-              border: '1px solid', 
-              borderColor: 'divider',
-              overflow: 'hidden',
-              position: 'relative',
-              boxShadow: '0px 4px 20px rgba(0,0,0,0.03)'
-            }}
-          >
-            {/* Banner Background */}
-            <Box 
-              sx={{ 
-                height: 100, 
-                background: 'linear-gradient(135deg, #EA580C 0%, #FACC15 100%)',
-                width: '100%'
-              }} 
-            />
-            
-            <Box sx={{ pt: 0, px: 3, pb: 3, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-              <SoftAvatar 
-                size={80}
-                color="primary"
-                sx={{ 
-                  bgcolor: 'background.paper',
-                  color: 'primary.main',
-                  border: '3px solid',
-                  borderColor: 'background.paper',
-                  mt: -5,
-                  mb: 1.5,
-                  boxShadow: '0px 4px 10px rgba(0,0,0,0.1)'
-                }}
-              >
-                {getInitials(user?.name)}
-              </SoftAvatar>
-              
-              <Typography variant="h6" sx={{ fontWeight: 800, mb: 0.25 }}>
-                {user?.name}
-              </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
-                {user?.email}
-              </Typography>
-
-              <Stack direction="row" spacing={1} sx={{ mb: 2.5 }}>
-                <SoftBadge
-                  label={user?.role}
-                  size="small"
-                  color={user?.role === 'owner' ? 'warning' : user?.role === 'admin' ? 'info' : 'default'}
-                  sx={{ 
-                    textTransform: 'capitalize', 
-                    px: 1
+    <Box sx={{ pb: 3 }}>
+      <SoftCard
+        hover={false}
+        sx={{
+          minHeight: { md: 'calc(100vh - 124px)' },
+          borderRadius: '1.25rem',
+          borderColor: alpha('#000', 0.08),
+          boxShadow: '0 18px 45px rgba(15, 23, 42, 0.08)',
+        }}
+      >
+        <Box
+          sx={{
+            minHeight: 230,
+            p: { xs: 2.25, md: 4 },
+            display: 'flex',
+            alignItems: 'flex-end',
+            background:
+              'linear-gradient(135deg, #FA852C 0%, #FABE93 100%)',
+            borderBottom: '1px solid',
+            borderColor: alpha('#000', 0.06),
+          }}
+        >
+          <Grid container spacing={3} alignItems="flex-end">
+            <Grid item xs={12} md={8}>
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2.5} alignItems={{ xs: 'flex-start', sm: 'flex-end' }}>
+                <Box
+                  sx={{
+                    position: 'relative',
+                    width: { xs: 132, sm: 154 },
+                    height: { xs: 132, sm: 154 },
+                    borderRadius: '50%',
+                    overflow: 'hidden',
+                    border: '5px solid #fff',
+                    boxShadow: '0 18px 36px rgba(39, 39, 42, 0.18)',
+                    bgcolor: '#f4f4f5',
+                    flexShrink: 0,
                   }}
-                />
-                <SoftBadge 
-                  label={company?.name} 
-                  size="small" 
-                  variant="outlined"
-                />
-              </Stack>
-              
-              <Divider sx={{ width: '100%', mb: 2.5 }} />
-              
-              <Box sx={{ width: '100%' }}>
-                <Stack spacing={1.5}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
-                    <EmailOutlinedIcon sx={{ color: 'text.secondary', fontSize: 18 }} />
-                    <Typography variant="body2" color="text.primary" sx={{ fontWeight: 500 }}>
-                      {user?.email}
-                    </Typography>
-                  </Box>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
-                    <BusinessOutlinedIcon sx={{ color: 'text.secondary', fontSize: 18 }} />
-                    <Typography variant="body2" color="text.primary" sx={{ fontWeight: 500 }}>
-                      {company?.name}
-                    </Typography>
-                  </Box>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
-                    <ShieldOutlinedIcon sx={{ color: 'text.secondary', fontSize: 18 }} />
-                    <Typography variant="body2" color="text.primary" sx={{ fontWeight: 500, textTransform: 'capitalize' }}>
-                      {user?.role} Access
-                    </Typography>
-                  </Box>
-                </Stack>
-              </Box>
-            </Box>
-          </SoftCard>
-        </Grid>
-
-        {/* Right Column - Forms */}
-        <Grid item xs={12} md={8}>
-          <Stack spacing={3}>
-            
-            {/* Account Info Form */}
-            <SoftCard 
-              elevation={0} 
-              sx={{ 
-                borderRadius: 3, 
-                border: '1px solid', 
-                borderColor: 'divider',
-                boxShadow: '0px 4px 20px rgba(0,0,0,0.03)'
-              }}
-            >
-              <Box sx={{ p: { xs: 2.5, md: 3 } }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 2.5 }}>
-                  <Box sx={{ p: 0.75, borderRadius: 2, bgcolor: 'primary.lighter', color: 'primary.main', display: 'flex' }}>
-                    <PersonOutlineIcon fontSize="small" />
-                  </Box>
-                  <Box>
-                    <Typography variant="subtitle1" sx={{ fontWeight: 700, lineHeight: 1.2 }}>Personal Information</Typography>
-                    <Typography variant="caption" color="text.secondary">Update your basic profile details here.</Typography>
-                  </Box>
+                >
+                  <Box
+                    component="img"
+                    src={displayImage}
+                    alt={user?.name ? `${user.name} profile` : 'Profile'}
+                    sx={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                  />
+                  {canUploadProfileImage && (
+                    <Tooltip title="Upload profile image">
+                      <IconButton
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={imageUploading}
+                        sx={{
+                          position: 'absolute',
+                          left: 0,
+                          right: 0,
+                          bottom: 0,
+                          mx: 'auto',
+                          width: '100%',
+                          height: 44,
+                          borderRadius: 0,
+                          color: '#fff',
+                          bgcolor: alpha('#000', 0.56),
+                          '&:hover': { bgcolor: alpha('#000', 0.68) },
+                        }}
+                      >
+                        {imageUploading ? <CircularProgress size={20} color="inherit" /> : <PhotoCameraOutlinedIcon />}
+                      </IconButton>
+                    </Tooltip>
+                  )}
                 </Box>
 
-                {nameSuccess && <Alert severity="success" sx={{ mb: 2, borderRadius: 2, py: 0 }}>{nameSuccess}</Alert>}
-                {nameError && <Alert severity="error" sx={{ mb: 2, borderRadius: 2, py: 0 }}>{nameError}</Alert>}
-
-                <form onSubmit={handleNameSave}>
-                  <Grid container spacing={2}>
-                    <Grid item xs={12}>
-                      <TextField
-                        size="small"
-                        label="Full Name"
-                        fullWidth
-                        value={name}
-                        onChange={(e) => setName(e.target.value)}
-                        variant="outlined"
-                        slotProps={{ input: { sx: { borderRadius: 2 } } }}
-                      />
-                    </Grid>
-                    <Grid item xs={12} sm={6}>
-                      <TextField
-                        size="small"
-                        label="Email Address"
-                        fullWidth
-                        value={user?.email || ''}
-                        disabled
-                        helperText="Email cannot be changed"
-                        variant="outlined"
-                        slotProps={{ input: { sx: { borderRadius: 2 } } }}
-                      />
-                    </Grid>
-                    <Grid item xs={12} sm={6}>
-                      <TextField
-                        size="small"
-                        label="Company"
-                        fullWidth
-                        value={company?.name || ''}
-                        disabled
-                        helperText="Managed by the owner"
-                        variant="outlined"
-                        slotProps={{ input: { sx: { borderRadius: 2 } } }}
-                      />
-                    </Grid>
-                  </Grid>
-                  
-                  <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2.5 }}>
-                    <SoftButton
-                      type="submit"
-                      variant="contained"
-                      disabled={nameLoading || name === user?.name}
-                      sx={{ px: 3, py: 0.8 }}
-                      startIcon={nameLoading ? <CircularProgress size={16} color="inherit" /> : null}
-                    >
-                      {nameLoading ? 'Saving...' : 'Save Changes'}
-                    </SoftButton>
-                  </Box>
-                </form>
-              </Box>
-            </SoftCard>
-
-            {/* Password Form */}
-            <SoftCard 
-              elevation={0} 
-              sx={{ 
-                borderRadius: 3, 
-                border: '1px solid', 
-                borderColor: 'divider',
-                boxShadow: '0px 4px 20px rgba(0,0,0,0.03)'
-              }}
-            >
-              <Box sx={{ p: { xs: 2.5, md: 3 } }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 2.5 }}>
-                  <Box sx={{ p: 0.75, borderRadius: 2, bgcolor: 'error.lighter', color: 'error.main', display: 'flex' }}>
-                    <LockOutlinedIcon fontSize="small" />
-                  </Box>
-                  <Box>
-                    <Typography variant="subtitle1" sx={{ fontWeight: 700, lineHeight: 1.2 }}>Security</Typography>
-                    <Typography variant="caption" color="text.secondary">Use a long, random password to stay secure.</Typography>
-                  </Box>
-                </Box>
-
-                {pwSuccess && <Alert severity="success" sx={{ mb: 2, borderRadius: 2, py: 0 }}>{pwSuccess}</Alert>}
-                {pwError && <Alert severity="error" sx={{ mb: 2, borderRadius: 2, py: 0 }}>{pwError}</Alert>}
-
-                <form onSubmit={handlePasswordChange}>
-                  <Stack spacing={2}>
-                    <TextField
+                <Box sx={{ minWidth: 0 }}>
+                  <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1, flexWrap: 'wrap', rowGap: 1 }}>
+                    <Chip
+                      label={user?.role || 'member'}
                       size="small"
-                      label="Current Password"
-                      fullWidth
-                      type={showPw.current ? 'text' : 'password'}
-                      value={pwForm.current}
-                      onChange={(e) => setPwForm((f) => ({ ...f, current: e.target.value }))}
-                      variant="outlined"
-                      slotProps={{
-                        input: {
-                          sx: { borderRadius: 2 },
-                          endAdornment: (
-                            <InputAdornment position="end">
-                              <IconButton onClick={togglePw('current')} edge="end" size="small">
-                                {showPw.current ? <VisibilityOff fontSize="small" /> : <Visibility fontSize="small" />}
-                              </IconButton>
-                            </InputAdornment>
-                          ),
-                        },
+                      sx={{
+                        textTransform: 'capitalize',
+                        fontWeight: 800,
+                        color: roleStyle.color,
+                        bgcolor: roleStyle.bgcolor,
+                        border: '1px solid',
+                        borderColor: roleStyle.borderColor,
                       }}
                     />
+                  </Stack>
+                  <Typography
+                    sx={{
+                      color: '#18181b',
+                      fontSize: { xs: '2rem', md: '2.65rem' },
+                      lineHeight: 1.05,
+                      fontWeight: 900,
+                      letterSpacing: 0,
+                    }}
+                  >
+                    {user?.name || 'Profile'}
+                  </Typography>
+                  <Typography sx={{ mt: 1, color: '#52525b', fontSize: '0.95rem', maxWidth: 560 }}>
+                    Manage identity, workspace access, and account security from one clean settings view.
+                  </Typography>
+                </Box>
+              </Stack>
+            </Grid>
 
+            <Grid item xs={12} md={4}>
+              <Grid container spacing={1.5}>
+                <Grid item xs={12} sm={6} md={12}>
+                  <ProfileMetric icon={<EmailOutlinedIcon fontSize="small" />} label="Email" value={user?.email} />
+                </Grid>
+                <Grid item xs={12} sm={6} md={12}>
+                  <ProfileMetric icon={<BusinessOutlinedIcon fontSize="small" />} label="Company" value={company?.name} />
+                </Grid>
+              </Grid>
+            </Grid>
+          </Grid>
+
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            hidden
+            onChange={handleProfileImageSelect}
+          />
+        </Box>
+
+        {imageUploading && <LinearProgress variant="determinate" value={imageProgress} />}
+
+        <Box sx={{ p: { xs: 2.25, md: 4 } }}>
+          {(nameSuccess || nameError) && (
+            <Alert
+              severity={nameError ? 'error' : 'info'}
+              sx={{
+                mb: 2,
+                borderRadius: '0.875rem',
+                ...(nameSuccess && {
+                  color: '#9a3412',
+                  bgcolor: '#fff7ed',
+                  '& .MuiAlert-icon': { color: '#f97316' },
+                }),
+              }}
+            >
+              {nameError || nameSuccess}
+            </Alert>
+          )}
+
+          <Grid container columnSpacing={3} rowSpacing={0}>
+            <Grid item xs={12} lg={8}>
+              <Stack spacing={5}>
+                <Box
+                  sx={{
+                    p: { xs: 2, md: 2.5 },
+                    border: '1px solid',
+                    borderColor: alpha('#000', 0.08),
+                    borderRadius: '1rem',
+                    bgcolor: '#fff',
+                  }}
+                >
+                  <SectionHeader
+                    icon={<BadgeOutlinedIcon fontSize="small" />}
+                    title="Contact Details"
+                    subtitle="Update the details shown inside your workspace."
+                  />
+
+                  <form onSubmit={handleNameSave}>
+                    <Grid container spacing={1.8}>
+                      <Grid item xs={12} md={12}>
+                        <TextField
+                          size="small"
+                          label="Full Name"
+                          fullWidth
+                          value={name}
+                          onChange={(e) => setName(e.target.value)}
+                          variant="outlined"
+                          slotProps={{ input: { sx: { borderRadius: '0.875rem', minHeight: 48 } } }}
+                        />
+                      </Grid>
+                      <Grid item xs={12} md={12}>
+                        <TextField
+                          size="small"
+                          label="Email Address"
+                          fullWidth
+                          value={user?.email || ''}
+                          disabled
+                          variant="outlined"
+                          slotProps={{ input: { sx: { borderRadius: '0.875rem', minHeight: 48 } } }}
+                        />
+                      </Grid>
+                      <Grid item xs={12} md={12}>
+                        <TextField
+                          size="small"
+                          label="Company"
+                          fullWidth
+                          value={company?.name || ''}
+                          disabled
+                          variant="outlined"
+                          slotProps={{ input: { sx: { borderRadius: '0.875rem', minHeight: 48 } } }}
+                        />
+                      </Grid>
+                    </Grid>
+
+                    <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems={{ xs: 'stretch', sm: 'center' }} sx={{ mt: 2.25 }}>
+                      <SoftButton
+                        type="button"
+                        variant="outlined"
+                        startIcon={<AddPhotoAlternateOutlinedIcon />}
+                        disabled={!canUploadProfileImage || imageUploading}
+                        onClick={() => fileInputRef.current?.click()}
+                      >
+                        {canUploadProfileImage ? 'Change Photo' : 'Admin Photo Only'}
+                      </SoftButton>
+                      <SoftButton
+                        type="submit"
+                        variant="contained"
+                        disabled={nameLoading || name === user?.name}
+                        startIcon={nameLoading ? <CircularProgress size={16} color="inherit" /> : null}
+                        sx={{
+                          color: '#fff',
+                          '&.Mui-disabled': { color: '#fff' },
+                        }}
+                      >
+                        {nameLoading ? 'Saving...' : 'Save Changes'}
+                      </SoftButton>
+                    </Stack>
+                  </form>
+                </Box>
+
+                <Box
+                  sx={{
+                    p: { xs: 2, md: 2.5 },
+                    border: '1px solid',
+                    borderColor: alpha('#000', 0.08),
+                    borderRadius: '1rem',
+                    bgcolor: '#fff',
+                  }}
+                >
+                  <SectionHeader
+                    icon={<LockOutlinedIcon fontSize="small" />}
+                    title="Security"
+                    subtitle="Change your password with your current credentials."
+                  />
+
+                  {pwSuccess && (
+                    <Alert
+                      severity="info"
+                      sx={{
+                        mb: 2,
+                        borderRadius: '0.875rem',
+                        color: '#9a3412',
+                        bgcolor: '#fff7ed',
+                        '& .MuiAlert-icon': { color: '#f97316' },
+                      }}
+                    >
+                      {pwSuccess}
+                    </Alert>
+                  )}
+                  {pwError && <Alert severity="error" sx={{ mb: 2, borderRadius: '0.875rem' }}>{pwError}</Alert>}
+
+                  <form onSubmit={handlePasswordChange}>
                     <Grid container spacing={2}>
-                      <Grid item xs={12} sm={6}>
+                      <Grid item xs={12} md={12}>
+                        <TextField
+                          size="small"
+                          label="Current Password"
+                          fullWidth
+                          type={showPw.current ? 'text' : 'password'}
+                          value={pwForm.current}
+                          onChange={(e) => setPwForm((f) => ({ ...f, current: e.target.value }))}
+                          variant="outlined"
+                          slotProps={{ input: { sx: { borderRadius: '0.875rem', minHeight: 48 } } }}
+                          InputProps={{
+                            endAdornment: (
+                              <InputAdornment position="end">
+                                <IconButton onClick={togglePw('current')} edge="end">
+                                  {showPw.current ? <VisibilityOff /> : <Visibility />}
+                                </IconButton>
+                              </InputAdornment>
+                            ),
+                          }}
+                        />
+                      </Grid>
+                      <Grid item xs={12} md={12}>
                         <TextField
                           size="small"
                           label="New Password"
@@ -315,56 +505,76 @@ export default function ProfilePage() {
                           type={showPw.newPw ? 'text' : 'password'}
                           value={pwForm.newPw}
                           onChange={(e) => setPwForm((f) => ({ ...f, newPw: e.target.value }))}
-                          helperText="Minimum 8 characters"
                           variant="outlined"
-                          slotProps={{
-                            input: {
-                              sx: { borderRadius: 2 },
-                              endAdornment: (
-                                <InputAdornment position="end">
-                                  <IconButton onClick={togglePw('newPw')} edge="end" size="small">
-                                    {showPw.newPw ? <VisibilityOff fontSize="small" /> : <Visibility fontSize="small" />}
-                                  </IconButton>
-                                </InputAdornment>
-                              ),
-                            },
+                          slotProps={{ input: { sx: { borderRadius: '0.875rem', minHeight: 48 } } }}
+                          InputProps={{
+                            endAdornment: (
+                              <InputAdornment position="end">
+                                <IconButton onClick={togglePw('newPw')} edge="end">
+                                  {showPw.newPw ? <VisibilityOff /> : <Visibility />}
+                                </IconButton>
+                              </InputAdornment>
+                            ),
                           }}
                         />
                       </Grid>
-                      <Grid item xs={12} sm={6}>
+                      <Grid item xs={12} md={12}>
                         <TextField
                           size="small"
                           label="Confirm New Password"
                           fullWidth
-                          type={showPw.newPw ? 'text' : 'password'}
+                          type="password"
                           value={pwForm.confirm}
                           onChange={(e) => setPwForm((f) => ({ ...f, confirm: e.target.value }))}
                           variant="outlined"
-                          slotProps={{ input: { sx: { borderRadius: 2 } } }}
+                          slotProps={{ input: { sx: { borderRadius: '0.875rem', minHeight: 48 } } }}
                         />
                       </Grid>
                     </Grid>
-                  </Stack>
-
-                  <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2.5 }}>
                     <SoftButton
                       type="submit"
                       variant="contained"
-                      color="dark"
-                      disabled={pwLoading || !pwForm.current || !pwForm.newPw}
-                      sx={{ px: 3, py: 0.8 }}
+                      disabled={pwLoading || !pwForm.current || !pwForm.newPw || !pwForm.confirm}
                       startIcon={pwLoading ? <CircularProgress size={16} color="inherit" /> : null}
+                      sx={{
+                        mt: 2.25,
+                        color: '#fff',
+                        '&.Mui-disabled': { color: '#fff' },
+                      }}
                     >
                       {pwLoading ? 'Updating...' : 'Update Password'}
                     </SoftButton>
-                  </Box>
-                </form>
-              </Box>
-            </SoftCard>
+                  </form>
+                </Box>
+              </Stack>
+            </Grid>
 
-          </Stack>
-        </Grid>
-      </Grid>
+            <Grid item xs={12} lg={4}>
+              <Box
+                sx={{
+                  p: { xs: 2, md: 2.5 },
+                  border: '1px solid',
+                  borderColor: alpha('#000', 0.08),
+                  borderRadius: '1rem',
+                  bgcolor: '#fff',
+                }}
+              >
+                <SectionHeader
+                  icon={<ShieldOutlinedIcon fontSize="small" />}
+                  title="Account Overview"
+                  subtitle="Current access and workspace identity."
+                />
+
+                <Stack spacing={1.25}>
+                  <ProfileMetric icon={<BadgeOutlinedIcon fontSize="small" />} label="Display Initials" value={getInitials(user?.name)} />
+                  <ProfileMetric icon={<ShieldOutlinedIcon fontSize="small" />} label="Access Level" value={`${user?.role || 'member'} access`} />
+                  <ProfileMetric icon={<BusinessOutlinedIcon fontSize="small" />} label="Workspace" value={company?.name} />
+                </Stack>
+              </Box>
+            </Grid>
+          </Grid>
+        </Box>
+      </SoftCard>
     </Box>
   )
 }

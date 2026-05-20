@@ -227,6 +227,7 @@ export default function LuluOrdersPage() {
                 startIcon={submitting ? <CircularProgress size={16} color="inherit" /> : <LocalPrintshopOutlinedIcon />}
                 disabled={submitting || selected.length === 0}
                 onClick={handleBulkSubmit}
+                sx={{ color: '#fff', '&.Mui-disabled': { color: '#fff' } }}
               >
                 {submitting ? 'Submitting...' : `Submit ${selected.length > 0 ? selected.length : ''} to Lulu`}
               </SoftButton>
