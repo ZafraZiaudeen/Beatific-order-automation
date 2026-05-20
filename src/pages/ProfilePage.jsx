@@ -2,13 +2,8 @@ import { useState } from 'react'
 import Box from '@mui/material/Box'
 import Grid from '@mui/material/Grid'
 import Typography from '@mui/material/Typography'
-import Card from '@mui/material/Card'
-import CardContent from '@mui/material/CardContent'
 import TextField from '@mui/material/TextField'
-import Button from '@mui/material/Button'
 import Alert from '@mui/material/Alert'
-import Avatar from '@mui/material/Avatar'
-import Chip from '@mui/material/Chip'
 import Divider from '@mui/material/Divider'
 import InputAdornment from '@mui/material/InputAdornment'
 import IconButton from '@mui/material/IconButton'
@@ -23,10 +18,11 @@ import BusinessOutlinedIcon from '@mui/icons-material/BusinessOutlined'
 import ShieldOutlinedIcon from '@mui/icons-material/ShieldOutlined'
 import useAuthStore from '../stores/authStore'
 import api from '../lib/api'
+import { SoftPageHeader, SoftCard, SoftButton, SoftAvatar, SoftBadge } from '../components/soft-ui'
 
 const ROLE_COLORS = {
-  owner: { bgcolor: '#e7f7ed', color: '#118D57', border: '1px solid #118D57' },
-  admin: { bgcolor: '#e0f7fa', color: '#006C9C', border: '1px solid #006C9C' },
+  owner: { bgcolor: '#fff7ed', color: '#ea580c', border: '1px solid #ea580c' },
+  admin: { bgcolor: '#e0f2fe', color: '#0369a1', border: '1px solid #0369a1' },
   member: { bgcolor: '#f4f6f8', color: '#637381', border: '1px solid #637381' },
 }
 
@@ -83,19 +79,15 @@ export default function ProfilePage() {
 
   return (
     <Box>
-      <Box sx={{ mb: 3 }}>
-        <Typography variant="h4" sx={{ fontWeight: 800, mb: 0.5, color: 'text.primary' }}>
-          My Profile
-        </Typography>
-        <Typography variant="body2" color="text.secondary">
-          Manage your account settings, preferences, and security.
-        </Typography>
-      </Box>
+      <SoftPageHeader
+        title="My Profile"
+        subtitle="Manage your account settings, preferences, and security."
+      />
 
       <Grid container spacing={3}>
         {/* Left Column - Identity Card */}
         <Grid item xs={12} md={4}>
-          <Card 
+          <SoftCard 
             elevation={0} 
             sx={{ 
               borderRadius: 3, 
@@ -110,18 +102,16 @@ export default function ProfilePage() {
             <Box 
               sx={{ 
                 height: 100, 
-                background: 'linear-gradient(135deg, #118D57 0%, #006C9C 100%)',
+                background: 'linear-gradient(135deg, #EA580C 0%, #FACC15 100%)',
                 width: '100%'
               }} 
             />
             
-            <CardContent sx={{ pt: 0, px: 3, pb: 3, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-              <Avatar 
+            <Box sx={{ pt: 0, px: 3, pb: 3, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+              <SoftAvatar 
+                size={80}
+                color="primary"
                 sx={{ 
-                  width: 80, 
-                  height: 80, 
-                  fontSize: '1.75rem', 
-                  fontWeight: 700, 
                   bgcolor: 'background.paper',
                   color: 'primary.main',
                   border: '3px solid',
@@ -132,7 +122,7 @@ export default function ProfilePage() {
                 }}
               >
                 {getInitials(user?.name)}
-              </Avatar>
+              </SoftAvatar>
               
               <Typography variant="h6" sx={{ fontWeight: 800, mb: 0.25 }}>
                 {user?.name}
@@ -142,21 +132,19 @@ export default function ProfilePage() {
               </Typography>
 
               <Stack direction="row" spacing={1} sx={{ mb: 2.5 }}>
-                <Chip
+                <SoftBadge
                   label={user?.role}
                   size="small"
+                  color={user?.role === 'owner' ? 'warning' : user?.role === 'admin' ? 'info' : 'default'}
                   sx={{ 
-                    fontWeight: 700, 
                     textTransform: 'capitalize', 
-                    px: 1,
-                    ...ROLE_COLORS[user?.role] 
+                    px: 1
                   }}
                 />
-                <Chip 
+                <SoftBadge 
                   label={company?.name} 
                   size="small" 
-                  variant="outlined" 
-                  sx={{ fontWeight: 600, borderColor: 'divider' }} 
+                  variant="outlined"
                 />
               </Stack>
               
@@ -184,8 +172,8 @@ export default function ProfilePage() {
                   </Box>
                 </Stack>
               </Box>
-            </CardContent>
-          </Card>
+            </Box>
+          </SoftCard>
         </Grid>
 
         {/* Right Column - Forms */}
@@ -193,7 +181,7 @@ export default function ProfilePage() {
           <Stack spacing={3}>
             
             {/* Account Info Form */}
-            <Card 
+            <SoftCard 
               elevation={0} 
               sx={{ 
                 borderRadius: 3, 
@@ -202,7 +190,7 @@ export default function ProfilePage() {
                 boxShadow: '0px 4px 20px rgba(0,0,0,0.03)'
               }}
             >
-              <CardContent sx={{ p: { xs: 2.5, md: 3 } }}>
+              <Box sx={{ p: { xs: 2.5, md: 3 } }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 2.5 }}>
                   <Box sx={{ p: 0.75, borderRadius: 2, bgcolor: 'primary.lighter', color: 'primary.main', display: 'flex' }}>
                     <PersonOutlineIcon fontSize="small" />
@@ -256,23 +244,22 @@ export default function ProfilePage() {
                   </Grid>
                   
                   <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2.5 }}>
-                    <Button
+                    <SoftButton
                       type="submit"
                       variant="contained"
-                      disableElevation
                       disabled={nameLoading || name === user?.name}
-                      sx={{ borderRadius: 2, px: 3, py: 0.8, fontWeight: 700 }}
+                      sx={{ px: 3, py: 0.8 }}
                       startIcon={nameLoading ? <CircularProgress size={16} color="inherit" /> : null}
                     >
                       {nameLoading ? 'Saving...' : 'Save Changes'}
-                    </Button>
+                    </SoftButton>
                   </Box>
                 </form>
-              </CardContent>
-            </Card>
+              </Box>
+            </SoftCard>
 
             {/* Password Form */}
-            <Card 
+            <SoftCard 
               elevation={0} 
               sx={{ 
                 borderRadius: 3, 
@@ -281,7 +268,7 @@ export default function ProfilePage() {
                 boxShadow: '0px 4px 20px rgba(0,0,0,0.03)'
               }}
             >
-              <CardContent sx={{ p: { xs: 2.5, md: 3 } }}>
+              <Box sx={{ p: { xs: 2.5, md: 3 } }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 2.5 }}>
                   <Box sx={{ p: 0.75, borderRadius: 2, bgcolor: 'error.lighter', color: 'error.main', display: 'flex' }}>
                     <LockOutlinedIcon fontSize="small" />
@@ -360,21 +347,20 @@ export default function ProfilePage() {
                   </Stack>
 
                   <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2.5 }}>
-                    <Button
+                    <SoftButton
                       type="submit"
                       variant="contained"
-                      color="inherit"
-                      disableElevation
+                      color="dark"
                       disabled={pwLoading || !pwForm.current || !pwForm.newPw}
-                      sx={{ borderRadius: 2, px: 3, py: 0.8, fontWeight: 700, bgcolor: 'text.primary', color: 'background.paper', '&:hover': { bgcolor: 'text.secondary' } }}
+                      sx={{ px: 3, py: 0.8 }}
                       startIcon={pwLoading ? <CircularProgress size={16} color="inherit" /> : null}
                     >
                       {pwLoading ? 'Updating...' : 'Update Password'}
-                    </Button>
+                    </SoftButton>
                   </Box>
                 </form>
-              </CardContent>
-            </Card>
+              </Box>
+            </SoftCard>
 
           </Stack>
         </Grid>

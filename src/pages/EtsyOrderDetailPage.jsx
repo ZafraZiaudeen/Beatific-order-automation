@@ -85,7 +85,7 @@ const getInitials = (name = '') =>
   name.split(' ').filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join('') || '?'
 
 const avatarColor = (name = '') => {
-  const colors = ['#00A76F', '#00B8D9', '#637381', '#FF5630', '#B64839']
+  const colors = ['#F97316', '#EAB308', '#0EA5E9', '#22C55E', '#EF4444']
   return colors[(name.charCodeAt(0) || 0) % colors.length]
 }
 
@@ -96,9 +96,9 @@ function DetailPanel({ icon, title, action, children, sx }) {
         p: { xs: 2, md: 2.5 },
         border: '1px solid',
         borderColor: 'divider',
-        borderRadius: 1,
+        borderRadius: 2,
         bgcolor: 'background.paper',
-        boxShadow: '0 10px 26px rgba(15, 23, 42, 0.035)',
+        boxShadow: '0 20px 27px rgba(15, 23, 42, 0.05)',
         ...sx,
       }}
     >
@@ -124,10 +124,10 @@ function SidePanel({ icon, title, children, accent = false }) {
       sx={{
         p: 2,
         border: '1px solid',
-        borderColor: accent ? alpha('#B64839', 0.24) : 'divider',
+        borderColor: accent ? alpha('#F97316', 0.24) : 'divider',
         borderRadius: 1,
-        bgcolor: accent ? alpha('#B64839', 0.045) : 'background.paper',
-        boxShadow: '0 8px 22px rgba(15, 23, 42, 0.035)',
+        bgcolor: accent ? alpha('#F97316', 0.06) : 'background.paper',
+        boxShadow: '0 20px 27px rgba(15, 23, 42, 0.05)',
       }}
     >
       <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', mb: 1.5 }}>

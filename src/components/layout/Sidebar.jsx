@@ -1,11 +1,6 @@
 import { useLocation, useNavigate } from 'react-router-dom'
 import Box from '@mui/material/Box'
 import Drawer from '@mui/material/Drawer'
-import List from '@mui/material/List'
-import ListSubheader from '@mui/material/ListSubheader'
-import ListItemButton from '@mui/material/ListItemButton'
-import ListItemIcon from '@mui/material/ListItemIcon'
-import ListItemText from '@mui/material/ListItemText'
 import IconButton from '@mui/material/IconButton'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
@@ -20,46 +15,24 @@ import PersonIcon from '@mui/icons-material/PersonOutlined'
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft'
 import ChevronRightIcon from '@mui/icons-material/ChevronRight'
 import BookOutlinedIcon from '@mui/icons-material/AutoStoriesOutlined'
+import DiamondOutlinedIcon from '@mui/icons-material/DiamondOutlined'
 import { SIDEBAR_WIDTH, SIDEBAR_COLLAPSED_WIDTH } from '../../lib/constants'
 import useAuthStore from '../../stores/authStore'
 import { canManageWorkspace } from '../../lib/permissions'
+import { SoftButton } from '../soft-ui'
+import { alpha } from '@mui/material/styles'
 
-const SIDEBAR_BG = '#FFFFFF'
-const SIDEBAR_HOVER = '#F9FAFB'
-const ACTIVE_COLOR = '#00A76F'
-const ACTIVE_BG = '#C8FAD6'
-const SIDEBAR_BORDER = '#DFE3E8'
-const TEXT_COLOR = '#637381'
-const TEXT_DARK = '#1C252E'
+const MAIN_NAV = [
+  { title: 'Dashboard', path: '/dashboard', icon: DashboardIcon },
+  { title: 'Etsy Orders', path: '/orders/etsy', icon: ShoppingCartIcon },
+  { title: 'Lulu Orders', path: '/orders/lulu', icon: LocalPrintshopIcon },
+  { title: 'Product Library', path: '/products', icon: InventoryIcon },
+]
 
-const NAV_SECTIONS = [
-  {
-    title: 'OVERVIEW',
-    items: [
-      { title: 'Dashboard', path: '/dashboard', icon: DashboardIcon },
-    ],
-  },
-  {
-    title: 'ORDERS',
-    items: [
-      { title: 'Etsy Orders', path: '/orders/etsy', icon: ShoppingCartIcon },
-      { title: 'Lulu Orders', path: '/orders/lulu', icon: LocalPrintshopIcon },
-    ],
-  },
-  {
-    title: 'PRODUCTS',
-    items: [
-      { title: 'Product Library', path: '/products', icon: InventoryIcon },
-    ],
-  },
-  {
-    title: 'SETTINGS',
-    items: [
-      { title: 'Team', path: '/settings/team', icon: GroupIcon },
-      { title: 'Stores', path: '/settings/stores', icon: StoreIcon },
-      { title: 'Profile', path: '/settings/profile', icon: PersonIcon },
-    ],
-  },
+const ACCOUNT_NAV = [
+  { title: 'Team', path: '/settings/team', icon: GroupIcon, adminOnly: true },
+  { title: 'Stores', path: '/settings/stores', icon: StoreIcon, adminOnly: true },
+  { title: 'Profile', path: '/settings/profile', icon: PersonIcon },
 ]
 
 function NavItem({ item, collapsed, isActive }) {
@@ -68,48 +41,81 @@ function NavItem({ item, collapsed, isActive }) {
 
   return (
     <Tooltip title={collapsed ? item.title : ''} placement="right" arrow>
-      <ListItemButton
+      <Box
         onClick={() => navigate(item.path)}
         sx={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 1,
           minHeight: 44,
-          borderRadius: 1,
-          mx: collapsed ? 1 : 1,
-          mb: 0.25,
-          px: collapsed ? 1.25 : 1.5,
-          justifyContent: collapsed ? 'center' : 'flex-start',
-          color: isActive ? '#007867' : TEXT_COLOR,
-          bgcolor: isActive ? ACTIVE_BG : 'transparent',
-          fontWeight: 500,
-          '&:hover': {
-            color: isActive ? '#007867' : TEXT_DARK,
-            bgcolor: isActive ? ACTIVE_BG : SIDEBAR_HOVER,
-          },
+          borderRadius: '0.75rem',
+          mx: 1,
+          mb: 0.5,
+          px: collapsed ? 1.2 : 1.5,
+          py: 0.75,
+          cursor: 'pointer',
+          transition: 'all 0.15s ease',
+          ...(isActive ? {
+            backgroundImage: 'linear-gradient(135deg, #f97316 0%, #fb923c 100%)',
+            color: '#fff',
+            boxShadow: '0 4px 7px -1px rgba(249, 115, 22, 0.35)',
+          } : {
+            color: '#71717a',
+            '&:hover': {
+              backgroundColor: '#f4f4f5',
+              color: '#27272a',
+            },
+          }),
         }}
       >
-        <ListItemIcon
+        <Box
           sx={{
-            minWidth: collapsed ? 0 : 36,
-            color: isActive ? '#007867' : TEXT_COLOR,
+            width: 32,
+            height: 32,
+            borderRadius: '0.5rem',
+            display: 'flex',
+            alignItems: 'center',
             justifyContent: 'center',
+            flexShrink: 0,
+            ...(isActive ? {
+              backgroundColor: alpha('#fff', 0.2),
+            } : {
+              backgroundColor: '#fff',
+              boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1)',
+            }),
           }}
         >
-          <Icon sx={{ fontSize: 22 }} />
-        </ListItemIcon>
+          <Icon sx={{ fontSize: 18 }} />
+        </Box>
         {!collapsed && (
-          <ListItemText
-            primary={item.title}
-            slotProps={{
-              primary: {
-                sx: {
-                  fontSize: '0.875rem',
-                  fontWeight: 500,
-                },
-              },
+          <Typography
+            sx={{
+              fontSize: '0.875rem',
+              fontWeight: isActive ? 600 : 500,
+              lineHeight: 1.4,
+              whiteSpace: 'nowrap',
             }}
-          />
+          >
+            {item.title}
+          </Typography>
         )}
-      </ListItemButton>
+      </Box>
     </Tooltip>
+  )
+}
+
+function NavList({ items, collapsed, pathname }) {
+  return (
+    <Box>
+      {items.map((item) => (
+        <NavItem
+          key={item.path}
+          item={item}
+          collapsed={collapsed}
+          isActive={pathname === item.path || pathname.startsWith(item.path + '/')}
+        />
+      ))}
+    </Box>
   )
 }
 
@@ -117,13 +123,7 @@ export default function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose
   const location = useLocation()
   const { user } = useAuthStore()
   const canManage = canManageWorkspace(user)
-  const sections = NAV_SECTIONS.map((section) => ({
-    ...section,
-    items: section.items.filter((item) => {
-      if (['/settings/team', '/settings/stores'].includes(item.path)) return canManage
-      return true
-    }),
-  })).filter((section) => section.items.length > 0)
+  const accountItems = ACCOUNT_NAV.filter((item) => !item.adminOnly || canManage)
 
   const content = (
     <Box
@@ -131,21 +131,22 @@ export default function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose
         height: '100%',
         display: 'flex',
         flexDirection: 'column',
-        bgcolor: SIDEBAR_BG,
-        color: TEXT_COLOR,
-        borderRight: `1px dashed ${SIDEBAR_BORDER}`,
+        bgcolor: '#fff',
+        borderRadius: { lg: '1rem' },
         overflow: 'hidden',
-        minHeight: 0,
+        boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1)',
+        border: '1px solid',
+        borderColor: alpha('#000', 0.05),
       }}
     >
-      {/* Logo */}
+      {/* Logo Header */}
       <Box
         sx={{
           display: 'flex',
           alignItems: 'center',
           gap: 1.5,
-          px: collapsed ? 1.25 : 2,
-          py: 1.5,
+          px: collapsed ? 1.5 : 2,
+          py: 2,
           minHeight: 72,
         }}
       >
@@ -153,39 +154,28 @@ export default function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose
           sx={{
             width: 40,
             height: 40,
-            borderRadius: '50%',
+            borderRadius: '0.75rem',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            bgcolor: 'primary.main',
-            boxShadow: '0 8px 16px rgba(0, 167, 111, 0.24)',
+            backgroundImage: 'linear-gradient(135deg, #f97316 0%, #fb923c 100%)',
+            color: '#fff',
             flexShrink: 0,
+            boxShadow: '0 4px 7px -1px rgba(249, 115, 22, 0.35)',
           }}
         >
-          <BookOutlinedIcon sx={{ color: '#fff', fontSize: 20 }} />
+          <BookOutlinedIcon sx={{ fontSize: 20 }} />
         </Box>
         {!collapsed && (
-          <Box>
-            <Typography
-              sx={{
-                fontSize: '0.82rem',
-                fontWeight: 800,
-                letterSpacing: '0.14em',
-                textTransform: 'uppercase',
-                color: TEXT_DARK,
-                lineHeight: 1.2,
-              }}
-            >
-              Beatific.co
-            </Typography>
-            <Typography sx={{ fontSize: '0.75rem', color: TEXT_COLOR, mt: 0.2 }}>
-              Order Automation
-            </Typography>
-          </Box>
+          <Typography sx={{ fontSize: '1rem', fontWeight: 700, color: '#27272a', whiteSpace: 'nowrap' }}>
+            Beatific.co
+            <br />
+            Order Automation
+          </Typography>
         )}
       </Box>
 
-      <Divider sx={{ borderStyle: 'dashed', borderColor: SIDEBAR_BORDER }} />
+      <Divider sx={{ mx: 2, borderColor: alpha('#000', 0.08) }} />
 
       {/* Navigation */}
       <Box
@@ -193,63 +183,99 @@ export default function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose
           flex: 1,
           minHeight: 0,
           overflowY: 'auto',
-          overflowX: 'hidden',
-          py: 1,
-          overscrollBehavior: 'contain',
-          scrollbarWidth: 'none',
-          msOverflowStyle: 'none',
-          '&::-webkit-scrollbar': {
-            width: 0,
-            height: 0,
+          py: 1.5,
+          scrollbarWidth: 'thin',
+          scrollbarColor: `${alpha('#000', 0.2)} transparent`,
+          '&::-webkit-scrollbar': { width: '6px' },
+          '&::-webkit-scrollbar-track': { background: 'transparent' },
+          '&::-webkit-scrollbar-thumb': {
+            background: alpha('#000', 0.2),
+            borderRadius: '3px',
           },
         }}
       >
-        {sections.map((section) => (
-          <List
-            key={section.title}
-            subheader={
-              !collapsed ? (
-                <ListSubheader
-                  sx={{
-                    bgcolor: 'transparent',
-                    color: TEXT_COLOR,
-                    fontSize: '0.72rem',
-                    fontWeight: 700,
-                    letterSpacing: '0.08em',
-                    lineHeight: '36px',
-                    px: 3,
-                    mt: 1,
-                  }}
-                >
-                  {section.title}
-                </ListSubheader>
-              ) : (
-                <Box sx={{ mt: 1.5 }} />
-              )
-            }
-            disablePadding
+        <NavList items={MAIN_NAV} collapsed={collapsed} pathname={location.pathname} />
+
+        {accountItems.length > 0 && !collapsed && (
+          <Typography
+            sx={{
+              px: 2.5,
+              pt: 3,
+              pb: 1,
+              fontSize: '0.75rem',
+              color: '#52525b',
+              textTransform: 'uppercase',
+              fontWeight: 700,
+              letterSpacing: '0.5px',
+            }}
           >
-            {section.items.map((item) => (
-              <NavItem
-                key={item.path}
-                item={item}
-                collapsed={collapsed}
-                isActive={location.pathname === item.path || location.pathname.startsWith(item.path + '/')}
-              />
-            ))}
-          </List>
-        ))}
+            Account pages
+          </Typography>
+        )}
+        <NavList items={accountItems} collapsed={collapsed} pathname={location.pathname} />
       </Box>
 
-      {/* Collapse toggle */}
+      {/* Help Card */}
+      {!collapsed && (
+        <Box sx={{ mx: 2, mb: 2 }}>
+          <Box
+            sx={{
+              position: 'relative',
+              overflow: 'hidden',
+              p: 2.5,
+              borderRadius: '1rem',
+              color: '#fff',
+              backgroundImage: 'linear-gradient(135deg, #27272a 0%, #18181b 100%)',
+            }}
+          >
+            <Box
+              sx={{
+                position: 'absolute',
+                inset: 0,
+                opacity: 0.2,
+                background: 'radial-gradient(circle at 80% 20%, #FACC15 0, transparent 50%)',
+              }}
+            />
+            <Box sx={{ position: 'relative' }}>
+              <Box
+                sx={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: '0.75rem',
+                  bgcolor: '#fff',
+                  color: '#27272a',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  mb: 1.5,
+                  boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                }}
+              >
+                <DiamondOutlinedIcon sx={{ fontSize: 18 }} />
+              </Box>
+              <Typography variant="subtitle2" sx={{ color: '#fff', fontWeight: 600, mb: 0.5 }}>
+                Need help?
+              </Typography>
+              <Typography variant="caption" sx={{ display: 'block', color: alpha('#fff', 0.8), mb: 2, lineHeight: 1.5 }}>
+                Please check our docs
+              </Typography>
+              <SoftButton size="small" fullWidth sx={{ bgcolor: '#fff', color: '#27272a', '&:hover': { bgcolor: '#f4f4f5' } }}>
+                Documentation
+              </SoftButton>
+            </Box>
+          </Box>
+        </Box>
+      )}
+
+      {/* Toggle Button */}
       <Box sx={{ p: 1.5, display: { xs: 'none', lg: 'flex' }, justifyContent: 'center' }}>
         <IconButton
           onClick={onToggle}
+          size="small"
           sx={{
-            width: 36,
-            height: 36,
-            color: TEXT_COLOR,
-            '&:hover': { bgcolor: SIDEBAR_HOVER },
+            borderRadius: '0.5rem',
+            color: '#71717a',
+            '&:hover': { bgcolor: '#f4f4f5' },
           }}
         >
           {collapsed ? <ChevronRightIcon /> : <ChevronLeftIcon />}
@@ -260,27 +286,24 @@ export default function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose
 
   return (
     <>
-      {/* Desktop */}
       <Box
         component="nav"
         sx={{
-          width: collapsed ? SIDEBAR_COLLAPSED_WIDTH : SIDEBAR_WIDTH,
+          width: collapsed ? SIDEBAR_COLLAPSED_WIDTH + 28 : SIDEBAR_WIDTH + 28,
           flexShrink: 0,
-          transition: 'width 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+          transition: 'width 0.25s ease',
           display: { xs: 'none', lg: 'block' },
         }}
       >
         <Box
           sx={{
             position: 'fixed',
-            top: 0,
-            left: 0,
+            top: 16,
+            left: 16,
             width: collapsed ? SIDEBAR_COLLAPSED_WIDTH : SIDEBAR_WIDTH,
-            height: '100vh',
-            '@supports (height: 100dvh)': {
-              height: '100dvh',
-            },
-            transition: 'width 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+            height: 'calc(100vh - 32px)',
+            '@supports (height: 100dvh)': { height: 'calc(100dvh - 32px)' },
+            transition: 'width 0.25s ease',
             zIndex: 1200,
           }}
         >
@@ -288,14 +311,13 @@ export default function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose
         </Box>
       </Box>
 
-      {/* Mobile */}
       <Drawer
         open={mobileOpen}
         onClose={onMobileClose}
         ModalProps={{ keepMounted: true }}
         sx={{
           display: { xs: 'block', lg: 'none' },
-          '& .MuiDrawer-paper': { width: SIDEBAR_WIDTH, bgcolor: SIDEBAR_BG },
+          '& .MuiDrawer-paper': { width: SIDEBAR_WIDTH, bgcolor: 'transparent', p: 1.5 },
         }}
       >
         {content}

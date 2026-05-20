@@ -9,7 +9,7 @@ export default function DashboardLayout() {
   const [mobileOpen, setMobileOpen] = useState(false)
 
   return (
-    <Box sx={{ display: 'flex', minHeight: '100vh' }}>
+    <Box sx={{ display: 'flex', minHeight: '100vh', bgcolor: 'background.default' }}>
       <Sidebar
         collapsed={collapsed}
         onToggle={() => setCollapsed((v) => !v)}
@@ -21,11 +21,12 @@ export default function DashboardLayout() {
         component="main"
         sx={{
           flex: 1,
+          minWidth: 0,
           display: 'flex',
           flexDirection: 'column',
           minHeight: '100vh',
-          bgcolor: 'background.default',
-          transition: 'margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+          px: { xs: 1.5, sm: 2, lg: 3 },
+          pb: 3,
         }}
       >
         <Header onMenuToggle={() => setMobileOpen(true)} />
@@ -33,11 +34,10 @@ export default function DashboardLayout() {
         <Box
           sx={{
             flex: 1,
-            px: { xs: 2, sm: 3, lg: 5 },
-            py: { xs: 2.5, lg: 4 },
-            maxWidth: 1536,
+            maxWidth: 1500,
             width: '100%',
             mx: 'auto',
+            pt: { xs: 1.5, lg: 2 },
           }}
         >
           <Outlet />

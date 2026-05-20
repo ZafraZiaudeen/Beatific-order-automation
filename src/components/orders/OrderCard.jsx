@@ -1,14 +1,11 @@
 import Box from '@mui/material/Box'
 import Typography from '@mui/material/Typography'
-import Card from '@mui/material/Card'
-import CardContent from '@mui/material/CardContent'
-import Chip from '@mui/material/Chip'
 import Tooltip from '@mui/material/Tooltip'
 import { alpha } from '@mui/material/styles'
 import WarningAmberIcon from '@mui/icons-material/WarningAmberOutlined'
-import ImageOutlinedIcon from '@mui/icons-material/ImageOutlined'
 import AccessTimeIcon from '@mui/icons-material/AccessTimeOutlined'
 import PaletteOutlinedIcon from '@mui/icons-material/PaletteOutlined'
+import { SoftCard, SoftBadge } from '../soft-ui'
 
 const formatShipDate = (d) => {
   if (!d) return null
@@ -29,34 +26,34 @@ export default function OrderCard({ order, onClick, isDragging }) {
   const reviewFlags = (order.aiFlags || []).filter((flag) => flag !== 'Missing Product Mapping')
 
   return (
-    <Card
+    <SoftCard
       onClick={onClick}
+      hover={!isDragging}
       sx={{
         mb: 1.5,
         cursor: 'pointer',
-        borderRadius: 2,
         border: '1px solid',
-        borderColor: isDragging ? 'primary.main' : 'divider',
+        borderColor: isDragging ? '#f97316' : alpha('#000', 0.05),
         boxShadow: isDragging
-          ? (t) => `0 16px 32px -4px ${alpha(t.palette.grey[500], 0.32)}`
-          : (t) => `0 1px 3px ${alpha(t.palette.grey[500], 0.12)}`,
+          ? '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1)'
+          : '0 1px 3px 0 rgba(0, 0, 0, 0.1)',
         transform: isDragging ? 'rotate(1.5deg)' : 'none',
         opacity: isDragging ? 0.92 : 1,
-        transition: 'box-shadow 0.2s, transform 0.15s',
+        transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
         '&:hover': {
-          boxShadow: (t) => `0 8px 20px -4px ${alpha(t.palette.grey[500], 0.2)}`,
-          transform: isDragging ? 'rotate(1.5deg)' : 'translateY(-1px)',
-          borderColor: 'primary.light',
+          boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1)',
+          transform: isDragging ? 'rotate(1.5deg)' : 'translateY(-2px)',
+          borderColor: alpha('#f97316', 0.3),
         },
         userSelect: 'none',
       }}
     >
-      <CardContent sx={{ p: '12px 14px !important' }}>
+      <Box sx={{ p: 1.75 }}>
         {/* Header row */}
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
           <Typography
             variant="caption"
-            sx={{ fontFamily: 'monospace', color: 'text.secondary', fontSize: '0.72rem' }}
+            sx={{ fontFamily: 'monospace', color: '#f97316', fontSize: '0.75rem', fontWeight: 700 }}
           >
             #{order.etsyOrderId}
           </Typography>
@@ -64,95 +61,93 @@ export default function OrderCard({ order, onClick, isDragging }) {
             <Typography
               variant="caption"
               sx={{
-                fontSize: '0.7rem',
+                fontSize: '0.75rem',
                 fontWeight: 600,
-                color: overdue ? 'error.main' : dueSoon ? 'warning.dark' : 'text.disabled',
+                color: overdue ? '#ef4444' : dueSoon ? '#eab308' : '#a1a1aa',
               }}
             >
-              {overdue ? '⏰ ' : ''}{shipDate}
+              {overdue ? 'Late ' : ''}{shipDate}
             </Typography>
           )}
         </Box>
 
         {/* Customer */}
-        <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 0.25, lineHeight: 1.3 }}>
+        <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.5, lineHeight: 1.3, color: '#27272a' }}>
           {order.customerName}
         </Typography>
 
         {/* Product title */}
         <Typography
           variant="body2"
-          color="text.secondary"
           sx={{
-            fontSize: '0.78rem',
-            lineHeight: 1.4,
+            fontSize: '0.875rem',
+            lineHeight: 1.5,
+            color: '#71717a',
             display: '-webkit-box',
             WebkitLineClamp: 2,
             WebkitBoxOrient: 'vertical',
             overflow: 'hidden',
-            mb: 1,
+            mb: 1.25,
           }}
         >
           {order.productTitle}
         </Typography>
 
         {/* Footer */}
-        <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', alignItems: 'center' }}>
-          <Typography variant="caption" sx={{ color: 'text.disabled', fontSize: '0.7rem', mr: 0.5 }}>
-            Qty {order.quantity} · ${order.price?.toFixed(2)}
+        <Box sx={{ display: 'flex', gap: 0.75, flexWrap: 'wrap', alignItems: 'center' }}>
+          <Typography variant="caption" sx={{ color: '#a1a1aa', fontSize: '0.75rem', mr: 0.5, fontWeight: 600 }}>
+            Qty {order.quantity} / ${order.price?.toFixed(2)}
           </Typography>
 
           {!order.isProductMapped && (
             <Tooltip title="Listing ID not mapped to a product">
-              <Chip
-                icon={<WarningAmberIcon sx={{ fontSize: '11px !important' }} />}
-                label="Unmapped"
-                size="small"
-                color="warning"
-                variant="outlined"
-                sx={{ height: 18, fontSize: '0.65rem', '& .MuiChip-label': { px: 0.75 } }}
-              />
+              <Box>
+                <SoftBadge
+                  icon={<WarningAmberIcon />}
+                  label="Unmapped"
+                  color="warning"
+                  size="small"
+                />
+              </Box>
             </Tooltip>
           )}
 
           {reviewFlags.length > 0 && (
             <Tooltip title={reviewFlags.join('; ')}>
-              <Chip
-                icon={<WarningAmberIcon sx={{ fontSize: '11px !important' }} />}
-                label="AI"
-                size="small"
-                color="warning"
-                variant="outlined"
-                sx={{ height: 18, fontSize: '0.65rem', '& .MuiChip-label': { px: 0.75 } }}
-              />
+              <Box>
+                <SoftBadge
+                  icon={<WarningAmberIcon />}
+                  label="AI"
+                  color="warning"
+                  size="small"
+                />
+              </Box>
             </Tooltip>
           )}
 
           {order.hasCustomArtwork && (
             <Tooltip title="Custom artwork order">
-              <Chip
-                icon={<PaletteOutlinedIcon sx={{ fontSize: '11px !important' }} />}
-                label="Custom"
-                size="small"
-                color="secondary"
-                variant="outlined"
-                sx={{ height: 18, fontSize: '0.65rem', '& .MuiChip-label': { px: 0.75 } }}
-              />
+              <Box>
+                <SoftBadge
+                  icon={<PaletteOutlinedIcon />}
+                  label="Custom"
+                  color="default"
+                  size="small"
+                />
+              </Box>
             </Tooltip>
           )}
 
           {overdue && (
-            <Chip
-              icon={<AccessTimeIcon sx={{ fontSize: '11px !important' }} />}
+            <SoftBadge
+              icon={<AccessTimeIcon />}
               label="Overdue"
-              size="small"
               color="error"
-              variant="filled"
-              sx={{ height: 18, fontSize: '0.65rem', '& .MuiChip-label': { px: 0.75 } }}
+              size="small"
             />
           )}
         </Box>
-      </CardContent>
-    </Card>
+      </Box>
+    </SoftCard>
   )
 }

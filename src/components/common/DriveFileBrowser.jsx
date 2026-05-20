@@ -194,7 +194,7 @@ export default function DriveFileBrowser({
                       textTransform: 'none',
                       minHeight: 54,
                       borderColor: selected ? 'primary.main' : 'divider',
-                      bgcolor: selected ? alpha('#00A76F', 0.08) : 'background.paper',
+                      bgcolor: selected ? alpha('#F97316', 0.1) : 'background.paper',
                       color: 'text.primary',
                       px: 1.25,
                     }}

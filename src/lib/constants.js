@@ -15,6 +15,6 @@ export const LULU_ORDER_STATUSES = [
   { value: 'failed', label: 'Failed', color: 'error' },
 ]
 
-export const SIDEBAR_WIDTH = 250
-export const SIDEBAR_COLLAPSED_WIDTH = 60
-export const HEADER_HEIGHT = 64
+export const SIDEBAR_WIDTH = 260
+export const SIDEBAR_COLLAPSED_WIDTH = 78
+export const HEADER_HEIGHT = 72
