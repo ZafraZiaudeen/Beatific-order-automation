@@ -3,6 +3,7 @@ import { Outlet } from 'react-router-dom'
 import Box from '@mui/material/Box'
 import Sidebar from './Sidebar'
 import Header from './Header'
+import FloatingHelp from './FloatingHelp'
 
 export default function DashboardLayout() {
   const [collapsed, setCollapsed] = useState(false)
@@ -43,6 +44,8 @@ export default function DashboardLayout() {
           <Outlet />
         </Box>
       </Box>
+
+      <FloatingHelp />
     </Box>
   )
 }

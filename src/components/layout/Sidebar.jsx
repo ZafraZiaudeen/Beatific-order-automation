@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import Box from '@mui/material/Box'
 import Drawer from '@mui/material/Drawer'
@@ -14,12 +15,17 @@ import StoreIcon from '@mui/icons-material/StorefrontOutlined'
 import PersonIcon from '@mui/icons-material/PersonOutlined'
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft'
 import ChevronRightIcon from '@mui/icons-material/ChevronRight'
+import Menu from '@mui/material/Menu'
+import MenuItem from '@mui/material/MenuItem'
+import ListItemIcon from '@mui/material/ListItemIcon'
+import PersonOutlineIcon from '@mui/icons-material/PersonOutlined'
+import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined'
+import LogoutIcon from '@mui/icons-material/LogoutOutlined'
+import { SoftAvatar } from '../soft-ui'
 import BookOutlinedIcon from '@mui/icons-material/AutoStoriesOutlined'
-import DiamondOutlinedIcon from '@mui/icons-material/DiamondOutlined'
 import { SIDEBAR_WIDTH, SIDEBAR_COLLAPSED_WIDTH } from '../../lib/constants'
 import useAuthStore from '../../stores/authStore'
 import { canManageWorkspace } from '../../lib/permissions'
-import { SoftButton } from '../soft-ui'
 import { alpha } from '@mui/material/styles'
 
 const MAIN_NAV = [
@@ -121,9 +127,16 @@ function NavList({ items, collapsed, pathname }) {
 
 export default function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose }) {
   const location = useLocation()
-  const { user } = useAuthStore()
+  const navigate = useNavigate()
+  const { user, logout } = useAuthStore()
+  const [anchorElUser, setAnchorElUser] = useState(null)
+  const userMenuOpen = Boolean(anchorElUser)
   const canManage = canManageWorkspace(user)
   const accountItems = ACCOUNT_NAV.filter((item) => !item.adminOnly || canManage)
+
+  const initials = user?.name
+    ? user.name.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2)
+    : '??'
 
   const content = (
     <Box
@@ -148,6 +161,7 @@ export default function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose
           px: collapsed ? 1.5 : 2,
           py: 2,
           minHeight: 72,
+          position: 'relative',
         }}
       >
         <Box
@@ -167,12 +181,31 @@ export default function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose
           <BookOutlinedIcon sx={{ fontSize: 20 }} />
         </Box>
         {!collapsed && (
-          <Typography sx={{ fontSize: '1rem', fontWeight: 700, color: '#27272a', whiteSpace: 'nowrap' }}>
-            Beatific.co
-            <br />
-            Order Automation
-          </Typography>
+          <Box sx={{ display: 'flex', flexDirection: 'column' }}>
+            <Typography sx={{ fontSize: '0.98rem', fontWeight: 700, color: '#27272a', whiteSpace: 'nowrap' }}>
+              Beatific.co
+            </Typography>
+            <Typography sx={{ fontSize: '0.7rem', fontWeight: 500, color: '#27272a', whiteSpace: 'nowrap', lineHeight: 1 }}>
+              Order Automation
+            </Typography>
+          </Box>
         )}
+
+        {/* Collapse toggle (moved to top-right) */}
+        <IconButton
+          onClick={onToggle}
+          size="small"
+          sx={{
+            position: 'absolute',
+            right: collapsed ? 6 : 12,
+            top: 12,
+            borderRadius: '0.5rem',
+            color: '#71717a',
+            '&:hover': { bgcolor: '#f4f4f5' },
+          }}
+        >
+          {collapsed ? <ChevronRightIcon /> : <ChevronLeftIcon />}
+        </IconButton>
       </Box>
 
       <Divider sx={{ mx: 2, borderColor: alpha('#000', 0.08) }} />
@@ -215,72 +248,81 @@ export default function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose
         <NavList items={accountItems} collapsed={collapsed} pathname={location.pathname} />
       </Box>
 
-      {/* Help Card */}
-      {!collapsed && (
-        <Box sx={{ mx: 2, mb: 2 }}>
-          <Box
-            sx={{
-              position: 'relative',
-              overflow: 'hidden',
-              p: 2.5,
-              borderRadius: '1rem',
-              color: '#fff',
-              backgroundImage: 'linear-gradient(135deg, #27272a 0%, #18181b 100%)',
-            }}
-          >
-            <Box
-              sx={{
-                position: 'absolute',
-                inset: 0,
-                opacity: 0.2,
-                background: 'radial-gradient(circle at 80% 20%, #FACC15 0, transparent 50%)',
-              }}
-            />
-            <Box sx={{ position: 'relative' }}>
-              <Box
-                sx={{
-                  width: 36,
-                  height: 36,
-                  borderRadius: '0.75rem',
-                  bgcolor: '#fff',
-                  color: '#27272a',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  mb: 1.5,
-                  boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
-                }}
-              >
-                <DiamondOutlinedIcon sx={{ fontSize: 18 }} />
-              </Box>
-              <Typography variant="subtitle2" sx={{ color: '#fff', fontWeight: 600, mb: 0.5 }}>
-                Need help?
-              </Typography>
-              <Typography variant="caption" sx={{ display: 'block', color: alpha('#fff', 0.8), mb: 2, lineHeight: 1.5 }}>
-                Please check our docs
-              </Typography>
-              <SoftButton size="small" fullWidth sx={{ bgcolor: '#fff', color: '#27272a', '&:hover': { bgcolor: '#f4f4f5' } }}>
-                Documentation
-              </SoftButton>
-            </Box>
+      {/* User bar at bottom */}
+      <Box
+        onClick={(e) => setAnchorElUser(e.currentTarget)}
+        sx={{
+          px: 2,
+          py: 1.25,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 1,
+          borderTop: '1px solid',
+          borderColor: alpha('#000', 0.04),
+          cursor: 'pointer',
+        }}
+      >
+        <Tooltip title={user?.name || 'Profile'}>
+          <IconButton sx={{ p: 0 }}>
+            <SoftAvatar size={36} src={user?.profileImageUrl}>{initials}</SoftAvatar>
+          </IconButton>
+        </Tooltip>
+        {!collapsed && (
+          <Box sx={{ display: 'flex', flexDirection: 'column' }}>
+            <Typography sx={{ fontSize: '0.95rem', fontWeight: 600, color: '#27272a' }}>{user?.name}</Typography>
+            <Typography sx={{ fontSize: '0.8rem', color: '#71717a' }}>{user?.email}</Typography>
           </Box>
-        </Box>
-      )}
-
-      {/* Toggle Button */}
-      <Box sx={{ p: 1.5, display: { xs: 'none', lg: 'flex' }, justifyContent: 'center' }}>
-        <IconButton
-          onClick={onToggle}
-          size="small"
-          sx={{
-            borderRadius: '0.5rem',
-            color: '#71717a',
-            '&:hover': { bgcolor: '#f4f4f5' },
-          }}
-        >
-          {collapsed ? <ChevronRightIcon /> : <ChevronLeftIcon />}
-        </IconButton>
+        )}
       </Box>
+
+      {/* User menu */}
+      <Menu
+        anchorEl={anchorElUser}
+        open={userMenuOpen}
+        onClose={() => setAnchorElUser(null)}
+        transformOrigin={{ horizontal: 'right', vertical: 'bottom' }}
+        anchorOrigin={{ horizontal: 'right', vertical: 'top' }}
+        slotProps={{
+          paper: {
+            sx: {
+              minWidth: 220,
+              mt: 1.5,
+              borderRadius: '0.75rem',
+              boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1)',
+              border: '1px solid',
+              borderColor: alpha('#000', 0.05),
+            },
+          },
+        }}
+      >
+        <Box sx={{ px: 2, py: 1.5 }}>
+          <Typography variant="subtitle2" sx={{ fontWeight: 600, color: '#27272a' }}>{user?.name}</Typography>
+          <Typography variant="caption" sx={{ color: '#71717a', fontSize: '0.8125rem' }}>{user?.email}</Typography>
+        </Box>
+        <Divider sx={{ my: 0.5, borderColor: alpha('#000', 0.08) }} />
+        <MenuItem
+          onClick={() => { setAnchorElUser(null); navigate('/settings/profile') }}
+          sx={{ mx: 0.5, borderRadius: '0.5rem', fontSize: '0.875rem', '&:hover': { bgcolor: '#f4f4f5' } }}
+        >
+          <ListItemIcon><PersonOutlineIcon fontSize="small" /></ListItemIcon>
+          Profile
+        </MenuItem>
+        <MenuItem
+          onClick={() => { setAnchorElUser(null); navigate('/settings/team') }}
+          sx={{ mx: 0.5, borderRadius: '0.5rem', fontSize: '0.875rem', '&:hover': { bgcolor: '#f4f4f5' } }}
+        >
+          <ListItemIcon><SettingsOutlinedIcon fontSize="small" /></ListItemIcon>
+          Settings
+        </MenuItem>
+        <Divider sx={{ my: 0.5, borderColor: alpha('#000', 0.08) }} />
+        <MenuItem
+          onClick={() => { setAnchorElUser(null); logout(); navigate('/login') }}
+          sx={{ mx: 0.5, borderRadius: '0.5rem', fontSize: '0.875rem', color: '#ef4444', '&:hover': { bgcolor: alpha('#ef4444', 0.08) } }}
+        >
+          <ListItemIcon><LogoutIcon fontSize="small" sx={{ color: '#ef4444' }} /></ListItemIcon>
+          Logout
+        </MenuItem>
+      </Menu>
     </Box>
   )
 
