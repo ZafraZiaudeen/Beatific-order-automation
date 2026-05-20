@@ -284,6 +284,16 @@ function StoreFormDialog({ open, onClose, store, onSaved }) {
                   placeholder="orders@yourcompany.com"
                   helperText="Sent to Lulu as the order contact email. Overrides the customer's email."
                   size="small"
+                  sx={{ mb: 2 }}
+                />
+                <TextField
+                  label="Contact Phone"
+                  fullWidth
+                  value={form.contactPhone}
+                  onChange={set('contactPhone')}
+                  placeholder="+1 555 123 4567"
+                  helperText="Used as the fallback Lulu shipping contact number when an order has no phone."
+                  size="small"
                 />
               </Box>
             </Collapse>

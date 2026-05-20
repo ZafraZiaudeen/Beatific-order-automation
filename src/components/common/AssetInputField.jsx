@@ -7,8 +7,12 @@ import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Tooltip from '@mui/material/Tooltip'
 import LinearProgress from '@mui/material/LinearProgress'
+import Dialog from '@mui/material/Dialog'
+import DialogActions from '@mui/material/DialogActions'
+import DialogContent from '@mui/material/DialogContent'
+import DialogTitle from '@mui/material/DialogTitle'
 import { alpha } from '@mui/material/styles'
-import UploadFileOutlinedIcon from '@mui/icons-material/UploadFileOutlined'
+import CloudUploadOutlinedIcon from '@mui/icons-material/CloudUploadOutlined'
 import OpenInNewIcon from '@mui/icons-material/OpenInNew'
 import LinkOutlinedIcon from '@mui/icons-material/LinkOutlined'
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined'
@@ -16,6 +20,8 @@ import ImageOutlinedIcon from '@mui/icons-material/ImageOutlined'
 import PictureAsPdfOutlinedIcon from '@mui/icons-material/PictureAsPdfOutlined'
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutlined'
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined'
+import ComputerOutlinedIcon from '@mui/icons-material/ComputerOutlined'
+import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined'
 import {
   buildAssetThumbnailUrl,
   isValidHttpUrl,
@@ -23,12 +29,7 @@ import {
   uploadAssetFile,
   validateAssetFile,
 } from '../../lib/assets'
-
-const buildAcceptedTypeLabel = ({ allowImages, allowPdf }) => {
-  if (allowImages && allowPdf) return 'Image or PDF'
-  if (allowImages) return 'Image'
-  return 'PDF'
-}
+import DriveFileBrowser from './DriveFileBrowser'
 
 const getErrorMessage = (error) =>
   error?.response?.data?.message || error?.message || 'Failed to save asset'
@@ -55,6 +56,8 @@ export default function AssetInputField({
   const [progress, setProgress] = useState(0)
   const [error, setError] = useState('')
   const [previewFailed, setPreviewFailed] = useState(false)
+  const [sourceDialogOpen, setSourceDialogOpen] = useState(false)
+  const [driveBrowserOpen, setDriveBrowserOpen] = useState(false)
 
   useEffect(() => {
     setDraftUrl(currentUrl)
@@ -66,7 +69,6 @@ export default function AssetInputField({
   const hasDraftChanges = normalizeAssetUrl(draftUrl) !== currentUrl
   const icon = allowImages ? ImageOutlinedIcon : PictureAsPdfOutlinedIcon
   const LabelIcon = icon
-
   const persistValue = async (nextValue) => {
     await Promise.resolve(onChange?.(nextValue))
   }
@@ -128,6 +130,41 @@ export default function AssetInputField({
       setUploading(false)
       setProgress(0)
       if (fileInputRef.current) fileInputRef.current.value = ''
+    }
+  }
+
+  const chooseLocalFile = () => {
+    setSourceDialogOpen(false)
+    window.setTimeout(() => fileInputRef.current?.click(), 0)
+  }
+
+  const chooseDriveFile = () => {
+    setSourceDialogOpen(false)
+    setDriveBrowserOpen(true)
+  }
+
+  const handleDriveFile = async (file) => {
+    const isAllowed =
+      (allowPdf && file.mimeType === 'application/pdf') ||
+      (allowImages && file.mimeType?.startsWith('image/'))
+
+    if (!isAllowed) {
+      setError('Choose a compatible Drive file')
+      return
+    }
+
+    setSavingUrl(true)
+    setError('')
+
+    try {
+      const driveUrl = file.webViewUrl || `https://drive.google.com/file/d/${file.id}/view`
+      await persistValue(driveUrl)
+      setDraftUrl(driveUrl)
+      setDriveBrowserOpen(false)
+    } catch (saveError) {
+      setError(getErrorMessage(saveError))
+    } finally {
+      setSavingUrl(false)
     }
   }
 
@@ -226,7 +263,7 @@ export default function AssetInputField({
           setDragging(false)
           handleFile(event.dataTransfer.files?.[0])
         }}
-        onClick={() => !isBusy && fileInputRef.current?.click()}
+        onClick={() => !isBusy && setSourceDialogOpen(true)}
         sx={{
           p: 1.75,
           border: '1.5px dashed',
@@ -249,14 +286,14 @@ export default function AssetInputField({
           style={{ display: 'none' }}
           onChange={(event) => handleFile(event.target.files?.[0])}
         />
-        <UploadFileOutlinedIcon
+        <CloudUploadOutlinedIcon
           sx={{ fontSize: 20, color: currentUrl ? 'success.main' : 'text.disabled', mb: 0.25 }}
         />
         <Typography variant="body2" sx={{ fontWeight: 700, lineHeight: 1.3 }}>
           {uploading ? `Uploading ${progress}%` : currentUrl ? 'Replace file' : `Upload ${label}`}
         </Typography>
         <Typography variant="caption" sx={{ display: 'block', color: 'text.secondary', mt: 0.5 }}>
-          {buildAcceptedTypeLabel({ allowImages, allowPdf })} upload supported
+          Local file, Google Drive, or URL supported
         </Typography>
       </Box>
 
@@ -313,17 +350,48 @@ export default function AssetInputField({
         </Button>
       </Stack>
 
-      {!error && draftUrl && draftUrl.includes('drive.google.com/file/d/') && (
-        <Typography variant="caption" sx={{ display: 'block', mt: 0.75, color: 'info.main' }}>
-          Google Drive URL detected — will be converted to a direct download link automatically.
-        </Typography>
-      )}
 
       {error && (
         <Typography variant="caption" color="error" sx={{ display: 'block', mt: 0.75 }}>
           {error}
         </Typography>
       )}
+
+      <Dialog open={sourceDialogOpen} onClose={() => setSourceDialogOpen(false)} fullWidth maxWidth="xs">
+        <DialogTitle>Choose upload source</DialogTitle>
+        <DialogContent>
+          <Stack spacing={1.25} sx={{ pt: 0.5 }}>
+            <Button
+              variant="outlined"
+              startIcon={<ComputerOutlinedIcon />}
+              onClick={chooseLocalFile}
+              sx={{ justifyContent: 'flex-start', py: 1.25 }}
+            >
+              Local file
+            </Button>
+            <Button
+              variant="outlined"
+              startIcon={<FolderOutlinedIcon />}
+              onClick={chooseDriveFile}
+              sx={{ justifyContent: 'flex-start', py: 1.25 }}
+            >
+              Google Drive folder
+            </Button>
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button color="inherit" onClick={() => setSourceDialogOpen(false)}>Cancel</Button>
+        </DialogActions>
+      </Dialog>
+
+      <DriveFileBrowser
+        open={driveBrowserOpen}
+        onClose={() => setDriveBrowserOpen(false)}
+        onConfirm={handleDriveFile}
+        allowImages={allowImages}
+        allowPdf={allowPdf}
+        title={`Select ${label} from Google Drive`}
+      />
     </Box>
   )
 }

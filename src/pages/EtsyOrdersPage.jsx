@@ -577,7 +577,7 @@ export default function EtsyOrdersPage() {
                         <ShoppingCartOutlinedIcon sx={{ fontSize: 48, color: 'text.disabled', mb: 1 }} />
                         <Typography variant="subtitle1" color="text.secondary">No orders found</Typography>
                         <Typography variant="body2" color="text.disabled">
-                          {canManage ? 'Fetch email orders or upload a spreadsheet to import orders.' : 'No orders match this view.'}
+                          {canManage ? 'Fetch email orders or add a manual order to get started.' : 'No orders match this view.'}
                         </Typography>
                       </TableCell>
                     </TableRow>

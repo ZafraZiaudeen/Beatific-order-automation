@@ -8,13 +8,8 @@ export const buildAssetThumbnailUrl = (url, width = 400) => {
   return url.replace('/upload/', `/upload/q_auto,w_${width},f_webp/`)
 }
 
-// Converts Google Drive share links to direct-download URLs that Lulu (and browsers) can fetch.
-// drive.google.com/file/d/{id}/view  →  drive.google.com/uc?export=download&id={id}
 export const normalizeAssetUrl = (value = '') => {
-  const trimmed = value.trim()
-  const gdMatch = trimmed.match(/drive\.google\.com\/file\/d\/([^/?\s]+)/)
-  if (gdMatch) return `https://drive.google.com/uc?export=download&id=${gdMatch[1]}`
-  return trimmed
+  return value.trim()
 }
 
 export const isValidHttpUrl = (value = '') => {

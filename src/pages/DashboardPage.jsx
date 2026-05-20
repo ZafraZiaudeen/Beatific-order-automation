@@ -12,7 +12,6 @@ import LocalPrintshopOutlinedIcon from '@mui/icons-material/LocalPrintshopOutlin
 import Inventory2OutlinedIcon from '@mui/icons-material/Inventory2Outlined'
 import PendingActionsOutlinedIcon from '@mui/icons-material/PendingActionsOutlined'
 import TrendingUpIcon from '@mui/icons-material/TrendingUp'
-import UploadFileOutlinedIcon from '@mui/icons-material/UploadFileOutlined'
 import GroupAddOutlinedIcon from '@mui/icons-material/GroupAddOutlined'
 import useAuthStore from '../stores/authStore'
 import { canManageWorkspace } from '../lib/permissions'
@@ -188,13 +187,6 @@ export default function DashboardPage() {
   ]
 
   const QUICK_ACTIONS = [
-    canManage && {
-      icon: UploadFileOutlinedIcon,
-      title: 'Import Orders',
-      description: 'Upload an Etsy spreadsheet to import and process orders',
-      to: '/import',
-      color: '#00A76F',
-    },
     {
       icon: Inventory2OutlinedIcon,
       title: 'Product Library',
@@ -234,7 +226,7 @@ export default function DashboardPage() {
           </Typography>
           <Typography variant="body1" sx={{ color: alpha('#fff', 0.72), maxWidth: 480, mb: 3, lineHeight: 1.7 }}>
             {canManage
-              ? 'Your order automation dashboard is ready. Import orders from Etsy, manage your product library, and send to Lulu Print, all in one place.'
+              ? 'Your order automation dashboard is ready. Fetch email orders, manage your product library, and send to Lulu Print, all in one place.'
               : 'Your order dashboard is ready. Review Etsy and Lulu orders, check product mappings, and keep an eye on fulfillment progress.'}
           </Typography>
           <Typography variant="subtitle2" sx={{ color: alpha('#fff', 0.56) }}>
@@ -272,8 +264,8 @@ export default function DashboardPage() {
                   <ShoppingCartOutlinedIcon sx={{ fontSize: 36, color: 'text.disabled', mb: 1 }} />
                   <Typography variant="body2" color="text.secondary">No orders yet</Typography>
                   {canManage && (
-                    <Button variant="outlined" size="small" sx={{ mt: 2 }} onClick={() => navigate('/import')}>
-                      Import Orders
+                    <Button variant="outlined" size="small" sx={{ mt: 2 }} onClick={() => navigate('/orders/etsy')}>
+                      Open Etsy Orders
                     </Button>
                   )}
                 </Box>

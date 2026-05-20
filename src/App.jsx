@@ -5,7 +5,6 @@ import AcceptInvitePage from './pages/auth/AcceptInvitePage'
 import DashboardLayout from './components/layout/DashboardLayout'
 import DashboardPage from './pages/DashboardPage'
 import ProductLibraryPage from './pages/ProductLibraryPage'
-import ImportPage from './pages/ImportPage'
 import EtsyOrdersPage from './pages/EtsyOrdersPage'
 import EtsyOrderDetailPage from './pages/EtsyOrderDetailPage'
 import LuluOrdersPage from './pages/LuluOrdersPage'
@@ -52,9 +51,6 @@ export default function App() {
 
           {/* Products */}
           <Route path="/products" element={<ProductLibraryPage />} />
-
-          {/* Import */}
-          <Route path="/import" element={<AdminOnly><ImportPage /></AdminOnly>} />
 
           {/* Settings */}
           <Route path="/settings/team" element={<AdminOnly><TeamPage /></AdminOnly>} />
