@@ -42,6 +42,35 @@ const TARGETS = {
   interiorFirstPage: { label: 'Inside First Page', productKey: 'interior', policyKey: 'interior' },
 }
 
+const pageFromLibraryItem = (item) => {
+  if (!item?.pageWidth || !item?.pageHeight) return null
+  return {
+    sourcePdfUrl: item.pdfUrl || item.sourceUrl || null,
+    previewImageUrl: item.imageUrl || null,
+    pageWidth: item.pageWidth || 0,
+    pageHeight: item.pageHeight || 0,
+    pageCount: item.pageCount || 0,
+    extractedText: item.extractedText || [],
+    extractedImages: item.extractedImages || [],
+  }
+}
+
+const productFromLibraryItem = (item) => {
+  const isCover = item?.category === 'cover'
+  return {
+    _id: item?._id,
+    title: item?.title || 'Library asset',
+    listingId: item?.coverColor || item?.subcategory || item?.category || 'library-asset',
+    variants: [],
+    printTemplate: {
+      cover: isCover ? pageFromLibraryItem(item) : null,
+      interior: isCover ? null : pageFromLibraryItem(item),
+      fields: item?.templateFields || [],
+      sampleOutputs: {},
+    },
+  }
+}
+
 const slugify = (value) =>
   String(value || 'field')
     .toLowerCase()
@@ -142,6 +171,7 @@ function TemplateStage({
   previewModes,
   onSelect,
   onCreateFromText,
+  onCreateFromTextGroup,
   onCreateBlank,
   onChange,
   zoom,
@@ -150,10 +180,13 @@ function TemplateStage({
   const image = useLoadedImage(page?.previewImageUrl)
   const stageRef = useRef(null)
   const transformerRef = useRef(null)
+  const selectionStartRef = useRef(null)
+  const selectionRectRef = useRef(null)
+  const selectionDragRef = useRef(false)
+  const [selectionRect, setSelectionRect] = useState(null)
   const pageWidth = page?.pageWidth || 612
   const pageHeight = page?.pageHeight || 792
   const activeFields = fields.filter((field) => field.target === target)
-
   useEffect(() => {
     const stage = stageRef.current
     const transformer = transformerRef.current
@@ -168,6 +201,74 @@ function TemplateStage({
     const pos = stage?.getPointerPosition()
     if (!stage || !pos) return { x: 0, y: 0 }
     return { x: pos.x / zoom, y: pos.y / zoom }
+  }
+
+  const startSelection = (event) => {
+    if (!fieldsEditable || !(page?.extractedText || []).length) return
+    const stage = stageRef.current
+    if (!stage) return
+    const isStage = event.target === stage
+    const isTextHighlight = event.target?.name?.() === 'extracted-text'
+    if (!isStage && !isTextHighlight) return
+    const start = pointer()
+    selectionStartRef.current = start
+    selectionDragRef.current = false
+    selectionRectRef.current = { x: start.x, y: start.y, width: 0, height: 0 }
+    setSelectionRect(selectionRectRef.current)
+  }
+
+  const updateSelection = () => {
+    if (!selectionStartRef.current) return
+    const pos = pointer()
+    const start = selectionStartRef.current
+    const next = {
+      x: Math.min(start.x, pos.x),
+      y: Math.min(start.y, pos.y),
+      width: Math.abs(pos.x - start.x),
+      height: Math.abs(pos.y - start.y),
+    }
+    if (next.width > 3 || next.height > 3) selectionDragRef.current = true
+    selectionRectRef.current = next
+    setSelectionRect(next)
+  }
+
+  const finishSelection = () => {
+    if (!selectionStartRef.current) return
+    const rect = selectionRectRef.current
+    const dragged = selectionDragRef.current
+    selectionStartRef.current = null
+
+    if (!dragged || !rect || rect.width < 4 || rect.height < 4) {
+      selectionRectRef.current = null
+      setSelectionRect(null)
+      selectionDragRef.current = false
+      return
+    }
+
+    const hits = (page?.extractedText || [])
+      .filter((text) => {
+        const width = Math.max(1, text.width)
+        const height = Math.max(1, text.height)
+        return !(
+          text.x + width < rect.x ||
+          text.x > rect.x + rect.width ||
+          text.y + height < rect.y ||
+          text.y > rect.y + rect.height
+        )
+      })
+      .sort((a, b) => (a.y === b.y ? a.x - b.x : a.y - b.y))
+
+    if (hits.length === 1) {
+      onCreateFromText(hits[0])
+    } else if (hits.length > 1) {
+      onCreateFromTextGroup(hits)
+    }
+
+    selectionRectRef.current = null
+    setSelectionRect(null)
+    window.setTimeout(() => {
+      selectionDragRef.current = false
+    }, 0)
   }
 
   return (
@@ -202,7 +303,13 @@ function TemplateStage({
             scaleY={zoom}
             onMouseDown={(event) => {
               if (event.target === stageRef.current) onSelect(null)
+              startSelection(event)
             }}
+            onMouseMove={updateSelection}
+            onMouseUp={finishSelection}
+            onTouchStart={startSelection}
+            onTouchMove={updateSelection}
+            onTouchEnd={finishSelection}
             onDblClick={(event) => {
               if (fieldsEditable && event.target === stageRef.current) onCreateBlank(pointer())
             }}
@@ -226,14 +333,30 @@ function TemplateStage({
                   stroke="rgba(14, 165, 233, 0.22)"
                   strokeWidth={0.5}
                   listening={fieldsEditable}
+                  name="extracted-text"
                   onClick={(event) => {
                     event.cancelBubble = true
-                    if (fieldsEditable) onCreateFromText(text)
+                    if (fieldsEditable && !selectionDragRef.current) onCreateFromText(text)
                   }}
                   onTap={(event) => {
                     event.cancelBubble = true
-                    if (fieldsEditable) onCreateFromText(text)
+                    if (fieldsEditable && !selectionDragRef.current) onCreateFromText(text)
                   }}
+                />
+              ))}
+
+              {(page?.extractedImages || []).map((asset) => (
+                <Rect
+                  key={asset.id}
+                  x={asset.x}
+                  y={asset.y}
+                  width={Math.max(4, asset.width)}
+                  height={Math.max(4, asset.height)}
+                  fill="rgba(34, 197, 94, 0.025)"
+                  stroke="rgba(22, 163, 74, 0.55)"
+                  strokeWidth={0.75}
+                  dash={[6, 4]}
+                  listening={false}
                 />
               ))}
 
@@ -314,6 +437,20 @@ function TemplateStage({
                   </React.Fragment>
                 )
               })}
+
+              {selectionRect && selectionRect.width > 0 && selectionRect.height > 0 && (
+                <Rect
+                  x={selectionRect.x}
+                  y={selectionRect.y}
+                  width={selectionRect.width}
+                  height={selectionRect.height}
+                  fill="rgba(37, 99, 235, 0.08)"
+                  stroke="rgba(37, 99, 235, 0.85)"
+                  strokeWidth={1}
+                  dash={[6, 4]}
+                  listening={false}
+                />
+              )}
 
               <Transformer
                 ref={transformerRef}
@@ -556,8 +693,11 @@ function FieldPanel({
   )
 }
 
-export default function ProductTemplateEditor({ product, onBack, onSaved }) {
-  const [localProduct, setLocalProduct] = useState(product)
+export default function ProductTemplateEditor({ product, onBack, onSaved, libraryItem = null }) {
+  const libraryMode = Boolean(libraryItem)
+  const libraryTarget = libraryItem?.category === 'cover' ? 'cover' : 'interiorFirstPage'
+  const initialProduct = libraryMode ? productFromLibraryItem(libraryItem) : product
+  const [localProduct, setLocalProduct] = useState(initialProduct)
   const [templateKey, setTemplateKey] = useState(DEFAULT_TEMPLATE_KEY)
   const [target, setTarget] = useState('cover')
   const [fields, setFields] = useState([])
@@ -573,7 +713,7 @@ export default function ProductTemplateEditor({ product, onBack, onSaved }) {
   const fileInputRef = useRef(null)
   const viewportRef = useRef(null)
 
-  const variants = localProduct?.variants || []
+  const variants = libraryMode ? [] : localProduct?.variants || []
   const selectedVariant = getVariant(localProduct, templateKey)
   const selectedVariantId = selectedVariant ? variantId(selectedVariant) : null
   const selectedPolicy = normalizePolicy(selectedVariant?.templatePolicy)
@@ -581,16 +721,17 @@ export default function ProductTemplateEditor({ product, onBack, onSaved }) {
   const page = effective.template[TARGETS[target].productKey]
   const selected = fields.find((field) => field.id === selectedId) || null
   const sampleOutputs = effective.template.sampleOutputs
-  const fieldsEditable = !selectedVariant || selectedPolicy.fields === 'override'
-  const pageInherited = Boolean(selectedVariant && selectedPolicy[TARGETS[target].policyKey] !== 'override')
+  const fieldsEditable = libraryMode || !selectedVariant || selectedPolicy.fields === 'override'
+  const pageInherited = !libraryMode && Boolean(selectedVariant && selectedPolicy[TARGETS[target].policyKey] !== 'override')
   const selectedPreviewMode = selected ? previewModes[selected.id] || 'sample' : 'sample'
 
   useEffect(() => {
-    setLocalProduct(product)
+    setLocalProduct(libraryMode ? productFromLibraryItem(libraryItem) : product)
     setTemplateKey(DEFAULT_TEMPLATE_KEY)
+    setTarget(libraryMode ? libraryTarget : 'cover')
     setSelectedId(null)
     setAutoFit(true)
-  }, [product])
+  }, [libraryItem, libraryMode, libraryTarget, product])
 
   useEffect(() => {
     const next = resolveEffectiveTemplate(localProduct, templateKey).template.fields || []
@@ -721,6 +862,48 @@ export default function ProductTemplateEditor({ product, onBack, onSaved }) {
     })
   }
 
+  const createFromTextGroup = (texts) => {
+    if (!fieldsEditable || !texts?.length) return
+    if (texts.length === 1) {
+      createFromText(texts[0])
+      return
+    }
+
+    const sorted = [...texts].sort((a, b) => (a.y === b.y ? a.x - b.x : a.y - b.y))
+    const combinedText = sorted.map((text) => String(text.text || '').trim()).filter(Boolean).join('\n')
+    const firstLine = String(sorted[0]?.text || '').trim()
+    const label = firstLine && firstLine.length <= 48 ? firstLine : 'Personalized text'
+
+    const left = Math.min(...sorted.map((text) => text.x))
+    const top = Math.min(...sorted.map((text) => text.y))
+    const right = Math.max(...sorted.map((text) => text.x + Math.max(1, text.width)))
+    const bottom = Math.max(...sorted.map((text) => text.y + Math.max(1, text.height)))
+
+    const avgFontSize = Math.round(sorted.reduce((sum, text) => sum + (text.fontSize || 0), 0) / sorted.length) || 24
+    const sampleFont = sorted.find((text) => text.fontFamily) || sorted[0]
+
+    addField({
+      label,
+      text: combinedText,
+      sampleValue: combinedText,
+      x: left,
+      y: top,
+      width: Math.max(right - left + 8, 120),
+      height: Math.max(bottom - top + 6, avgFontSize * (sorted.length + 0.35)),
+      fontSize: avgFontSize,
+      fontFamily: sampleFont.fontFamily,
+      fontStyle: sampleFont.fontStyle,
+      fill: sampleFont.fill,
+      rotation: typeof sampleFont.rotation === 'number' ? sampleFont.rotation : 0,
+      replacementBox: {
+        x: left,
+        y: top,
+        width: Math.max(right - left + 2, 4),
+        height: Math.max(bottom - top + 2, 4),
+      },
+    })
+  }
+
   const createBlank = ({ x, y }) => {
     addField({ label: 'Personalized text', x, y, width: 220, height: 42, fontSize: 28, fontFamily: 'Canela Regular', fontFile: 'Canela-Regular-Trial.otf' })
   }
@@ -738,16 +921,29 @@ export default function ProductTemplateEditor({ product, onBack, onSaved }) {
     setMessage('')
     try {
       const form = new FormData()
-      form.append('kind', target === 'cover' ? 'cover' : 'interior')
       form.append('file', file)
-      const url = selectedVariantId
-        ? `/products/${localProduct._id}/variants/${selectedVariantId}/template/import`
-        : `/products/${localProduct._id}/template/import`
+      let url = ''
+      if (libraryMode) {
+        if (libraryItem.category === 'cover') {
+          const color = window.prompt('Enter cover colour', libraryItem.coverColor || '')
+          if (!color?.trim()) {
+            setUploading('')
+            return
+          }
+          form.append('coverColor', color.trim())
+        }
+        url = `/product-library-v2/items/${libraryItem._id}/pdf/import`
+      } else {
+        form.append('kind', target === 'cover' ? 'cover' : 'interior')
+        url = selectedVariantId
+          ? `/products/${localProduct._id}/variants/${selectedVariantId}/template/import`
+          : `/products/${localProduct._id}/template/import`
+      }
       const { data } = await api.post(url, form, { headers: { 'Content-Type': 'multipart/form-data' } })
-      setLocalProduct(data)
+      setLocalProduct(libraryMode ? productFromLibraryItem(data) : data)
       onSaved?.(data)
       setAutoFit(true)
-      setMessage(`${selectedVariant ? `${selectedVariant.name} ` : ''}${TARGETS[target].label} imported`)
+      setMessage(`${libraryMode ? libraryItem.title : selectedVariant ? `${selectedVariant.name} ` : ''}${libraryMode ? ' PDF' : ` ${TARGETS[target].label}`} imported`)
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to import PDF. Make sure the Python PDF template service is running.')
     } finally {
@@ -761,6 +957,14 @@ export default function ProductTemplateEditor({ product, onBack, onSaved }) {
     setError('')
     if (!silent) setMessage('')
     try {
+      if (libraryMode) {
+        const { data } = await api.patch(`/product-library-v2/items/${libraryItem._id}`, { templateFields: fields })
+        setLocalProduct(productFromLibraryItem(data))
+        onSaved?.(data)
+        if (!silent) setMessage('Library asset template saved')
+        return data
+      }
+
       const payload = selectedVariantId
         ? {
             templatePolicy: selectedPolicy,
@@ -784,6 +988,7 @@ export default function ProductTemplateEditor({ product, onBack, onSaved }) {
   }
 
   const generateSample = async () => {
+    if (libraryMode) return
     setGenerating(true)
     setError('')
     setMessage('')
@@ -834,34 +1039,40 @@ export default function ProductTemplateEditor({ product, onBack, onSaved }) {
             {localProduct?.title}
           </Typography>
           <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
-            #{localProduct?.listingId} - {fields.length} fields
+            {libraryMode ? `${libraryItem?.category === 'cover' ? 'Cover asset' : 'Inside page'}${libraryItem?.coverColor ? ` - ${libraryItem.coverColor}` : ''}` : `#${localProduct?.listingId}`} - {fields.length} fields
           </Typography>
         </Box>
 
-        <TextField
-          select
-          size="small"
-          label="Template"
-          value={templateKey}
-          onChange={(event) => {
-            setTemplateKey(event.target.value)
-            setSelectedId(null)
-            setAutoFit(true)
-          }}
-          sx={{ minWidth: 230 }}
-        >
-          <MenuItem value={DEFAULT_TEMPLATE_KEY}>Default Template</MenuItem>
-          {variants.map((variant) => (
-            <MenuItem key={variantId(variant)} value={variantId(variant)}>{variant.name}</MenuItem>
-          ))}
-        </TextField>
+        {!libraryMode && (
+          <TextField
+            select
+            size="small"
+            label="Template"
+            value={templateKey}
+            onChange={(event) => {
+              setTemplateKey(event.target.value)
+              setSelectedId(null)
+              setAutoFit(true)
+            }}
+            sx={{ minWidth: 230 }}
+          >
+            <MenuItem value={DEFAULT_TEMPLATE_KEY}>Default Template</MenuItem>
+            {variants.map((variant) => (
+              <MenuItem key={variantId(variant)} value={variantId(variant)}>{variant.name}</MenuItem>
+            ))}
+          </TextField>
+        )}
 
         <Divider orientation="vertical" flexItem />
 
-        <Tabs value={target} onChange={(_, value) => { setTarget(value); setSelectedId(null); setAutoFit(true) }} sx={{ minHeight: 44 }}>
-          <Tab value="cover" label={`Cover (${stats.cover})`} sx={{ minHeight: 44, textTransform: 'none', fontWeight: 700 }} />
-          <Tab value="interiorFirstPage" label={`Inside First Page (${stats.interior})`} sx={{ minHeight: 44, textTransform: 'none', fontWeight: 700 }} />
-        </Tabs>
+        {libraryMode ? (
+          <Chip label={`${TARGETS[target].label} (${fields.filter((field) => field.target === target).length})`} color="primary" variant="outlined" />
+        ) : (
+          <Tabs value={target} onChange={(_, value) => { setTarget(value); setSelectedId(null); setAutoFit(true) }} sx={{ minHeight: 44 }}>
+            <Tab value="cover" label={`Cover (${stats.cover})`} sx={{ minHeight: 44, textTransform: 'none', fontWeight: 700 }} />
+            <Tab value="interiorFirstPage" label={`Inside First Page (${stats.interior})`} sx={{ minHeight: 44, textTransform: 'none', fontWeight: 700 }} />
+          </Tabs>
+        )}
 
         <Box sx={{ flex: 1 }} />
 
@@ -879,10 +1090,12 @@ export default function ProductTemplateEditor({ product, onBack, onSaved }) {
         <Divider orientation="vertical" flexItem />
 
         <Button variant="outlined" startIcon={<SaveIcon />} onClick={() => saveFields()} disabled={saving}>{saving ? 'Saving' : 'Save'}</Button>
-        <Button variant="contained" startIcon={<PictureAsPdfIcon />} onClick={generateSample} disabled={generating || !fields.length}>{generating ? 'Generating' : 'Sample PDFs'}</Button>
+        {!libraryMode && (
+          <Button variant="contained" startIcon={<PictureAsPdfIcon />} onClick={generateSample} disabled={generating || !fields.length}>{generating ? 'Generating' : 'Sample PDFs'}</Button>
+        )}
       </Box>
 
-      {selectedVariant && (
+      {!libraryMode && selectedVariant && (
         <Box sx={{ flexShrink: 0, px: 1.5, py: 1, bgcolor: 'background.paper', borderBottom: '1px dashed', borderColor: 'divider', display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
           <Chip size="small" label={selectedVariant.name} color="primary" variant="outlined" sx={{ maxWidth: 280 }} />
           {[
@@ -944,7 +1157,7 @@ export default function ProductTemplateEditor({ product, onBack, onSaved }) {
           </Tooltip>
           <Tooltip title="Generate sample PDFs" placement="right">
             <span>
-              <IconButton sx={buttonRailSx(Boolean(generating))} onClick={generateSample} disabled={generating || !fields.length}>
+              <IconButton sx={buttonRailSx(Boolean(generating))} onClick={generateSample} disabled={libraryMode || generating || !fields.length}>
                 <PictureAsPdfIcon />
               </IconButton>
             </span>
@@ -966,6 +1179,7 @@ export default function ProductTemplateEditor({ product, onBack, onSaved }) {
               previewModes={previewModes}
               onSelect={setSelectedId}
               onCreateFromText={createFromText}
+              onCreateFromTextGroup={createFromTextGroup}
               onCreateBlank={createBlank}
               onChange={updateField}
               zoom={zoom}

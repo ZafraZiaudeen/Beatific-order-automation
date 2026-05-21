@@ -32,7 +32,7 @@ const MAIN_NAV = [
   { title: 'Dashboard', path: '/dashboard', icon: DashboardIcon },
   { title: 'Etsy Orders', path: '/orders/etsy', icon: ShoppingCartIcon },
   { title: 'Lulu Orders', path: '/orders/lulu', icon: LocalPrintshopIcon },
-  { title: 'Product Library', path: '/products', icon: InventoryIcon },
+  { title: 'Product Library 2', path: '/product-library-2', icon: InventoryIcon },
 ]
 
 const ACCOUNT_NAV = [
