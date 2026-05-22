@@ -878,11 +878,15 @@ export default function OrderDetailDrawer({ order, open, onClose, onRefresh }) {
             {localOrder.aiFlags?.length > 0 && (
               <Box>
                 <SectionLabel>AI Flags</SectionLabel>
-                <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: 'wrap' }}>
-                  {localOrder.aiFlags.map((flag, i) => (
-                    <Chip key={i} label={flag} size="small" color="warning" variant="outlined" />
-                  ))}
-                </Stack>
+                <Alert severity="warning" icon={<WarningAmberIcon />} sx={{ alignItems: 'flex-start' }}>
+                  <Stack spacing={0.75}>
+                    {localOrder.aiFlags.map((flag, i) => (
+                      <Typography key={i} variant="body2" sx={{ lineHeight: 1.5 }}>
+                        {flag}
+                      </Typography>
+                    ))}
+                  </Stack>
+                </Alert>
               </Box>
             )}
 

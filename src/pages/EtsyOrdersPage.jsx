@@ -165,6 +165,7 @@ const buildOrderGroups = (orders) => {
         hasUnmapped: items.some((item) => !item.isProductMapped),
         hasAiFlags: reviewFlags.length > 0,
         aiFlags,
+        reviewFlags,
         hasCustomArtwork: items.some((item) => item.hasCustomArtwork),
         updatedAt: items.reduce((latest, item) => Math.max(latest, new Date(item.updatedAt || 0).getTime()), 0),
         items,
@@ -607,13 +608,27 @@ export default function EtsyOrdersPage() {
                               {group.totalItems} item{group.totalItems === 1 ? '' : 's'} / Qty {group.totalQuantity}
                             </Typography>
                             {group.hasAiFlags && (
-                              <SoftBadge
-                                icon={<WarningAmberOutlinedIcon sx={{ fontSize: '13px !important' }} />}
-                                label="AI flagged"
-                                color="warning"
-                                size="small"
-                                sx={{ display: 'flex', width: 'fit-content', mt: 0.5 }}
-                              />
+                              <Tooltip title={group.reviewFlags.join('; ')}>
+                                <Box sx={{ display: 'block', width: 'fit-content', mt: 0.5 }}>
+                                  <SoftBadge
+                                    icon={<WarningAmberOutlinedIcon sx={{ fontSize: '13px !important' }} />}
+                                    label={group.reviewFlags[0] || 'AI flagged'}
+                                    color="warning"
+                                    size="small"
+                                    sx={{
+                                      display: 'flex',
+                                      width: 'fit-content',
+                                      maxWidth: 260,
+                                      textTransform: 'none',
+                                      '& .MuiChip-label': {
+                                        overflow: 'hidden',
+                                        textOverflow: 'ellipsis',
+                                        whiteSpace: 'nowrap',
+                                      },
+                                    }}
+                                  />
+                                </Box>
+                              </Tooltip>
                             )}
                           </SoftTableCell>
                           <SoftTableCell>
