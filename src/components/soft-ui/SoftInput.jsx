@@ -2,14 +2,25 @@ import TextField from '@mui/material/TextField'
 import InputAdornment from '@mui/material/InputAdornment'
 import { alpha } from '@mui/material/styles'
 
-export default function SoftInput({ startIcon, endIcon, ...props }) {
+export default function SoftInput({ startIcon, endIcon, slotProps, sx, ...props }) {
+  const inputSlotProps = {
+    ...(slotProps?.input || {}),
+  }
+
+  if (startIcon) {
+    inputSlotProps.startAdornment = <InputAdornment position="start">{startIcon}</InputAdornment>
+  }
+
+  if (endIcon) {
+    inputSlotProps.endAdornment = <InputAdornment position="end">{endIcon}</InputAdornment>
+  }
+
   return (
     <TextField
       {...props}
-      InputProps={{
-        startAdornment: startIcon && <InputAdornment position="start">{startIcon}</InputAdornment>,
-        endAdornment: endIcon && <InputAdornment position="end">{endIcon}</InputAdornment>,
-        ...props.InputProps,
+      slotProps={{
+        ...slotProps,
+        input: inputSlotProps,
       }}
       sx={{
         '& .MuiOutlinedInput-root': {
@@ -45,7 +56,7 @@ export default function SoftInput({ startIcon, endIcon, ...props }) {
             color: '#f97316',
           },
         },
-        ...props.sx,
+        ...sx,
       }}
     />
   )

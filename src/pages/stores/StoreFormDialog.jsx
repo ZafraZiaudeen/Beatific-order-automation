@@ -374,19 +374,21 @@ function StoreFormDialog({ open, onClose, store, onSaved }) {
                   helperText={store?.emailImportPasswordConfigured ? 'A key is already saved; leave blank to keep it.' : 'It is encrypted and never shown after saving.'}
                   sx={{ mb: 2 }}
                   size="small"
-                  InputProps={{
-                    endAdornment: (
-                      <InputAdornment position="end">
-                        <IconButton
-                          onClick={() => setShowEmailPassword((value) => !value)}
-                          edge="end"
-                          size="small"
-                          aria-label={showEmailPassword ? 'Hide app password' : 'Show app password'}
-                        >
-                          {showEmailPassword ? <VisibilityOffOutlinedIcon fontSize="small" /> : <VisibilityOutlinedIcon fontSize="small" />}
-                        </IconButton>
-                      </InputAdornment>
-                    ),
+                  slotProps={{
+                    input: {
+                      endAdornment: (
+                        <InputAdornment position="end">
+                          <IconButton
+                            onClick={() => setShowEmailPassword((value) => !value)}
+                            edge="end"
+                            size="small"
+                            aria-label={showEmailPassword ? 'Hide app password' : 'Show app password'}
+                          >
+                            {showEmailPassword ? <VisibilityOffOutlinedIcon fontSize="small" /> : <VisibilityOutlinedIcon fontSize="small" />}
+                          </IconButton>
+                        </InputAdornment>
+                      ),
+                    },
                   }}
                 />
 

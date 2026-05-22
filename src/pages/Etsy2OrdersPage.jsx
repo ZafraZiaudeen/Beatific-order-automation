@@ -252,12 +252,14 @@ export default function Etsy2OrdersPage() {
             setSearch(e.target.value)
             setPage(1)
           }}
-          InputProps={{
-            startAdornment: (
-              <InputAdornment position="start">
-                <SearchIcon sx={{ color: '#71717A' }} />
-              </InputAdornment>
-            ),
+          slotProps={{
+            input: {
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchIcon sx={{ color: '#71717A' }} />
+                </InputAdornment>
+              ),
+            },
           }}
           sx={{
             '& .MuiOutlinedInput-root': {

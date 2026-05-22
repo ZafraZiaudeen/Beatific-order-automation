@@ -861,7 +861,7 @@ export default function EtsyOrdersPage() {
         }}
       >
         <DialogTitle sx={{ borderBottom: '1px solid', borderColor: 'divider', pb: 2 }}>
-          <Typography variant="h6" sx={{ fontWeight: 700 }}>
+          <Typography component="span" variant="h6" sx={{ fontWeight: 700 }}>
             PDF Generation Progress
           </Typography>
           <Typography variant="caption" color="text.secondary">
@@ -957,17 +957,16 @@ export default function EtsyOrdersPage() {
                             {icon}
                           </ListItemIcon>
                           <ListItemText
-                            primary={item.productTitle}
-                            secondary={statusText}
-                            primaryTypographyProps={{
-                              variant: 'subtitle2',
-                              fontWeight: 600,
-                              noWrap: true,
-                            }}
-                            secondaryTypographyProps={{
-                              variant: 'body2',
-                              color: statusColor,
-                            }}
+                            primary={
+                              <Typography component="span" variant="subtitle2" sx={{ fontWeight: 600, whiteSpace: 'nowrap' }}>
+                                {item.productTitle}
+                              </Typography>
+                            }
+                            secondary={
+                              <Typography component="span" variant="body2" sx={{ color: statusColor }}>
+                                {statusText}
+                              </Typography>
+                            }
                           />
                         </ListItem>
                       </Box>

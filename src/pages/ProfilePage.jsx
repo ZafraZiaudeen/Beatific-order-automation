@@ -485,15 +485,17 @@ export default function ProfilePage() {
                           value={pwForm.current}
                           onChange={(e) => setPwForm((f) => ({ ...f, current: e.target.value }))}
                           variant="outlined"
-                          slotProps={{ input: { sx: { borderRadius: '0.875rem', minHeight: 48 } } }}
-                          InputProps={{
-                            endAdornment: (
-                              <InputAdornment position="end">
-                                <IconButton onClick={togglePw('current')} edge="end">
-                                  {showPw.current ? <VisibilityOff /> : <Visibility />}
-                                </IconButton>
-                              </InputAdornment>
-                            ),
+                          slotProps={{
+                            input: {
+                              sx: { borderRadius: '0.875rem', minHeight: 48 },
+                              endAdornment: (
+                                <InputAdornment position="end">
+                                  <IconButton onClick={togglePw('current')} edge="end">
+                                    {showPw.current ? <VisibilityOff /> : <Visibility />}
+                                  </IconButton>
+                                </InputAdornment>
+                              ),
+                            },
                           }}
                         />
                       </Grid>
@@ -506,15 +508,17 @@ export default function ProfilePage() {
                           value={pwForm.newPw}
                           onChange={(e) => setPwForm((f) => ({ ...f, newPw: e.target.value }))}
                           variant="outlined"
-                          slotProps={{ input: { sx: { borderRadius: '0.875rem', minHeight: 48 } } }}
-                          InputProps={{
-                            endAdornment: (
-                              <InputAdornment position="end">
-                                <IconButton onClick={togglePw('newPw')} edge="end">
-                                  {showPw.newPw ? <VisibilityOff /> : <Visibility />}
-                                </IconButton>
-                              </InputAdornment>
-                            ),
+                          slotProps={{
+                            input: {
+                              sx: { borderRadius: '0.875rem', minHeight: 48 },
+                              endAdornment: (
+                                <InputAdornment position="end">
+                                  <IconButton onClick={togglePw('newPw')} edge="end">
+                                    {showPw.newPw ? <VisibilityOff /> : <Visibility />}
+                                  </IconButton>
+                                </InputAdornment>
+                              ),
+                            },
                           }}
                         />
                       </Grid>

@@ -221,7 +221,6 @@ export default function NotificationCenter() {
                           {notification.title}
                         </Typography>
                       }
-                      secondaryTypographyProps={{ component: 'span' }}
                       secondary={
                         <>
                           <Typography component="span" variant="body2" sx={{ display: 'block', fontSize: '0.76rem', color: 'text.secondary', mt: 0.25 }}>
