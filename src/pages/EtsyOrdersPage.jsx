@@ -228,10 +228,14 @@ export default function EtsyOrdersPage() {
   const [generationResults, setGenerationResults] = useState({})
   const [progressModalGroup, setProgressModalGroup] = useState(null)
 
-  const handleGenerateClick = (group) => {
+  const handleGenerateClick = async (group) => {
     const etsyOrderId = group.etsyOrderId
 
-    if (generating[etsyOrderId] === 'generating' || generating[etsyOrderId] === 'completed') {
+    if (
+      generating[etsyOrderId] === 'generating' ||
+      generating[etsyOrderId] === 'completed' ||
+      generating[etsyOrderId] === 'failed'
+    ) {
       setProgressModalGroup(group)
       return
     }
@@ -242,26 +246,60 @@ export default function EtsyOrdersPage() {
       [etsyOrderId]: { loading: true, results: [] }
     }))
 
-    setTimeout(() => {
-      setGenerating((prev) => ({ ...prev, [etsyOrderId]: 'completed' }))
+    try {
+      const response = await api.post(`/orders/group/${encodeURIComponent(etsyOrderId)}/generate-pdf`)
+      const data = response.data
+      const results = data.results || []
+      const hasErrors = results.some((r) => !r.success)
+
       setGenerationResults((prev) => ({
         ...prev,
         [etsyOrderId]: {
           loading: false,
-          results: (group.items || []).map((item) => ({
-            orderId: item._id,
-            success: true,
-            productTitle: item.productTitle
-          })),
-          message: 'PDFs generated successfully.'
+          results,
+          message: data.message || 'PDF generation complete.'
+        }
+      }))
+
+      if (hasErrors) {
+        setGenerating((prev) => ({ ...prev, [etsyOrderId]: 'failed' }))
+        setSnack({
+          open: true,
+          message: 'PDF generation completed with errors.',
+          severity: 'warning',
+        })
+        setProgressModalGroup(group)
+      } else {
+        setGenerating((prev) => ({ ...prev, [etsyOrderId]: 'completed' }))
+        setSnack({
+          open: true,
+          message: 'PDFs generated successfully.',
+          severity: 'success',
+        })
+        setProgressModalGroup(null)
+      }
+
+      fetchOrders()
+      fetchCounts()
+    } catch (err) {
+      console.error('Error generating PDF:', err)
+      const errorMsg = err.response?.data?.error || err.message || 'Failed to generate PDFs'
+      setGenerating((prev) => ({ ...prev, [etsyOrderId]: 'failed' }))
+      setGenerationResults((prev) => ({
+        ...prev,
+        [etsyOrderId]: {
+          loading: false,
+          results: [],
+          error: errorMsg
         }
       }))
       setSnack({
         open: true,
-        message: 'PDFs generated successfully.',
-        severity: 'success',
+        message: errorMsg,
+        severity: 'error',
       })
-    }, 4000)
+      setProgressModalGroup(group)
+    }
   }
 
   const fetchOrders = useCallback(async () => {
@@ -726,7 +764,12 @@ export default function EtsyOrdersPage() {
                             <StatusBadge status={group.status} label={getEtsyStatusLabel(group)} />
                           </SoftTableCell>
                           <SoftTableCell align="right">
-                            <Tooltip title={generating[group.etsyOrderId] === 'completed' ? 'Completed' : generating[group.etsyOrderId] === 'generating' ? 'Generating' : 'Generate'}>
+                            <Tooltip title={
+                              generating[group.etsyOrderId] === 'completed' ? 'Completed' :
+                              generating[group.etsyOrderId] === 'generating' ? 'Generating' :
+                              generating[group.etsyOrderId] === 'failed' ? 'Failed' :
+                              'Generate'
+                            }>
                               <IconButton size="small" onClick={() => handleGenerateClick(group)}>
                                 {generating[group.etsyOrderId] === 'generating' ? (
                                   <SyncIcon
@@ -741,6 +784,8 @@ export default function EtsyOrdersPage() {
                                   />
                                 ) : generating[group.etsyOrderId] === 'completed' ? (
                                   <CheckCircleOutlinedIcon fontSize="small" sx={{ color: '#22c55e' }} />
+                                ) : generating[group.etsyOrderId] === 'failed' ? (
+                                  <CancelOutlinedIcon fontSize="small" sx={{ color: '#ef4444' }} />
                                 ) : (
                                   <PlayArrowOutlinedIcon fontSize="small" />
                                 )}
