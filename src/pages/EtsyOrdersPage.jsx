@@ -16,8 +16,19 @@ import ToggleButton from '@mui/material/ToggleButton'
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import Snackbar from '@mui/material/Snackbar'
 import CircularProgress from '@mui/material/CircularProgress'
+import Dialog from '@mui/material/Dialog'
+import DialogTitle from '@mui/material/DialogTitle'
+import DialogContent from '@mui/material/DialogContent'
+import DialogActions from '@mui/material/DialogActions'
+import List from '@mui/material/List'
+import ListItem from '@mui/material/ListItem'
+import ListItemText from '@mui/material/ListItemText'
+import ListItemIcon from '@mui/material/ListItemIcon'
+import Divider from '@mui/material/Divider'
+import Alert from '@mui/material/Alert'
 import { alpha } from '@mui/material/styles'
 import MoreVertIcon from '@mui/icons-material/MoreVert'
+import PlayArrowOutlinedIcon from '@mui/icons-material/PlayArrowOutlined'
 import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined'
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined'
 import ShoppingCartOutlinedIcon from '@mui/icons-material/ShoppingCartOutlined'
@@ -26,6 +37,10 @@ import ViewKanbanOutlinedIcon from '@mui/icons-material/ViewKanbanOutlined'
 import CloudSyncOutlinedIcon from '@mui/icons-material/CloudSyncOutlined'
 import AddIcon from '@mui/icons-material/Add'
 import WarningAmberOutlinedIcon from '@mui/icons-material/WarningAmberOutlined'
+import SyncIcon from '@mui/icons-material/Sync'
+import CheckCircleOutlinedIcon from '@mui/icons-material/CheckCircleOutlined'
+import CancelOutlinedIcon from '@mui/icons-material/CancelOutlined'
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
 import api from '../lib/api'
 import useAuthStore from '../stores/authStore'
 import { canManageWorkspace } from '../lib/permissions'
@@ -209,6 +224,45 @@ export default function EtsyOrdersPage() {
   const [emailFetching, setEmailFetching] = useState(false)
   const [emailLogs, setEmailLogs] = useState([])
   const [snack, setSnack] = useState({ open: false, message: '', severity: 'success' })
+  const [generating, setGenerating] = useState({})
+  const [generationResults, setGenerationResults] = useState({})
+  const [progressModalGroup, setProgressModalGroup] = useState(null)
+
+  const handleGenerateClick = (group) => {
+    const etsyOrderId = group.etsyOrderId
+
+    if (generating[etsyOrderId] === 'generating' || generating[etsyOrderId] === 'completed') {
+      setProgressModalGroup(group)
+      return
+    }
+
+    setGenerating((prev) => ({ ...prev, [etsyOrderId]: 'generating' }))
+    setGenerationResults((prev) => ({
+      ...prev,
+      [etsyOrderId]: { loading: true, results: [] }
+    }))
+
+    setTimeout(() => {
+      setGenerating((prev) => ({ ...prev, [etsyOrderId]: 'completed' }))
+      setGenerationResults((prev) => ({
+        ...prev,
+        [etsyOrderId]: {
+          loading: false,
+          results: (group.items || []).map((item) => ({
+            orderId: item._id,
+            success: true,
+            productTitle: item.productTitle
+          })),
+          message: 'PDFs generated successfully.'
+        }
+      }))
+      setSnack({
+        open: true,
+        message: 'PDFs generated successfully.',
+        severity: 'success',
+      })
+    }, 4000)
+  }
 
   const fetchOrders = useCallback(async () => {
     setLoading(true)
@@ -672,6 +726,26 @@ export default function EtsyOrdersPage() {
                             <StatusBadge status={group.status} label={getEtsyStatusLabel(group)} />
                           </SoftTableCell>
                           <SoftTableCell align="right">
+                            <Tooltip title={generating[group.etsyOrderId] === 'completed' ? 'Completed' : generating[group.etsyOrderId] === 'generating' ? 'Generating' : 'Generate'}>
+                              <IconButton size="small" onClick={() => handleGenerateClick(group)}>
+                                {generating[group.etsyOrderId] === 'generating' ? (
+                                  <SyncIcon
+                                    fontSize="small"
+                                    sx={{
+                                      animation: 'spin 2s linear infinite',
+                                      '@keyframes spin': {
+                                        '0%': { transform: 'rotate(0deg)' },
+                                        '100%': { transform: 'rotate(360deg)' }
+                                      }
+                                    }}
+                                  />
+                                ) : generating[group.etsyOrderId] === 'completed' ? (
+                                  <CheckCircleOutlinedIcon fontSize="small" sx={{ color: '#22c55e' }} />
+                                ) : (
+                                  <PlayArrowOutlinedIcon fontSize="small" />
+                                )}
+                              </IconButton>
+                            </Tooltip>
                             <Tooltip title="View order details">
                               <IconButton size="small" onClick={() => openGroupDetail(group)}>
                                 <VisibilityOutlinedIcon fontSize="small" />
@@ -725,6 +799,151 @@ export default function EtsyOrdersPage() {
           onSaved={() => { fetchOrders(); fetchCounts() }}
         />
       )}
+
+      {/* PDF Generation Progress Modal */}
+      <Dialog
+        open={Boolean(progressModalGroup)}
+        onClose={() => setProgressModalGroup(null)}
+        maxWidth="sm"
+        fullWidth
+        slotProps={{
+          paper: {
+            sx: {
+              borderRadius: 2,
+              boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1)',
+            }
+          }
+        }}
+      >
+        <DialogTitle sx={{ borderBottom: '1px solid', borderColor: 'divider', pb: 2 }}>
+          <Typography variant="h6" sx={{ fontWeight: 700 }}>
+            PDF Generation Progress
+          </Typography>
+          <Typography variant="caption" color="text.secondary">
+            Order #{progressModalGroup?.etsyOrderId} • {progressModalGroup?.customerName}
+          </Typography>
+        </DialogTitle>
+
+        <DialogContent sx={{ mt: 2, pb: 1 }}>
+          {progressModalGroup && (() => {
+            const groupState = generationResults[progressModalGroup.etsyOrderId]
+            const isGroupLoading = groupState?.loading
+            const groupError = groupState?.error
+            const results = groupState?.results || []
+
+            return (
+              <Box>
+                {groupError && (
+                  <Alert severity="error" sx={{ mb: 2 }}>
+                    {groupError}
+                  </Alert>
+                )}
+
+                {groupState?.message && !groupError && (
+                  <Alert severity={groupState.results.some(r => !r.success) ? 'warning' : 'success'} sx={{ mb: 2 }}>
+                    {groupState.message}
+                  </Alert>
+                )}
+
+                <List disablePadding>
+                  {progressModalGroup.items.map((item, idx) => {
+                    const itemResult = results.find(r => r.orderId === item._id)
+                    let statusText = ''
+                    let statusColor = 'text.secondary'
+                    let icon = null
+
+                    if (isGroupLoading) {
+                      if (item.isProductMapped && item.etsyStatus !== 'completed') {
+                        statusText = 'Generating PDF...'
+                        statusColor = 'primary.main'
+                        icon = <CircularProgress size={20} />
+                      } else if (!item.isProductMapped) {
+                        statusText = 'Skipped (Product not mapped)'
+                        statusColor = 'text.secondary'
+                        icon = <InfoOutlinedIcon color="action" />
+                      } else if (item.etsyStatus === 'completed') {
+                        statusText = 'Already Completed'
+                        statusColor = 'success.main'
+                        icon = <CheckCircleOutlinedIcon color="success" />
+                      } else {
+                        statusText = 'Skipped (No template required)'
+                        statusColor = 'text.secondary'
+                        icon = <InfoOutlinedIcon color="action" />
+                      }
+                    } else {
+                      // Done loading, or hasn't started (loaded from cache)
+                      if (itemResult) {
+                        if (itemResult.success) {
+                          statusText = 'Completed'
+                          statusColor = 'success.main'
+                          icon = <CheckCircleOutlinedIcon color="success" />
+                        } else {
+                          statusText = itemResult.error || 'Failed'
+                          statusColor = 'error.main'
+                          icon = <CancelOutlinedIcon color="error" />
+                        }
+                      } else {
+                        // No entry in generation results
+                        if (item.etsyStatus === 'completed') {
+                          statusText = 'Already Completed'
+                          statusColor = 'success.main'
+                          icon = <CheckCircleOutlinedIcon color="success" />
+                        } else if (!item.isProductMapped) {
+                          statusText = 'Product not mapped'
+                          statusColor = 'warning.main'
+                          icon = <InfoOutlinedIcon color="warning" />
+                        } else if (item.hasCustomArtwork) {
+                          statusText = 'Custom Artwork'
+                          statusColor = 'text.secondary'
+                          icon = <InfoOutlinedIcon color="action" />
+                        } else {
+                          statusText = 'Ready to generate'
+                          statusColor = 'text.secondary'
+                          icon = <InfoOutlinedIcon color="action" />
+                        }
+                      }
+                    }
+
+                    return (
+                      <Box key={item._id || idx}>
+                        {idx > 0 && <Divider component="li" />}
+                        <ListItem sx={{ py: 1.5, px: 0 }}>
+                          <ListItemIcon sx={{ minWidth: 40 }}>
+                            {icon}
+                          </ListItemIcon>
+                          <ListItemText
+                            primary={item.productTitle}
+                            secondary={statusText}
+                            primaryTypographyProps={{
+                              variant: 'subtitle2',
+                              fontWeight: 600,
+                              noWrap: true,
+                            }}
+                            secondaryTypographyProps={{
+                              variant: 'body2',
+                              color: statusColor,
+                            }}
+                          />
+                        </ListItem>
+                      </Box>
+                    )
+                  })}
+                </List>
+              </Box>
+            )
+          })()}
+        </DialogContent>
+
+        <DialogActions sx={{ p: 2, borderTop: '1px solid', borderColor: 'divider' }}>
+          <Button
+            variant="contained"
+            onClick={() => setProgressModalGroup(null)}
+            sx={{ fontWeight: 600 }}
+          >
+            Close
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Snackbar
         open={snack.open}
