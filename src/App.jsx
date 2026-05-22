@@ -4,7 +4,8 @@ import VerifyEmailPage from './pages/auth/VerifyEmailPage'
 import AcceptInvitePage from './pages/auth/AcceptInvitePage'
 import DashboardLayout from './components/layout/DashboardLayout'
 import DashboardPage from './pages/DashboardPage'
-import ProductLibraryPage from './pages/ProductLibraryPage'
+import ProductLibrary2Page from './pages/ProductLibrary2Page'
+import ProductLibrary2ProductsPage from './pages/ProductLibrary2ProductsPage'
 import EtsyOrdersPage from './pages/EtsyOrdersPage'
 import EtsyOrderDetailPage from './pages/EtsyOrderDetailPage'
 import LuluOrdersPage from './pages/LuluOrdersPage'
@@ -50,7 +51,13 @@ export default function App() {
           <Route path="/orders/lulu" element={<LuluOrdersPage />} />
 
           {/* Products */}
-          <Route path="/products" element={<ProductLibraryPage />} />
+          <Route path="/product-library-2/product" element={<ProductLibrary2ProductsPage mode="list" />} />
+          <Route path="/product-library-2/product/new" element={<ProductLibrary2ProductsPage mode="create" />} />
+          <Route path="/product-library-2/product/:productId/edit" element={<ProductLibrary2ProductsPage mode="edit" />} />
+          <Route path="/product-library-2/product/:productId/designer" element={<ProductLibrary2ProductsPage mode="designer" />} />
+          <Route path="/product-library-2" element={<ProductLibrary2Page />} />
+          <Route path="/product-library-2/:section/categories" element={<ProductLibrary2Page />} />
+          <Route path="/product-library-2/:section" element={<ProductLibrary2Page />} />
 
           {/* Settings */}
           <Route path="/settings/team" element={<AdminOnly><TeamPage /></AdminOnly>} />

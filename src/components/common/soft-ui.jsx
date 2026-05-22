@@ -26,7 +26,6 @@ import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import SearchIcon from '@mui/icons-material/SearchOutlined'
 import { SoftCard as Card2, SoftPageHeader as PageHeader2, SoftEmptyState as EmptyState2 } from '../soft-ui'
-import { softGradients } from './soft-gradients'
 
 // Backward compatibility aliases
 export const PageHeader = PageHeader2

@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import AppBar from '@mui/material/AppBar'
 import Toolbar from '@mui/material/Toolbar'
 import Box from '@mui/material/Box'
@@ -25,29 +25,11 @@ import { HEADER_HEIGHT } from '../../lib/constants'
 import NotificationCenter from '../common/NotificationCenter'
 import { SoftAvatar, SoftInput } from '../soft-ui'
 
-const ROUTE_TITLES = {
-  '/dashboard': 'Dashboard',
-  '/orders/etsy': 'Etsy Orders',
-  '/orders/lulu': 'Lulu Orders',
-  '/products': 'Product Library',
-  '/settings/team': 'Team',
-  '/settings/stores': 'Stores',
-  '/settings/profile': 'Profile',
-}
-
-function getRouteTitle(pathname) {
-  if (pathname.startsWith('/orders/etsy/') && pathname !== '/orders/etsy') return 'Order Detail'
-  return ROUTE_TITLES[pathname] || 'Dashboard'
-}
-
 export default function Header({ onMenuToggle }) {
   const { user, stores, activeStore, setActiveStore, logout } = useAuthStore()
   const navigate = useNavigate()
-  const location = useLocation()
   const [anchorEl, setAnchorEl] = useState(null)
   const profileOpen = Boolean(anchorEl)
-
-  const pageTitle = useMemo(() => getRouteTitle(location.pathname), [location.pathname])
 
   const handleLogout = () => {
     setAnchorEl(null)
