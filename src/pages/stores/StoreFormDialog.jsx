@@ -19,6 +19,8 @@ import Chip from '@mui/material/Chip'
 import Divider from '@mui/material/Divider'
 import CircularProgress from '@mui/material/CircularProgress'
 import Collapse from '@mui/material/Collapse'
+import IconButton from '@mui/material/IconButton'
+import InputAdornment from '@mui/material/InputAdornment'
 import { alpha } from '@mui/material/styles'
 import AddIcon from '@mui/icons-material/Add'
 import LocalPrintshopOutlinedIcon from '@mui/icons-material/LocalPrintshopOutlined'
@@ -27,6 +29,8 @@ import CloudSyncOutlinedIcon from '@mui/icons-material/CloudSyncOutlined'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import ExpandLessIcon from '@mui/icons-material/ExpandLess'
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
+import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined'
+import VisibilityOffOutlinedIcon from '@mui/icons-material/VisibilityOffOutlined'
 import api from '../../lib/api'
 import {
   buildEmailTestPayload,
@@ -46,6 +50,7 @@ function StoreFormDialog({ open, onClose, store, onSaved }) {
   const [emailTestStatus, setEmailTestStatus] = useState(null)
   const [luluExpanded, setLuluExpanded] = useState(false)
   const [emailExpanded, setEmailExpanded] = useState(false)
+  const [showEmailPassword, setShowEmailPassword] = useState(false)
 
   useEffect(() => {
     setForm(getStoreFormValues(store))
@@ -58,6 +63,7 @@ function StoreFormDialog({ open, onClose, store, onSaved }) {
     }
     setError('')
     setEmailTestStatus(null)
+    setShowEmailPassword(false)
   }, [store, open])
 
   const set = (key) => (e) => {
@@ -361,13 +367,27 @@ function StoreFormDialog({ open, onClose, store, onSaved }) {
                 <TextField
                   label="App Password / Key"
                   fullWidth
-                  type="password"
+                  type={showEmailPassword ? 'text' : 'password'}
                   value={form.emailImportPassword}
                   onChange={set('emailImportPassword')}
                   placeholder={store?.emailImportPasswordConfigured ? 'Enter a new key to replace the saved one' : 'Paste mailbox app password'}
                   helperText={store?.emailImportPasswordConfigured ? 'A key is already saved; leave blank to keep it.' : 'It is encrypted and never shown after saving.'}
                   sx={{ mb: 2 }}
                   size="small"
+                  InputProps={{
+                    endAdornment: (
+                      <InputAdornment position="end">
+                        <IconButton
+                          onClick={() => setShowEmailPassword((value) => !value)}
+                          edge="end"
+                          size="small"
+                          aria-label={showEmailPassword ? 'Hide app password' : 'Show app password'}
+                        >
+                          {showEmailPassword ? <VisibilityOffOutlinedIcon fontSize="small" /> : <VisibilityOutlinedIcon fontSize="small" />}
+                        </IconButton>
+                      </InputAdornment>
+                    ),
+                  }}
                 />
 
                 <Grid container spacing={1.5} sx={{ mb: 2 }}>

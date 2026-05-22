@@ -8,6 +8,10 @@ import ProductLibrary2Page from './pages/ProductLibrary2Page'
 import ProductLibrary2ProductsPage from './pages/ProductLibrary2ProductsPage'
 import EtsyOrdersPage from './pages/EtsyOrdersPage'
 import EtsyOrderDetailPage from './pages/EtsyOrderDetailPage'
+import Etsy2OrdersPage from './pages/Etsy2OrdersPage'
+import Etsy2OrderDetailPage from './pages/Etsy2OrderDetailPage'
+import Etsy2ItemMappingPage from './pages/Etsy2ItemMappingPage'
+import Etsy2StatusFlowPage from './pages/Etsy2StatusFlowPage'
 import LuluOrdersPage from './pages/LuluOrdersPage'
 import TeamPage from './pages/TeamPage'
 import StoresPage from './pages/StoresPage'
@@ -48,6 +52,10 @@ export default function App() {
           {/* Orders */}
           <Route path="/orders/etsy" element={<EtsyOrdersPage />} />
           <Route path="/orders/etsy/:etsyOrderId" element={<EtsyOrderDetailPage />} />
+          <Route path="/orders/etsy2" element={<Etsy2OrdersPage />} />
+          <Route path="/orders/etsy2/:orderId" element={<Etsy2OrderDetailPage />} />
+          <Route path="/orders/etsy2/:orderId/item/:itemId/mapping" element={<Etsy2ItemMappingPage />} />
+          <Route path="/orders/etsy2/flow" element={<Etsy2StatusFlowPage />} />
           <Route path="/orders/lulu" element={<LuluOrdersPage />} />
 
           {/* Products */}
