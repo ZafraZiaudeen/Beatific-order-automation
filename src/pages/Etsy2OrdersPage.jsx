@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   Box,
   Typography,
@@ -6,175 +7,259 @@ import {
   InputAdornment,
   Chip,
   Button,
-  IconButton,
   Pagination,
   CircularProgress,
+  FormControl,
+  Select,
+  MenuItem,
+  Snackbar,
+  Alert,
+  ToggleButton,
+  ToggleButtonGroup,
+  Tooltip,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Checkbox,
+  LinearProgress,
 } from '@mui/material'
 import SearchIcon from '@mui/icons-material/Search'
 import SyncIcon from '@mui/icons-material/Sync'
-import FilterListIcon from '@mui/icons-material/FilterList'
+import AddIcon from '@mui/icons-material/Add'
+import PrintIcon from '@mui/icons-material/Print'
+import ViewListOutlinedIcon from '@mui/icons-material/ViewListOutlined'
+import ViewKanbanOutlinedIcon from '@mui/icons-material/ViewKanbanOutlined'
 import Etsy2OrdersTable from '../components/etsy2/Etsy2OrdersTable'
-import { ORDER_FILTERS, ITEM_STATUSES } from '../lib/etsy2Constants'
+import OrderKanban from '../components/orders/OrderKanban'
+import OrderFormDialog from '../components/orders/OrderFormDialog'
+import api from '../lib/api'
+import useAuthStore from '../stores/authStore'
+import { canManageWorkspace } from '../lib/permissions'
+import { ORDER_FILTERS } from '../lib/etsy2Constants'
+import { buildOrderGroups, getPresetDateRange, reviewFlagsFor, toEtsy2Order } from '../lib/etsy2Orders'
 
-// Mock data for development - replace with API calls
-const MOCK_ORDERS = [
-  {
-    orderId: '12345',
-    buyerName: 'Sarah Mitchell',
-    buyerEmail: 'sarah.mitchell@email.com',
-    date: '2025-05-20T10:24:00Z',
-    total: 48.50,
-    items: [
-      {
-        name: 'Botanical Wall Art Print',
-        variant: '8x10in / Unframed',
-        sku: 'BWAP-810',
-        quantity: 1,
-        price: 24.50,
-        status: ITEM_STATUSES.MAPPED,
-        icon: '🖼️',
-      },
-      {
-        name: 'Gold Initial Necklace',
-        variant: 'Letter: S / 16"',
-        sku: 'GIN-S-16',
-        quantity: 1,
-        price: 24.00,
-        status: ITEM_STATUSES.AI_FLAGGED,
-        icon: '📿',
-      },
-    ],
-  },
-  {
-    orderId: '12344',
-    buyerName: 'James Lee',
-    buyerEmail: 'james.lee@email.com',
-    date: '2025-05-20T09:15:00Z',
-    total: 32.00,
-    items: [
-      {
-        name: 'Custom Wedding Invitation',
-        variant: '5x7in / Set of 50',
-        sku: 'CWI-57-50',
-        quantity: 1,
-        price: 32.00,
-        status: ITEM_STATUSES.MAPPED,
-        icon: '💌',
-      },
-    ],
-  },
-  {
-    orderId: '12343',
-    buyerName: 'Emily Brown',
-    buyerEmail: 'emily.brown@email.com',
-    date: '2025-05-19T14:45:00Z',
-    total: 75.20,
-    items: [
-      {
-        name: 'Personalized Journal',
-        variant: 'Leather / Brown',
-        sku: 'PJ-LTH-BRN',
-        quantity: 3,
-        price: 75.20,
-        status: ITEM_STATUSES.IN_PROGRESS,
-        icon: '📓',
-      },
-    ],
-  },
-  {
-    orderId: '12342',
-    buyerName: 'Robert Wilson',
-    buyerEmail: 'robert.wilson@email.com',
-    date: '2025-05-19T11:02:00Z',
-    total: 18.75,
-    items: [
-      {
-        name: 'Ceramic Mug - White',
-        variant: 'SKU: SKU-1001 / Color: White',
-        sku: 'SKU-1001',
-        quantity: 1,
-        price: 18.75,
-        status: ITEM_STATUSES.SHIPPED,
-        icon: '☕',
-      },
-    ],
-  },
-  {
-    orderId: '12341',
-    buyerName: 'Kate Thompson',
-    buyerEmail: 'kate.thompson@email.com',
-    date: '2025-05-18T14:30:00Z',
-    total: 56.00,
-    items: [
-      {
-        name: 'Custom T-Shirt Design',
-        variant: 'Size: L / Color: Navy',
-        sku: 'CTS-L-NVY',
-        quantity: 2,
-        price: 56.00,
-        status: ITEM_STATUSES.CUSTOM,
-        icon: '👕',
-      },
-    ],
-  },
+const ITEMS_PER_PAGE = 10
+
+const DATE_RANGE_OPTIONS = [
+  { value: 'all', label: 'All time' },
+  { value: '7d', label: 'Last 7 days' },
+  { value: '30d', label: 'Last 30 days' },
+  { value: '90d', label: 'Last 3 months' },
+  { value: '1y', label: 'This year' },
 ]
 
 export default function Etsy2OrdersPage() {
-  const [orders, setOrders] = useState(MOCK_ORDERS)
-  const [loading, setLoading] = useState(false)
+  const navigate = useNavigate()
+  const { activeStore, user } = useAuthStore()
+  const canManage = canManageWorkspace(user)
+  const [orders, setOrders] = useState([])
+  const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [activeFilter, setActiveFilter] = useState('all')
+  const [dateRange, setDateRange] = useState('all')
   const [page, setPage] = useState(1)
+  const [view, setView] = useState(() => localStorage.getItem('beatific_etsy2_order_view') || 'list')
+  const [statusCounts, setStatusCounts] = useState({})
   const [syncing, setSyncing] = useState(false)
+  const [bulkOpen, setBulkOpen] = useState(false)
+  const [bulkGenerating, setBulkGenerating] = useState(false)
+  const [bulkSelected, setBulkSelected] = useState([])
+  const [bulkResults, setBulkResults] = useState([])
+  const [manualOpen, setManualOpen] = useState(false)
+  const [snack, setSnack] = useState({ open: false, message: '', severity: 'success' })
 
-  const itemsPerPage = 10
-
-  // Calculate filter counts
-  const filterCounts = ORDER_FILTERS.map((filter) => {
-    if (filter.value === 'all') {
-      return { ...filter, count: orders.length }
+  const fetchOrders = useCallback(async () => {
+    setLoading(true)
+    try {
+      const { data } = await api.get('/orders', {
+        params: {
+          page: 1,
+          limit: view === 'board' ? 200 : 500,
+          ...(activeStore?._id ? { storeId: activeStore._id } : {}),
+          ...(search ? { search } : {}),
+          ...getPresetDateRange(dateRange),
+        },
+      })
+      setOrders(data.orders || [])
+    } catch {
+      setSnack({ open: true, message: 'Failed to load orders', severity: 'error' })
+    } finally {
+      setLoading(false)
     }
-    const count = orders.filter((order) =>
-      order.items?.some((item) => item.status === filter.value)
-    ).length
-    return { ...filter, count }
-  })
+  }, [activeStore?._id, dateRange, search, view])
 
-  // Filter orders based on active filter and search
-  const filteredOrders = orders.filter((order) => {
-    // Search filter
-    const searchLower = search.toLowerCase()
-    const matchesSearch =
-      !search ||
-      order.orderId.toLowerCase().includes(searchLower) ||
-      order.buyerName.toLowerCase().includes(searchLower) ||
-      order.buyerEmail.toLowerCase().includes(searchLower) ||
-      order.items?.some((item) =>
-        item.name.toLowerCase().includes(searchLower) ||
-        item.sku?.toLowerCase().includes(searchLower)
-      )
+  const fetchCounts = useCallback(async () => {
+    try {
+      const { data } = await api.get('/orders/status-counts', {
+        params: {
+          ...(activeStore?._id ? { storeId: activeStore._id } : {}),
+          ...getPresetDateRange(dateRange),
+        },
+      })
+      setStatusCounts(data || {})
+    } catch {
+      setStatusCounts({})
+    }
+  }, [activeStore?._id, dateRange])
 
-    // Status filter
-    const matchesFilter =
-      activeFilter === 'all' ||
-      order.items?.some((item) => item.status === activeFilter)
+  useEffect(() => {
+    fetchOrders()
+  }, [fetchOrders])
 
-    return matchesSearch && matchesFilter
-  })
+  useEffect(() => {
+    fetchCounts()
+  }, [fetchCounts])
 
-  // Pagination
-  const totalPages = Math.ceil(filteredOrders.length / itemsPerPage)
-  const paginatedOrders = filteredOrders.slice(
-    (page - 1) * itemsPerPage,
-    page * itemsPerPage
+  useEffect(() => {
+    setPage(1)
+  }, [activeFilter, dateRange, search, activeStore?._id, view])
+
+  const etsy2Orders = useMemo(
+    () => buildOrderGroups(orders).map(toEtsy2Order),
+    [orders]
   )
 
+  const filterCounts = useMemo(
+    () => ORDER_FILTERS.map((filter) => {
+      if (filter.value === 'all') return { ...filter, count: etsy2Orders.length }
+      const count = etsy2Orders.filter((order) =>
+        order.items?.some((item) => item.status === filter.value)
+      ).length
+      return { ...filter, count }
+    }),
+    [etsy2Orders]
+  )
+
+  const filteredOrders = useMemo(
+    () => etsy2Orders.filter((order) => (
+      activeFilter === 'all' ||
+      order.items?.some((item) => item.status === activeFilter)
+    )),
+    [activeFilter, etsy2Orders]
+  )
+
+  const readyForGeneration = useMemo(() => {
+    const groups = buildOrderGroups(orders)
+    return groups
+      .map((group) => {
+        const readyItems = group.items.filter((item) => (
+          item.requiresTemplateFinalization &&
+          item.isProductMapped &&
+          !item.templateFinalizedAt &&
+          reviewFlagsFor(item).length === 0 &&
+          item.podPackageId
+        ))
+        return { group, order: toEtsy2Order(group), readyItems }
+      })
+      .filter((entry) => entry.readyItems.length > 0)
+  }, [orders])
+
+  const totalPages = Math.max(1, Math.ceil(filteredOrders.length / ITEMS_PER_PAGE))
+  const paginatedOrders = filteredOrders.slice(
+    (page - 1) * ITEMS_PER_PAGE,
+    page * ITEMS_PER_PAGE
+  )
+
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages)
+  }, [page, totalPages])
+
+  const handleViewChange = (_, nextView) => {
+    if (!nextView) return
+    setView(nextView)
+    localStorage.setItem('beatific_etsy2_order_view', nextView)
+  }
+
   const handleSync = async () => {
+    if (!activeStore?._id) {
+      setSnack({ open: true, message: 'Select a store before syncing email orders.', severity: 'warning' })
+      return
+    }
+
     setSyncing(true)
-    // Simulate API call
-    setTimeout(() => {
+    try {
+      const { data } = await api.post('/email-orders/fetch', { storeId: activeStore._id })
+      await Promise.all([fetchOrders(), fetchCounts()])
+      setSnack({
+        open: true,
+        message: `Email sync complete: ${data.created || 0} created, ${data.updated || 0} updated, ${data.skipped || 0} skipped`,
+        severity: data.failed > 0 ? 'warning' : 'success',
+      })
+    } catch (err) {
+      setSnack({ open: true, message: err.response?.data?.message || 'Email sync failed', severity: 'error' })
+    } finally {
       setSyncing(false)
-    }, 2000)
+    }
+  }
+
+  const handleGenerate = async (order) => {
+    const etsyOrderId = order?.orderId || order?.etsyOrderId
+    if (!etsyOrderId) return
+
+    try {
+      const { data } = await api.post(`/orders/group/${encodeURIComponent(etsyOrderId)}/template-finalize`)
+      const hasErrors = (data.results || []).some((result) => !result.success)
+      const firstError = (data.results || []).find((result) => !result.success)?.error
+      await Promise.all([fetchOrders(), fetchCounts()])
+      setSnack({
+        open: true,
+        message: hasErrors ? firstError || 'PDF generation completed with errors.' : 'PDFs generated successfully.',
+        severity: hasErrors ? 'warning' : 'success',
+      })
+    } catch (err) {
+      setSnack({
+        open: true,
+        message: err.response?.data?.error || err.message || 'Failed to generate PDFs',
+        severity: 'error',
+      })
+    }
+  }
+
+  const openBulkGenerate = () => {
+    const ids = readyForGeneration.map((entry) => entry.group.etsyOrderId)
+    setBulkSelected(ids)
+    setBulkResults([])
+    setBulkOpen(true)
+  }
+
+  const handleBulkGenerate = async () => {
+    if (bulkSelected.length === 0) return
+    setBulkGenerating(true)
+    setBulkResults([])
+
+    const results = []
+    for (const etsyOrderId of bulkSelected) {
+      try {
+        const { data } = await api.post(`/orders/group/${encodeURIComponent(etsyOrderId)}/template-finalize`)
+        const hasErrors = (data.results || []).some((result) => !result.success)
+        results.push({
+          etsyOrderId,
+          success: !hasErrors,
+          message: data.message || 'Generated',
+        })
+      } catch (err) {
+        results.push({
+          etsyOrderId,
+          success: false,
+          message: err.response?.data?.message || err.message || 'Generation failed',
+        })
+      }
+      setBulkResults([...results])
+    }
+
+    await Promise.all([fetchOrders(), fetchCounts()])
+    setBulkGenerating(false)
+    setSnack({
+      open: true,
+      message: `Generated ${results.filter((result) => result.success).length} of ${results.length} selected order groups`,
+      severity: results.some((result) => !result.success) ? 'warning' : 'success',
+    })
+  }
+
+  const openEtsy2Detail = (order) => {
+    const etsyOrderId = order?.orderId || order?.etsyOrderId || order?.firstOrder?.etsyOrderId
+    if (etsyOrderId) navigate(`/orders/etsy2/${encodeURIComponent(etsyOrderId)}`)
   }
 
   const handleFilterChange = (filterValue) => {
@@ -184,9 +269,8 @@ export default function Etsy2OrdersPage() {
 
   return (
     <Box sx={{ p: 3 }}>
-      {/* Header */}
       <Box sx={{ mb: 3 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1, gap: 2, flexWrap: 'wrap' }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
             <Box
               sx={{
@@ -199,18 +283,58 @@ export default function Etsy2OrdersPage() {
                 justifyContent: 'center',
               }}
             >
-              <Typography sx={{ fontSize: '20px' }}>E</Typography>
+              <Typography sx={{ fontSize: '20px', color: '#FFFFFF', fontWeight: 700 }}>E</Typography>
             </Box>
             <Box>
               <Typography variant="h5" sx={{ fontWeight: 600, color: '#27272A' }}>
                 Orders
               </Typography>
               <Typography variant="body2" sx={{ color: '#71717A' }}>
-                Manage and track your Etsy orders
+                {loading ? 'Loading Etsy orders...' : `${etsy2Orders.length} grouped orders`}
               </Typography>
             </Box>
           </Box>
-          <Box sx={{ display: 'flex', gap: 1 }}>
+          <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
+            <FormControl size="small" sx={{ minWidth: 140 }}>
+              <Select
+                value={dateRange}
+                onChange={(e) => setDateRange(e.target.value)}
+                sx={{
+                  bgcolor: '#FFFFFF',
+                  borderRadius: '8px',
+                  '& fieldset': { borderColor: '#E3E3E7' },
+                }}
+              >
+                {DATE_RANGE_OPTIONS.map((option) => (
+                  <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            {canManage && (
+              <Button
+                variant="outlined"
+                startIcon={<AddIcon />}
+                onClick={() => setManualOpen(true)}
+                sx={{
+                  borderColor: '#E3E3E7',
+                  color: '#27272A',
+                  '&:hover': { borderColor: '#D4D4D8', bgcolor: '#FAFAFA' },
+                }}
+              >
+                Add Order
+              </Button>
+            )}
+            {canManage && (
+              <Button
+                variant="contained"
+                startIcon={<PrintIcon />}
+                onClick={openBulkGenerate}
+                disabled={readyForGeneration.length === 0}
+                sx={{ bgcolor: '#F97316', '&:hover': { bgcolor: '#EA580C' } }}
+              >
+                Bulk Generate
+              </Button>
+            )}
             <Button
               variant="outlined"
               startIcon={syncing ? <CircularProgress size={16} /> : <SyncIcon />}
@@ -225,28 +349,28 @@ export default function Etsy2OrdersPage() {
                 },
               }}
             >
-              Sync
+              {syncing ? 'Syncing...' : 'Sync'}
             </Button>
-            <IconButton
-              sx={{
-                border: '1px solid #E3E3E7',
-                borderRadius: '8px',
-                '&:hover': {
-                  bgcolor: '#FAFAFA',
-                },
-              }}
-            >
-              <FilterListIcon />
-            </IconButton>
+            <ToggleButtonGroup value={view} exclusive onChange={handleViewChange} size="small">
+              <ToggleButton value="list">
+                <Tooltip title="List view">
+                  <ViewListOutlinedIcon fontSize="small" />
+                </Tooltip>
+              </ToggleButton>
+              <ToggleButton value="board">
+                <Tooltip title="Kanban board">
+                  <ViewKanbanOutlinedIcon fontSize="small" />
+                </Tooltip>
+              </ToggleButton>
+            </ToggleButtonGroup>
           </Box>
         </Box>
       </Box>
 
-      {/* Search Bar */}
       <Box sx={{ mb: 3 }}>
         <TextField
           fullWidth
-          placeholder="Search orders by ID, buyer, or item..."
+          placeholder="Search orders by ID, buyer, email, item, SKU, or shop..."
           value={search}
           onChange={(e) => {
             setSearch(e.target.value)
@@ -276,59 +400,199 @@ export default function Etsy2OrdersPage() {
         />
       </Box>
 
-      {/* Filter Chips */}
-      <Box sx={{ mb: 3, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-        {filterCounts.map((filter) => (
-          <Chip
-            key={filter.value}
-            label={`${filter.label} ${filter.count}`}
-            onClick={() => handleFilterChange(filter.value)}
-            sx={{
-              bgcolor: activeFilter === filter.value ? '#F97316' : '#FFFFFF',
-              color: activeFilter === filter.value ? '#FFFFFF' : '#27272A',
-              border: '1px solid',
-              borderColor: activeFilter === filter.value ? '#F97316' : '#E3E3E7',
-              fontWeight: 500,
-              fontSize: '0.875rem',
-              '&:hover': {
-                bgcolor: activeFilter === filter.value ? '#EA580C' : '#FAFAFA',
-              },
-            }}
-          />
-        ))}
-      </Box>
+      {view === 'list' && (
+        <Box sx={{ mb: 3, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+          {filterCounts.map((filter) => (
+            <Chip
+              key={filter.value}
+              label={`${filter.label} ${filter.count}`}
+              onClick={() => handleFilterChange(filter.value)}
+              sx={{
+                bgcolor: activeFilter === filter.value ? '#F97316' : '#FFFFFF',
+                color: activeFilter === filter.value ? '#FFFFFF' : '#27272A',
+                border: '1px solid',
+                borderColor: activeFilter === filter.value ? '#F97316' : '#E3E3E7',
+                fontWeight: 500,
+                fontSize: '0.875rem',
+                '&:hover': {
+                  bgcolor: activeFilter === filter.value ? '#EA580C' : '#FAFAFA',
+                },
+              }}
+            />
+          ))}
+        </Box>
+      )}
 
-      {/* Orders Table */}
       {loading ? (
         <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}>
           <CircularProgress />
         </Box>
+      ) : view === 'board' ? (
+        <Box sx={{ p: 2, bgcolor: '#FFFFFF', border: '1px solid #E3E3E7', borderRadius: '12px' }}>
+          <OrderKanban
+            orders={orders}
+            onOrderClick={openEtsy2Detail}
+            onOrdersChange={() => {
+              fetchOrders()
+              fetchCounts()
+            }}
+            statusCounts={statusCounts}
+            readOnly={!canManage}
+          />
+        </Box>
       ) : (
         <>
-          <Etsy2OrdersTable orders={paginatedOrders} />
+          <Etsy2OrdersTable
+            orders={paginatedOrders}
+            onViewOrder={openEtsy2Detail}
+            onGenerateOrder={handleGenerate}
+          />
 
-          {/* Pagination */}
-          {totalPages > 1 && (
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 3 }}>
-              <Typography variant="body2" sx={{ color: '#71717A' }}>
-                Showing {(page - 1) * itemsPerPage + 1} to{' '}
-                {Math.min(page * itemsPerPage, filteredOrders.length)} of {filteredOrders.length} orders
+          {filteredOrders.length === 0 && (
+            <Box
+              sx={{
+                mt: 2,
+                p: 4,
+                bgcolor: '#FFFFFF',
+                border: '1px solid #E3E3E7',
+                borderRadius: '12px',
+                textAlign: 'center',
+              }}
+            >
+              <Typography variant="subtitle1" sx={{ fontWeight: 600, color: '#27272A' }}>
+                No orders found
               </Typography>
-              <Pagination
-                count={totalPages}
-                page={page}
-                onChange={(_, value) => setPage(value)}
-                color="primary"
-                sx={{
-                  '& .MuiPaginationItem-root': {
-                    borderRadius: '8px',
-                  },
-                }}
-              />
+              <Typography variant="body2" sx={{ color: '#71717A', mt: 0.5 }}>
+                Try another filter or sync email orders.
+              </Typography>
+            </Box>
+          )}
+
+          {filteredOrders.length > 0 && (
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 3, gap: 2, flexWrap: 'wrap' }}>
+              <Typography variant="body2" sx={{ color: '#71717A' }}>
+                Showing {(page - 1) * ITEMS_PER_PAGE + 1} to{' '}
+                {Math.min(page * ITEMS_PER_PAGE, filteredOrders.length)} of {filteredOrders.length} orders
+              </Typography>
+              {totalPages > 1 && (
+                <Pagination
+                  count={totalPages}
+                  page={page}
+                  onChange={(_, value) => setPage(value)}
+                  color="primary"
+                  sx={{
+                    '& .MuiPaginationItem-root': {
+                      borderRadius: '8px',
+                    },
+                  }}
+                />
+              )}
             </Box>
           )}
         </>
       )}
+
+      {canManage && (
+        <OrderFormDialog
+          open={manualOpen}
+          mode="create"
+          activeStore={activeStore}
+          onClose={() => setManualOpen(false)}
+          onSaved={() => {
+            setManualOpen(false)
+            fetchOrders()
+            fetchCounts()
+          }}
+        />
+      )}
+
+      <Dialog open={bulkOpen} onClose={bulkGenerating ? undefined : () => setBulkOpen(false)} maxWidth="md" fullWidth>
+        <DialogTitle sx={{ fontWeight: 700 }}>
+          Bulk Generate Print PDFs
+          <Typography variant="body2" sx={{ color: '#71717A', mt: 0.5 }}>
+            Ready orders have mapped products, no review flags, and a Lulu POD package ID.
+          </Typography>
+        </DialogTitle>
+        {bulkGenerating && <LinearProgress />}
+        <DialogContent dividers>
+          {readyForGeneration.length === 0 ? (
+            <Alert severity="info">No orders are ready for PDF generation.</Alert>
+          ) : (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.25 }}>
+              {readyForGeneration.map(({ group, order: readyOrder, readyItems }) => {
+                const checked = bulkSelected.includes(group.etsyOrderId)
+                const result = bulkResults.find((item) => item.etsyOrderId === group.etsyOrderId)
+                return (
+                  <Box
+                    key={group.etsyOrderId}
+                    sx={{
+                      p: 1.5,
+                      border: '1px solid #E3E3E7',
+                      borderRadius: '10px',
+                      bgcolor: '#FFFFFF',
+                      display: 'flex',
+                      gap: 1.5,
+                      alignItems: 'flex-start',
+                    }}
+                  >
+                    <Checkbox
+                      checked={checked}
+                      disabled={bulkGenerating}
+                      onChange={(event) => {
+                        setBulkSelected((current) => (
+                          event.target.checked
+                            ? [...new Set([...current, group.etsyOrderId])]
+                            : current.filter((id) => id !== group.etsyOrderId)
+                        ))
+                      }}
+                    />
+                    <Box sx={{ flex: 1, minWidth: 0 }}>
+                      <Typography variant="subtitle2" sx={{ color: '#27272A', fontWeight: 700 }}>
+                        #{group.etsyOrderId} / {readyOrder.buyerName || 'Unknown customer'}
+                      </Typography>
+                      <Typography variant="body2" sx={{ color: '#71717A' }}>
+                        {readyItems.length} ready item{readyItems.length === 1 ? '' : 's'} / {readyOrder.shop || 'Etsy'}
+                      </Typography>
+                      {result && (
+                        <Alert severity={result.success ? 'success' : 'error'} sx={{ mt: 1, borderRadius: '8px' }}>
+                          {result.message}
+                        </Alert>
+                      )}
+                    </Box>
+                  </Box>
+                )
+              })}
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button onClick={() => setBulkOpen(false)} disabled={bulkGenerating} color="inherit">Close</Button>
+          <Button
+            variant="contained"
+            onClick={handleBulkGenerate}
+            disabled={bulkGenerating || bulkSelected.length === 0}
+            sx={{ bgcolor: '#F97316', '&:hover': { bgcolor: '#EA580C' } }}
+          >
+            {bulkGenerating ? 'Generating...' : `Generate ${bulkSelected.length} Order${bulkSelected.length === 1 ? '' : 's'}`}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Snackbar
+        open={snack.open}
+        autoHideDuration={4000}
+        onClose={() => setSnack((current) => ({ ...current, open: false }))}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+      >
+        <Alert
+          onClose={() => setSnack((current) => ({ ...current, open: false }))}
+          severity={snack.severity}
+          variant="filled"
+          sx={{ width: '100%' }}
+        >
+          {snack.message}
+        </Alert>
+      </Snackbar>
     </Box>
   )
 }

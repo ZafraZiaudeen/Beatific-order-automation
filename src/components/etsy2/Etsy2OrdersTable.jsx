@@ -1,72 +1,73 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import {
+  Avatar,
   Box,
+  Collapse,
+  IconButton,
+  Paper,
   Table,
   TableBody,
   TableCell,
   TableContainer,
   TableHead,
   TableRow,
-  Avatar,
-  IconButton,
-  Collapse,
-  Typography,
   Tooltip,
-  Paper,
+  Typography,
 } from '@mui/material'
-import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined'
-import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
-import PrintOutlinedIcon from '@mui/icons-material/PrintOutlined'
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown'
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp'
+import PrintOutlinedIcon from '@mui/icons-material/PrintOutlined'
+import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined'
 import WarningAmberIcon from '@mui/icons-material/WarningAmber'
 import Etsy2StatusBadge from './Etsy2StatusBadge'
 import { deriveBatchStatus } from '../../lib/etsy2Constants'
+import { formatDate, formatMoney, getInitials } from '../../lib/etsy2Orders'
 
-const formatDate = (dateString) => {
-  if (!dateString) return '-'
-  const date = new Date(dateString)
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })
-}
-
-const formatMoney = (value) => {
-  const num = Number(value || 0)
-  return num > 0 ? `$${num.toFixed(2)}` : '-'
-}
-
-const getInitials = (name) => {
-  if (!name) return '?'
-  return name
-    .split(' ')
-    .map((n) => n[0])
-    .join('')
-    .toUpperCase()
-    .slice(0, 2)
-}
-
-function OrderRow({ order }) {
-  const navigate = useNavigate()
+function OrderRow({ order, onViewOrder, onGenerateOrder }) {
   const [open, setOpen] = useState(false)
-  
   const batchStatus = deriveBatchStatus(order.items)
   const hasAIFlag = order.items?.some((item) => item.status === 'ai_flagged')
+  const shipByIsLate = order.shipByDate && new Date(order.shipByDate) < new Date() && order.status !== 'completed'
 
   return (
     <>
       <TableRow
         hover
+        onClick={() => onViewOrder?.(order)}
         sx={{
           '& > *': { borderBottom: open ? 'none !important' : undefined },
           cursor: 'pointer',
         }}
       >
         <TableCell sx={{ width: 48 }}>
-          <IconButton size="small" onClick={() => setOpen(!open)}>
+          <IconButton
+            size="small"
+            onClick={(e) => {
+              e.stopPropagation()
+              setOpen(!open)
+            }}
+          >
             {open ? <KeyboardArrowUpIcon /> : <KeyboardArrowDownIcon />}
           </IconButton>
         </TableCell>
-        
+
+        <TableCell>
+          <Typography variant="body2" sx={{ color: '#F97316', fontWeight: 700, fontFamily: 'monospace' }}>
+            #{order.orderId}
+          </Typography>
+          <Typography variant="caption" sx={{ display: 'block', color: '#71717A' }}>
+            {order.totalItems || order.items?.length || 0} item{(order.totalItems || order.items?.length) === 1 ? '' : 's'} / Qty {order.totalQuantity || 0}
+          </Typography>
+          {hasAIFlag && (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.5, color: '#EF4444' }}>
+              <WarningAmberIcon sx={{ fontSize: 15 }} />
+              <Typography variant="caption" sx={{ fontWeight: 600 }}>
+                Needs review
+              </Typography>
+            </Box>
+          )}
+        </TableCell>
+
         <TableCell>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <Avatar
@@ -80,11 +81,11 @@ function OrderRow({ order }) {
             >
               {getInitials(order.buyerName)}
             </Avatar>
-            <Box>
+            <Box sx={{ minWidth: 0 }}>
               <Typography variant="body2" sx={{ fontWeight: 500, color: '#27272A' }}>
                 {order.buyerName || 'Unknown'}
               </Typography>
-              <Typography variant="caption" sx={{ color: '#71717A' }}>
+              <Typography variant="caption" sx={{ display: 'block', color: '#71717A', wordBreak: 'break-word' }}>
                 {order.buyerEmail || ''}
               </Typography>
             </Box>
@@ -92,20 +93,26 @@ function OrderRow({ order }) {
         </TableCell>
 
         <TableCell>
-          <Typography variant="body2" sx={{ color: '#27272A', fontWeight: 500 }}>
-            #{order.orderId}
+          <Typography variant="body2" sx={{ color: '#27272A' }}>
+            {order.shop || '-'}
           </Typography>
         </TableCell>
 
         <TableCell>
           <Typography variant="body2" sx={{ color: '#71717A' }}>
-            {formatDate(order.date)}
+            {formatDate(order.date, true)}
           </Typography>
         </TableCell>
 
         <TableCell>
-          <Typography variant="body2" sx={{ color: '#27272A', fontWeight: 500 }}>
-            {order.items?.length || 0}
+          <Typography
+            variant="body2"
+            sx={{
+              color: shipByIsLate ? '#EF4444' : '#27272A',
+              fontWeight: shipByIsLate ? 700 : 400,
+            }}
+          >
+            {formatDate(order.shipByDate)}
           </Typography>
         </TableCell>
 
@@ -116,14 +123,7 @@ function OrderRow({ order }) {
         </TableCell>
 
         <TableCell>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <Etsy2StatusBadge status={batchStatus} />
-            {hasAIFlag && (
-              <Tooltip title="AI Flagged - Requires attention">
-                <WarningAmberIcon sx={{ color: '#EF4444', fontSize: '18px' }} />
-              </Tooltip>
-            )}
-          </Box>
+          <Etsy2StatusBadge status={batchStatus} />
         </TableCell>
 
         <TableCell align="right">
@@ -133,19 +133,20 @@ function OrderRow({ order }) {
                 size="small"
                 onClick={(e) => {
                   e.stopPropagation()
-                  navigate(`/orders/etsy2/${order.orderId}`)
+                  onViewOrder?.(order)
                 }}
               >
                 <VisibilityOutlinedIcon sx={{ fontSize: '18px' }} />
               </IconButton>
             </Tooltip>
-            <Tooltip title="Edit">
-              <IconButton size="small" onClick={(e) => e.stopPropagation()}>
-                <EditOutlinedIcon sx={{ fontSize: '18px' }} />
-              </IconButton>
-            </Tooltip>
-            <Tooltip title="Print">
-              <IconButton size="small" onClick={(e) => e.stopPropagation()}>
+            <Tooltip title="Generate PDFs">
+              <IconButton
+                size="small"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onGenerateOrder?.(order)
+                }}
+              >
                 <PrintOutlinedIcon sx={{ fontSize: '18px' }} />
               </IconButton>
             </Tooltip>
@@ -153,41 +154,19 @@ function OrderRow({ order }) {
         </TableCell>
       </TableRow>
 
-      {/* Expanded Row - Order Items */}
       <TableRow>
-        <TableCell style={{ paddingBottom: 0, paddingTop: 0 }} colSpan={8}>
+        <TableCell style={{ paddingBottom: 0, paddingTop: 0 }} colSpan={9}>
           <Collapse in={open} timeout="auto" unmountOnExit>
             <Box sx={{ py: 2, px: 3, bgcolor: '#FAFAFA' }}>
               <Typography variant="subtitle2" sx={{ mb: 1.5, color: '#27272A', fontWeight: 600 }}>
                 Order Items ({order.items?.length || 0})
               </Typography>
-              
-              {hasAIFlag && (
-                <Box
-                  sx={{
-                    mb: 2,
-                    p: 1.5,
-                    bgcolor: '#FEF2F2',
-                    border: '1px solid #FEE2E2',
-                    borderRadius: '8px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 1,
-                  }}
-                >
-                  <WarningAmberIcon sx={{ color: '#EF4444', fontSize: '20px' }} />
-                  <Typography variant="body2" sx={{ color: '#991B1B' }}>
-                    This order is AI Flagged due to 1 item requiring attention.
-                  </Typography>
-                </Box>
-              )}
 
               <Table size="small">
                 <TableHead>
                   <TableRow>
                     <TableCell sx={{ fontWeight: 600, color: '#71717A', fontSize: '0.75rem' }}>Item</TableCell>
-                    <TableCell sx={{ fontWeight: 600, color: '#71717A', fontSize: '0.75rem' }}>Item Name</TableCell>
-                    <TableCell sx={{ fontWeight: 600, color: '#71717A', fontSize: '0.75rem' }}>SKU</TableCell>
+                    <TableCell sx={{ fontWeight: 600, color: '#71717A', fontSize: '0.75rem' }}>SKU / Txn</TableCell>
                     <TableCell sx={{ fontWeight: 600, color: '#71717A', fontSize: '0.75rem' }}>Quantity</TableCell>
                     <TableCell sx={{ fontWeight: 600, color: '#71717A', fontSize: '0.75rem' }}>Price</TableCell>
                     <TableCell sx={{ fontWeight: 600, color: '#71717A', fontSize: '0.75rem' }}>Status</TableCell>
@@ -195,32 +174,20 @@ function OrderRow({ order }) {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {order.items?.map((item, idx) => (
-                    <TableRow key={idx} sx={{ '&:last-child td': { border: 0 } }}>
-                      <TableCell>
-                        <Box
-                          sx={{
-                            width: 40,
-                            height: 40,
-                            bgcolor: '#F4F4F5',
-                            borderRadius: '6px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                          }}
-                        >
-                          <Typography variant="caption" sx={{ color: '#71717A', fontWeight: 600 }}>
-                            {item.icon || '📦'}
-                          </Typography>
-                        </Box>
-                      </TableCell>
+                  {order.items?.map((item) => (
+                    <TableRow key={item.id} sx={{ '&:last-child td': { border: 0 } }}>
                       <TableCell>
                         <Typography variant="body2" sx={{ color: '#27272A', fontWeight: 500 }}>
                           {item.name}
                         </Typography>
                         {item.variant && (
-                          <Typography variant="caption" sx={{ color: '#71717A' }}>
+                          <Typography variant="caption" sx={{ display: 'block', color: '#71717A' }}>
                             {item.variant}
+                          </Typography>
+                        )}
+                        {item.aiFlags?.length > 0 && (
+                          <Typography variant="caption" sx={{ display: 'block', color: '#EF4444', mt: 0.5 }}>
+                            {item.aiFlags.join('; ')}
                           </Typography>
                         )}
                       </TableCell>
@@ -228,6 +195,11 @@ function OrderRow({ order }) {
                         <Typography variant="body2" sx={{ color: '#71717A', fontFamily: 'monospace', fontSize: '0.8rem' }}>
                           {item.sku || '-'}
                         </Typography>
+                        {item.transactionId && (
+                          <Typography variant="caption" sx={{ display: 'block', color: '#A1A1AA', fontFamily: 'monospace' }}>
+                            Txn {item.transactionId}
+                          </Typography>
+                        )}
                       </TableCell>
                       <TableCell>
                         <Typography variant="body2" sx={{ color: '#27272A' }}>
@@ -243,18 +215,11 @@ function OrderRow({ order }) {
                         <Etsy2StatusBadge status={item.status} />
                       </TableCell>
                       <TableCell align="right">
-                        <Box sx={{ display: 'flex', gap: 0.5, justifyContent: 'flex-end' }}>
-                          <Tooltip title="View Details">
-                            <IconButton size="small">
-                              <VisibilityOutlinedIcon sx={{ fontSize: '16px' }} />
-                            </IconButton>
-                          </Tooltip>
-                          <Tooltip title="Edit">
-                            <IconButton size="small">
-                              <EditOutlinedIcon sx={{ fontSize: '16px' }} />
-                            </IconButton>
-                          </Tooltip>
-                        </Box>
+                        <Tooltip title="View order">
+                          <IconButton size="small" onClick={() => onViewOrder?.(order)}>
+                            <VisibilityOutlinedIcon sx={{ fontSize: '16px' }} />
+                          </IconButton>
+                        </Tooltip>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -268,7 +233,7 @@ function OrderRow({ order }) {
   )
 }
 
-export default function Etsy2OrdersTable({ orders = [] }) {
+export default function Etsy2OrdersTable({ orders = [], onViewOrder, onGenerateOrder }) {
   return (
     <TableContainer component={Paper} sx={{ borderRadius: '12px', boxShadow: 'none', border: '1px solid #E3E3E7' }}>
       <Table>
@@ -276,16 +241,19 @@ export default function Etsy2OrdersTable({ orders = [] }) {
           <TableRow sx={{ bgcolor: '#FAFAFA' }}>
             <TableCell sx={{ width: 48 }} />
             <TableCell sx={{ fontWeight: 600, color: '#71717A', fontSize: '0.75rem', textTransform: 'uppercase' }}>
-              Buyer
+              Order #
             </TableCell>
             <TableCell sx={{ fontWeight: 600, color: '#71717A', fontSize: '0.75rem', textTransform: 'uppercase' }}>
-              Order ID
+              Customer
             </TableCell>
             <TableCell sx={{ fontWeight: 600, color: '#71717A', fontSize: '0.75rem', textTransform: 'uppercase' }}>
-              Date
+              Shop
             </TableCell>
             <TableCell sx={{ fontWeight: 600, color: '#71717A', fontSize: '0.75rem', textTransform: 'uppercase' }}>
-              Items
+              Payment Date
+            </TableCell>
+            <TableCell sx={{ fontWeight: 600, color: '#71717A', fontSize: '0.75rem', textTransform: 'uppercase' }}>
+              Ship By
             </TableCell>
             <TableCell sx={{ fontWeight: 600, color: '#71717A', fontSize: '0.75rem', textTransform: 'uppercase' }}>
               Total
@@ -300,7 +268,12 @@ export default function Etsy2OrdersTable({ orders = [] }) {
         </TableHead>
         <TableBody>
           {orders.map((order) => (
-            <OrderRow key={order.orderId} order={order} />
+            <OrderRow
+              key={order.orderId}
+              order={order}
+              onViewOrder={onViewOrder}
+              onGenerateOrder={onGenerateOrder}
+            />
           ))}
         </TableBody>
       </Table>

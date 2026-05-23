@@ -1,114 +1,334 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
+  Alert,
+  Avatar,
   Box,
-  Typography,
   Button,
+  Chip,
+  CircularProgress,
+  Divider,
   IconButton,
   Paper,
-  Divider,
-  Avatar,
-  Chip,
-  Alert,
-  Card,
-  CardContent,
+  Snackbar,
+  Typography,
 } from '@mui/material'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
-import SyncIcon from '@mui/icons-material/Sync'
-import PrintIcon from '@mui/icons-material/Print'
-import WarningAmberIcon from '@mui/icons-material/WarningAmber'
-import EditIcon from '@mui/icons-material/Edit'
+import CalendarTodayOutlinedIcon from '@mui/icons-material/CalendarTodayOutlined'
 import CheckCircleIcon from '@mui/icons-material/CheckCircle'
+import EditIcon from '@mui/icons-material/Edit'
+import EmailOutlinedIcon from '@mui/icons-material/EmailOutlined'
+import Inventory2OutlinedIcon from '@mui/icons-material/Inventory2Outlined'
+import LocalShippingOutlinedIcon from '@mui/icons-material/LocalShippingOutlined'
+import LocationOnOutlinedIcon from '@mui/icons-material/LocationOnOutlined'
+import NotesOutlinedIcon from '@mui/icons-material/NotesOutlined'
+import OpenInNewIcon from '@mui/icons-material/OpenInNew'
+import PersonOutlineOutlinedIcon from '@mui/icons-material/PersonOutlineOutlined'
+import PhoneOutlinedIcon from '@mui/icons-material/PhoneOutlined'
+import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdfOutlined'
+import PrintIcon from '@mui/icons-material/Print'
+import ReceiptLongOutlinedIcon from '@mui/icons-material/ReceiptLongOutlined'
+import SyncIcon from '@mui/icons-material/Sync'
+import WarningAmberIcon from '@mui/icons-material/WarningAmber'
+import api from '../lib/api'
+import useAuthStore from '../stores/authStore'
+import { canManageWorkspace } from '../lib/permissions'
+import { buildAssetThumbnailUrl } from '../lib/assets'
+import LuluReviewDialog from '../components/orders/LuluReviewDialog'
+import OrderFormDialog from '../components/orders/OrderFormDialog'
+import TemplatePersonalizationDialog from '../components/orders/TemplatePersonalizationDialog'
 import Etsy2StatusBadge from '../components/etsy2/Etsy2StatusBadge'
-import { ITEM_STATUSES } from '../lib/etsy2Constants'
+import { deriveBatchStatus } from '../lib/etsy2Constants'
+import {
+  addressLines,
+  buildOrderFileUrl,
+  formatDate,
+  formatMoney,
+  getInitials,
+  getItemStatus,
+  optionText,
+  reviewFlagsFor,
+  toEtsy2GroupOrder,
+} from '../lib/etsy2Orders'
 
-// Mock data - replace with API call
-const MOCK_ORDER = {
-  orderId: '10234',
-  buyerName: 'Emily Morgan',
-  buyerEmail: 'emily.morgan@example.com',
-  date: '2025-05-28T10:24:00Z',
-  total: 68.50,
-  address: {
-    street: '123 Maple Street',
-    city: 'Portland',
-    state: 'OR',
-    zip: '97201',
-    country: 'USA',
-  },
-  phone: '+1 (503) 555-1234',
-  joinedDate: 'Mar 12, 2023',
-  buyerType: 'Returning',
-  totalOrders: 8,
-  totalSpent: 214.75,
-  items: [
-    {
-      id: 1,
-      name: 'Ceramic Mug - White',
-      variant: 'SKU: SKU-1001 / Color: White',
-      sku: 'SKU-1001',
-      quantity: 1,
-      price: 24.50,
-      status: ITEM_STATUSES.MAPPED,
-      image: '☕',
-    },
-    {
-      id: 2,
-      name: 'Botanical Wall Art',
-      variant: 'SKU: SKU-1002 / Size: 8x10',
-      sku: 'SKU-1002',
-      quantity: 1,
-      price: 44.00,
-      status: ITEM_STATUSES.AI_FLAGGED,
-      image: '🖼️',
-      aiFlag: {
-        reason: 'Text contains restricted keywords',
-        originalText: 'To the best mom ever,\nThanks for everything you do!\nLove, Emma',
-        suggestedText: 'To the best mom ever,\nThank you for everything you do!\nLove, Emma',
-      },
-    },
-  ],
-  orderHistory: [
-    { id: '10233', date: 'May 28, 2025', amount: 32.00, status: 'Custom' },
-    { id: '10232', date: 'May 27, 2025', amount: 89.75, status: 'Delivered' },
-    { id: '10231', date: 'May 27, 2025', amount: 15.25, status: 'Processing' },
-  ],
+const valueOrDash = (value) => value || '-'
+
+function InfoStat({ icon, label, value }) {
+  return (
+    <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start', minWidth: 0 }}>
+      <Box sx={{ color: '#71717A', lineHeight: 0, mt: 0.25 }}>{icon}</Box>
+      <Box sx={{ minWidth: 0 }}>
+        <Typography variant="caption" sx={{ color: '#71717A', fontWeight: 600 }}>
+          {label}
+        </Typography>
+        <Typography variant="body2" sx={{ color: '#27272A', fontWeight: 600, wordBreak: 'break-word' }}>
+          {valueOrDash(value)}
+        </Typography>
+      </Box>
+    </Box>
+  )
 }
 
-const formatDate = (dateString) => {
-  if (!dateString) return '-'
-  const date = new Date(dateString)
-  return date.toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
+function PaymentRow({ label, value, strong = false }) {
+  return (
+    <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2, alignItems: 'center' }}>
+      <Typography variant="body2" sx={{ color: '#71717A' }}>{label}</Typography>
+      <Typography variant={strong ? 'subtitle1' : 'body2'} sx={{ color: '#27272A', fontWeight: strong ? 800 : 600, textAlign: 'right' }}>
+        {value}
+      </Typography>
+    </Box>
+  )
 }
 
-const formatMoney = (value) => {
-  const num = Number(value || 0)
-  return num > 0 ? `$${num.toFixed(2)}` : '-'
+function DetailPanel({ title, icon, action, children }) {
+  return (
+    <Paper sx={{ p: 3, borderRadius: '12px', border: '1px solid #E3E3E7', boxShadow: 'none' }}>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2, alignItems: 'center', mb: 2 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          {icon}
+          <Typography variant="h6" sx={{ fontWeight: 600, color: '#27272A' }}>
+            {title}
+          </Typography>
+        </Box>
+        {action}
+      </Box>
+      {children}
+    </Paper>
+  )
+}
+
+function ItemBlock({ item, index }) {
+  const source = item.sourceOrder || {}
+  const flags = reviewFlagsFor(source)
+  const personalization = Object.entries(source.personalization || {})
+  const status = getItemStatus(source)
+
+  return (
+    <Box>
+      {index > 0 && <Divider sx={{ my: 2 }} />}
+      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '88px minmax(0, 1fr) 160px' }, gap: 2 }}>
+        <Box
+          sx={{
+            width: 88,
+            height: 88,
+            bgcolor: '#F4F4F5',
+            borderRadius: '8px',
+            border: '1px solid #E3E3E7',
+            overflow: 'hidden',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          {source.coverImageUrl ? (
+            <Box
+              component="img"
+              src={buildAssetThumbnailUrl(source.coverImageUrl)}
+              alt=""
+              sx={{ width: '100%', height: '100%', objectFit: 'cover' }}
+            />
+          ) : (
+            <Typography variant="caption" sx={{ color: '#71717A', fontWeight: 600 }}>Item</Typography>
+          )}
+        </Box>
+
+        <Box sx={{ minWidth: 0 }}>
+          <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center', mb: 0.5 }}>
+            <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#27272A' }}>
+              {item.name}
+            </Typography>
+            <Etsy2StatusBadge status={status} />
+          </Box>
+
+          <Typography variant="body2" sx={{ color: '#71717A' }}>
+            {optionText(source) || 'No options'}
+          </Typography>
+
+          <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mt: 1 }}>
+            <Chip label={`Listing: ${valueOrDash(source.listingId)}`} size="small" variant="outlined" />
+            <Chip label={`Txn: ${valueOrDash(source.etsyItemId)}`} size="small" variant="outlined" />
+            {source.matchedVariantName && <Chip label={`Variant: ${source.matchedVariantName}`} size="small" variant="outlined" />}
+            {!source.isProductMapped && <Chip label="Product not mapped" size="small" color="warning" variant="outlined" />}
+            {source.requiresTemplateFinalization && <Chip label="Template needed" size="small" color="info" variant="outlined" />}
+          </Box>
+
+          {flags.length > 0 && (
+            <Alert severity="error" icon={<WarningAmberIcon />} sx={{ mt: 2, borderRadius: '8px' }}>
+              <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>Needs review</Typography>
+              {flags.map((flag) => (
+                <Typography key={flag} variant="body2">{flag}</Typography>
+              ))}
+            </Alert>
+          )}
+
+          {personalization.length > 0 && (
+            <Box sx={{ mt: 2, p: 2, bgcolor: '#FAFAFA', borderRadius: '8px', border: '1px solid #E3E3E7' }}>
+              <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#27272A', mb: 1 }}>
+                Personalization
+              </Typography>
+              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))' }, gap: 1.5 }}>
+                {personalization.map(([label, value]) => (
+                  <Box key={label}>
+                    <Typography variant="caption" sx={{ color: '#71717A', fontWeight: 600 }}>
+                      {label}
+                    </Typography>
+                    <Typography variant="body2" sx={{ color: '#27272A', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                      {String(value)}
+                    </Typography>
+                  </Box>
+                ))}
+              </Box>
+            </Box>
+          )}
+        </Box>
+
+        <Box sx={{ textAlign: { xs: 'left', md: 'right' } }}>
+          <Typography variant="caption" sx={{ color: '#71717A' }}>Quantity</Typography>
+          <Typography variant="body2" sx={{ color: '#27272A', fontWeight: 700, mb: 1 }}>
+            {source.quantity || 1}
+          </Typography>
+          <Typography variant="caption" sx={{ color: '#71717A' }}>Item Total</Typography>
+          <Typography variant="subtitle1" sx={{ color: '#27272A', fontWeight: 800 }}>
+            {formatMoney(Number(source.price || 0) * Number(source.quantity || 1))}
+          </Typography>
+        </Box>
+      </Box>
+    </Box>
+  )
 }
 
 export default function Etsy2OrderDetailPage() {
   const { orderId } = useParams()
   const navigate = useNavigate()
-  const [order] = useState(MOCK_ORDER)
+  const { activeStore, user } = useAuthStore()
+  const canManage = canManageWorkspace(user)
+  const [group, setGroup] = useState(null)
+  const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
+  const [generating, setGenerating] = useState(false)
+  const [editOpen, setEditOpen] = useState(false)
+  const [templateOpen, setTemplateOpen] = useState(false)
+  const [templateOrder, setTemplateOrder] = useState(null)
+  const [templateProduct, setTemplateProduct] = useState(null)
+  const [luluOpen, setLuluOpen] = useState(false)
+  const [luluOrder, setLuluOrder] = useState(null)
+  const [snack, setSnack] = useState({ open: false, message: '', severity: 'success' })
 
-  const hasAIFlag = order.items.some((item) => item.status === ITEM_STATUSES.AI_FLAGGED)
-  const aiFlaggedItem = order.items.find((item) => item.status === ITEM_STATUSES.AI_FLAGGED)
+  const fetchGroup = useCallback(async () => {
+    setLoading(true)
+    try {
+      const { data } = await api.get(`/orders/group/${encodeURIComponent(orderId)}`)
+      setGroup(data)
+    } catch (err) {
+      setSnack({ open: true, message: err.response?.data?.message || 'Failed to load order', severity: 'error' })
+    } finally {
+      setLoading(false)
+    }
+  }, [orderId])
 
-  const handleSync = () => {
+  useEffect(() => {
+    fetchGroup()
+  }, [fetchGroup])
+
+  const order = useMemo(() => (group ? toEtsy2GroupOrder(group) : null), [group])
+  const batchStatus = order ? deriveBatchStatus(order.items) : null
+  const hasAIFlag = order?.items?.some((item) => item.status === 'ai_flagged')
+  const shippingLines = addressLines(group?.shippingAddress)
+  const subtotal = group?.items?.reduce((sum, item) => sum + Number(item.price || 0) * Number(item.quantity || 1), 0) || 0
+  const shipping = Number(group?.pricing?.shipping || group?.items?.[0]?.shippingCost || 0)
+  const tax = Number(group?.pricing?.tax || 0)
+  const generatedItems = group?.items?.filter((item) => item.templateFinalizedAt && (item.coverImageUrl || item.interiorPdfUrl)) || []
+
+  const handleSync = async () => {
+    if (!activeStore?._id) {
+      fetchGroup()
+      return
+    }
+
     setSyncing(true)
-    setTimeout(() => setSyncing(false), 2000)
+    try {
+      const { data } = await api.post('/email-orders/fetch', { storeId: activeStore._id })
+      await fetchGroup()
+      setSnack({
+        open: true,
+        message: `Email sync complete: ${data.created || 0} created, ${data.updated || 0} updated, ${data.skipped || 0} skipped`,
+        severity: data.failed > 0 ? 'warning' : 'success',
+      })
+    } catch (err) {
+      setSnack({ open: true, message: err.response?.data?.message || 'Email sync failed', severity: 'error' })
+    } finally {
+      setSyncing(false)
+    }
+  }
+
+  const handleGenerate = async () => {
+    if (!order?.orderId) return
+
+    setGenerating(true)
+    try {
+      const { data } = await api.post(`/orders/group/${encodeURIComponent(order.orderId)}/template-finalize`)
+      const hasErrors = (data.results || []).some((result) => !result.success)
+      const firstError = (data.results || []).find((result) => !result.success)?.error
+      await fetchGroup()
+      setSnack({
+        open: true,
+        message: hasErrors ? firstError || 'PDF generation completed with errors.' : 'PDFs generated successfully.',
+        severity: hasErrors ? 'warning' : 'success',
+      })
+    } catch (err) {
+      setSnack({
+        open: true,
+        message: err.response?.data?.error || err.message || 'Failed to generate PDFs',
+        severity: 'error',
+      })
+    } finally {
+      setGenerating(false)
+    }
+  }
+
+  const handleOpenTemplate = async (item) => {
+    if (!item?.productId) {
+      setSnack({ open: true, message: 'Map this item to a product before editing print PDFs.', severity: 'warning' })
+      return
+    }
+
+    setTemplateOrder(item)
+    setTemplateProduct(null)
+    setTemplateOpen(true)
+
+    try {
+      const { data } = await api.get(`/products/${item.productId}`)
+      setTemplateProduct(data)
+    } catch (err) {
+      setTemplateOpen(false)
+      setSnack({ open: true, message: err.response?.data?.message || 'Failed to load product template', severity: 'error' })
+    }
+  }
+
+  const handleApproveLulu = (item) => {
+    setLuluOrder(item)
+    setLuluOpen(true)
+  }
+
+  if (loading) {
+    return (
+      <Box sx={{ p: 3, display: 'flex', justifyContent: 'center', py: 10 }}>
+        <CircularProgress />
+      </Box>
+    )
+  }
+
+  if (!order || !group) {
+    return (
+      <Box sx={{ p: 3 }}>
+        <Button startIcon={<ArrowBackIcon />} onClick={() => navigate('/orders/etsy2')}>Back to Orders</Button>
+        <Alert severity="error" sx={{ mt: 2 }}>Order not found.</Alert>
+      </Box>
+    )
   }
 
   return (
     <Box sx={{ p: 3 }}>
-      {/* Header */}
       <Box sx={{ mb: 3 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
           <IconButton onClick={() => navigate('/orders/etsy2')} sx={{ bgcolor: '#F4F4F5' }}>
@@ -119,78 +339,54 @@ export default function Etsy2OrderDetailPage() {
           </Typography>
         </Box>
 
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 2, flexWrap: 'wrap' }}>
           <Box>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1 }}>
-              <Typography variant="h5" sx={{ fontWeight: 600, color: '#27272A' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1, flexWrap: 'wrap' }}>
+              <Typography variant="h5" sx={{ fontWeight: 700, color: '#27272A' }}>
                 Order #{order.orderId}
               </Typography>
-              <IconButton size="small">
-                <Typography sx={{ fontSize: '16px' }}>📋</Typography>
-              </IconButton>
+              <Etsy2StatusBadge status={batchStatus} />
+              {group.hasUnmapped && <Chip label="Unmapped items" size="small" color="warning" variant="outlined" />}
+              {group.hasCustomArtwork && <Chip label="Custom artwork" size="small" color="warning" variant="outlined" />}
             </Box>
-            <Box sx={{ display: 'flex', gap: 1 }}>
-              <Chip
-                label="AI Flagged"
-                size="small"
-                sx={{
-                  bgcolor: '#FEE2E2',
-                  color: '#991B1B',
-                  fontWeight: 600,
-                }}
-              />
-              <Chip
-                label="Processing"
-                size="small"
-                sx={{
-                  bgcolor: '#E0F2FE',
-                  color: '#075985',
-                  fontWeight: 600,
-                }}
-              />
-            </Box>
+            <Typography variant="body2" sx={{ color: '#71717A' }}>
+              {order.shop || 'Etsy'} order from {formatDate(order.date, true)}
+            </Typography>
           </Box>
 
-          <Box sx={{ display: 'flex', gap: 1 }}>
+          <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
             <Button
               variant="outlined"
-              startIcon={syncing ? <SyncIcon className="spin" /> : <SyncIcon />}
+              startIcon={syncing ? <CircularProgress size={16} /> : <SyncIcon />}
               onClick={handleSync}
               disabled={syncing}
-              sx={{
-                borderColor: '#E3E3E7',
-                color: '#27272A',
-                '&:hover': {
-                  borderColor: '#D4D4D8',
-                  bgcolor: '#FAFAFA',
-                },
-              }}
+              sx={{ borderColor: '#E3E3E7', color: '#27272A' }}
             >
-              Sync
+              {syncing ? 'Syncing...' : 'Sync'}
             </Button>
+            {canManage && (
+              <Button
+                variant="outlined"
+                startIcon={<EditIcon />}
+                onClick={() => setEditOpen(true)}
+                sx={{ borderColor: '#E3E3E7', color: '#27272A' }}
+              >
+                Edit
+              </Button>
+            )}
             <Button
               variant="outlined"
-              startIcon={<PrintIcon />}
-              sx={{
-                borderColor: '#E3E3E7',
-                color: '#27272A',
-                '&:hover': {
-                  borderColor: '#D4D4D8',
-                  bgcolor: '#FAFAFA',
-                },
-              }}
+              startIcon={generating ? <CircularProgress size={16} /> : <PrintIcon />}
+              onClick={handleGenerate}
+              disabled={generating}
+              sx={{ borderColor: '#E3E3E7', color: '#27272A' }}
             >
-              Print Order
+              {generating ? 'Generating...' : 'Generate PDFs'}
             </Button>
           </Box>
         </Box>
-
-        <Typography variant="caption" sx={{ color: '#71717A', display: 'block', mt: 1 }}>
-          Last synced: 2m ago
-        </Typography>
       </Box>
 
-      {/* AI Flagged Banner */}
       {hasAIFlag && (
         <Alert
           severity="error"
@@ -200,401 +396,254 @@ export default function Etsy2OrderDetailPage() {
             borderRadius: '12px',
             bgcolor: '#FEF2F2',
             border: '1px solid #FEE2E2',
-            '& .MuiAlert-icon': {
-              color: '#EF4444',
-            },
+            '& .MuiAlert-icon': { color: '#EF4444' },
           }}
         >
-          <Typography variant="subtitle2" sx={{ fontWeight: 600, color: '#991B1B', mb: 0.5 }}>
+          <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#991B1B', mb: 0.5 }}>
             Batch Status: AI Flagged
           </Typography>
           <Typography variant="body2" sx={{ color: '#991B1B' }}>
-            One or more items in this order have been flagged by AI for review.
+            One or more items in this order need review before production.
           </Typography>
         </Alert>
       )}
 
+      <Paper sx={{ p: 3, mb: 3, borderRadius: '12px', border: '1px solid #E3E3E7', boxShadow: 'none' }}>
+        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(4, 1fr)' }, gap: 2.5 }}>
+          <InfoStat icon={<CalendarTodayOutlinedIcon fontSize="small" />} label="Payment Date" value={formatDate(order.date, true)} />
+          <InfoStat icon={<LocalShippingOutlinedIcon fontSize="small" />} label="Ship By" value={formatDate(order.shipByDate)} />
+          <InfoStat icon={<Inventory2OutlinedIcon fontSize="small" />} label="Items" value={`${order.totalItems} item${order.totalItems === 1 ? '' : 's'} / Qty ${order.totalQuantity}`} />
+          <InfoStat icon={<ReceiptLongOutlinedIcon fontSize="small" />} label="Total" value={formatMoney(order.total)} />
+        </Box>
+      </Paper>
+
       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: '2fr 1fr' }, gap: 3 }}>
-        {/* Left Column */}
-        <Box>
-          {/* Order Info Card */}
-          <Paper sx={{ p: 3, mb: 3, borderRadius: '12px', border: '1px solid #E3E3E7' }}>
-            <Box sx={{ display: 'flex', gap: 3, mb: 3 }}>
-              <Box sx={{ flex: 1 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                  <Typography sx={{ fontSize: '16px' }}>📅</Typography>
-                  <Typography variant="caption" sx={{ color: '#71717A', fontWeight: 600 }}>
-                    Order Date
-                  </Typography>
-                </Box>
-                <Typography variant="body2" sx={{ color: '#27272A', fontWeight: 500 }}>
-                  {formatDate(order.date)}
-                </Typography>
-              </Box>
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+          <DetailPanel title="Order Items" icon={<Inventory2OutlinedIcon sx={{ color: '#71717A' }} />}>
+            {order.items.map((item, index) => (
+              <ItemBlock key={item.id} item={item} index={index} />
+            ))}
+          </DetailPanel>
 
-              <Box sx={{ flex: 1 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                  <Avatar
-                    sx={{
-                      width: 32,
-                      height: 32,
-                      bgcolor: '#F97316',
-                      fontSize: '0.875rem',
-                    }}
-                  >
-                    EM
-                  </Avatar>
-                  <Typography variant="caption" sx={{ color: '#71717A', fontWeight: 600 }}>
-                    Buyer
-                  </Typography>
-                </Box>
-                <Typography variant="body2" sx={{ color: '#27272A', fontWeight: 500 }}>
-                  {order.buyerName}
-                </Typography>
-                <Typography variant="caption" sx={{ color: '#71717A' }}>
-                  {order.buyerEmail}
-                </Typography>
-              </Box>
-
-              <Box sx={{ flex: 1 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                  <Typography sx={{ fontSize: '16px' }}>📦</Typography>
-                  <Typography variant="caption" sx={{ color: '#71717A', fontWeight: 600 }}>
-                    Items
-                  </Typography>
-                </Box>
-                <Typography variant="body2" sx={{ color: '#27272A', fontWeight: 500 }}>
-                  {order.items.length} Items
-                </Typography>
-              </Box>
-
-              <Box sx={{ flex: 1 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                  <Typography sx={{ fontSize: '16px' }}>💰</Typography>
-                  <Typography variant="caption" sx={{ color: '#71717A', fontWeight: 600 }}>
-                    Total
-                  </Typography>
-                </Box>
-                <Typography variant="body2" sx={{ color: '#27272A', fontWeight: 600 }}>
-                  {formatMoney(order.total)}
-                </Typography>
-              </Box>
-            </Box>
-          </Paper>
-
-          {/* Order Items */}
-          <Paper sx={{ p: 3, borderRadius: '12px', border: '1px solid #E3E3E7' }}>
-            <Typography variant="h6" sx={{ fontWeight: 600, color: '#27272A', mb: 2 }}>
-              Order Items
-            </Typography>
-
-            {order.items.map((item, idx) => (
-              <Box key={item.id}>
-                {idx > 0 && <Divider sx={{ my: 2 }} />}
-                <Box sx={{ display: 'flex', gap: 2 }}>
-                  <Box
-                    sx={{
-                      width: 80,
-                      height: 80,
-                      bgcolor: '#F4F4F5',
-                      borderRadius: '8px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontSize: '32px',
-                    }}
-                  >
-                    {item.image}
-                  </Box>
-
-                  <Box sx={{ flex: 1 }}>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                      <Box>
-                        <Typography variant="subtitle1" sx={{ fontWeight: 600, color: '#27272A' }}>
-                          {item.name}
+          <DetailPanel
+            title="Generated Print PDFs"
+            icon={<PictureAsPdfIcon sx={{ color: '#71717A' }} />}
+            action={canManage && (
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={generating ? <CircularProgress size={14} /> : <PrintIcon />}
+                onClick={handleGenerate}
+                disabled={generating}
+                sx={{ borderColor: '#E3E3E7', color: '#27272A' }}
+              >
+                Generate All
+              </Button>
+            )}
+          >
+            {group.items.map((item) => {
+              const isGenerated = Boolean(item.templateFinalizedAt && (item.coverImageUrl || item.interiorPdfUrl))
+              const canSendToLulu = Boolean(isGenerated && item.coverImageUrl && item.interiorPdfUrl && item.podPackageId)
+              return (
+                <Box key={item._id} sx={{ py: 2, borderTop: '1px solid #E3E3E7', '&:first-of-type': { borderTop: 0, pt: 0 } }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                    <Box sx={{ minWidth: 0 }}>
+                      <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
+                        <Typography variant="subtitle2" sx={{ color: '#27272A', fontWeight: 700 }}>
+                          {item.productTitle}
                         </Typography>
-                        <Typography variant="body2" sx={{ color: '#71717A' }}>
-                          {item.variant}
-                        </Typography>
+                        <Etsy2StatusBadge status={isGenerated ? 'generated' : getItemStatus(item)} />
                       </Box>
-                      <Box sx={{ textAlign: 'right' }}>
-                        <Typography variant="body2" sx={{ color: '#71717A', mb: 0.5 }}>
-                          Quantity
-                        </Typography>
-                        <Typography variant="body2" sx={{ color: '#27272A', fontWeight: 600 }}>
-                          {item.quantity}
-                        </Typography>
-                      </Box>
-                    </Box>
-
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 1 }}>
-                      <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-                        <Typography variant="caption" sx={{ color: '#71717A' }}>
-                          Status
-                        </Typography>
-                        <Etsy2StatusBadge status={item.status} />
-                        {item.status === ITEM_STATUSES.AI_FLAGGED && (
-                          <WarningAmberIcon sx={{ color: '#EF4444', fontSize: '18px' }} />
-                        )}
-                      </Box>
-                      <Typography variant="body1" sx={{ color: '#27272A', fontWeight: 600 }}>
-                        {formatMoney(item.price)}
+                      <Typography variant="caption" sx={{ display: 'block', color: '#71717A', mt: 0.5 }}>
+                        POD package: {item.podPackageId || 'Missing'} / Txn {item.etsyItemId || '-'}
                       </Typography>
                     </Box>
-
-                    {/* AI Review Section */}
-                    {item.status === ITEM_STATUSES.AI_FLAGGED && item.aiFlag && (
-                      <Box sx={{ mt: 2, p: 2, bgcolor: '#FEF2F2', borderRadius: '8px', border: '1px solid #FEE2E2' }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
-                          <WarningAmberIcon sx={{ color: '#EF4444', fontSize: '20px' }} />
-                          <Typography variant="subtitle2" sx={{ fontWeight: 600, color: '#991B1B' }}>
-                            AI Review
-                          </Typography>
-                        </Box>
-
-                        <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2, mb: 2 }}>
-                          <Box>
-                            <Typography variant="caption" sx={{ color: '#71717A', fontWeight: 600, display: 'block', mb: 0.5 }}>
-                              Personalization Text
-                            </Typography>
-                            <Box sx={{ p: 1.5, bgcolor: '#FFFFFF', borderRadius: '6px', border: '1px solid #FEE2E2' }}>
-                              <Typography variant="body2" sx={{ color: '#991B1B', whiteSpace: 'pre-line' }}>
-                                {item.aiFlag.originalText}
-                              </Typography>
-                            </Box>
-                            <Typography variant="caption" sx={{ color: '#71717A', mt: 0.5, display: 'block' }}>
-                              66 characters
-                            </Typography>
-                          </Box>
-
-                          <Box>
-                            <Typography variant="caption" sx={{ color: '#71717A', fontWeight: 600, display: 'block', mb: 0.5 }}>
-                              Edited Text (AI Suggestion)
-                            </Typography>
-                            <Box sx={{ p: 1.5, bgcolor: '#FFFFFF', borderRadius: '6px', border: '1px solid #D1FAE5' }}>
-                              <Typography variant="body2" sx={{ color: '#065F46', whiteSpace: 'pre-line' }}>
-                                {item.aiFlag.suggestedText}
-                              </Typography>
-                            </Box>
-                            <Typography variant="caption" sx={{ color: '#71717A', mt: 0.5, display: 'block' }}>
-                              69 characters
-                            </Typography>
-                          </Box>
-                        </Box>
-
-                        <Box sx={{ p: 1.5, bgcolor: '#FEF9C3', borderRadius: '6px', mb: 2 }}>
-                          <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
-                            <WarningAmberIcon sx={{ color: '#CA8A04', fontSize: '18px', mt: 0.25 }} />
-                            <Box>
-                              <Typography variant="subtitle2" sx={{ fontWeight: 600, color: '#854D0E', mb: 0.5 }}>
-                                Why AI Flagged This Item
-                              </Typography>
-                              <Typography variant="body2" sx={{ color: '#854D0E' }}>
-                                {item.aiFlag.reason}
-                              </Typography>
-                            </Box>
-                          </Box>
-                        </Box>
-
-                        <Box sx={{ display: 'flex', gap: 1 }}>
-                          <Button
-                            variant="outlined"
-                            startIcon={<EditIcon />}
-                            fullWidth
-                            sx={{
-                              borderColor: '#FCA5A5',
-                              color: '#991B1B',
-                              '&:hover': {
-                                borderColor: '#F87171',
-                                bgcolor: '#FEF2F2',
-                              },
-                            }}
-                          >
-                            Edit Personalization
-                          </Button>
-                          <Button
-                            variant="contained"
-                            startIcon={<CheckCircleIcon />}
-                            fullWidth
-                            sx={{
-                              bgcolor: '#0EA5E9',
-                              '&:hover': {
-                                bgcolor: '#0284C7',
-                              },
-                            }}
-                          >
-                            Save & Map
-                          </Button>
-                        </Box>
-                      </Box>
-                    )}
+                    <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                      {isGenerated && item.coverImageUrl && (
+                        <Button size="small" variant="outlined" endIcon={<OpenInNewIcon />} onClick={() => window.open(buildOrderFileUrl(item.coverImageUrl), '_blank')}>
+                          Generated Cover
+                        </Button>
+                      )}
+                      {isGenerated && item.interiorPdfUrl && (
+                        <Button size="small" variant="outlined" endIcon={<OpenInNewIcon />} onClick={() => window.open(buildOrderFileUrl(item.interiorPdfUrl), '_blank')}>
+                          Generated Interior
+                        </Button>
+                      )}
+                      {canManage && (
+                        <Button size="small" variant="outlined" startIcon={<EditIcon />} onClick={() => handleOpenTemplate(item)}>
+                          Edit Values
+                        </Button>
+                      )}
+                      {canManage && item.productId && (
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          startIcon={<EditIcon />}
+                          onClick={() => navigate(`/product-library-2/product/${item.productId}/designer`)}
+                        >
+                          Product Canvas
+                        </Button>
+                      )}
+                      {canManage && (
+                        <Button
+                          size="small"
+                          variant="contained"
+                          disabled={!canSendToLulu}
+                          onClick={() => handleApproveLulu(item)}
+                          sx={{ bgcolor: '#F97316', '&:hover': { bgcolor: '#EA580C' } }}
+                        >
+                          Approve & Send
+                        </Button>
+                      )}
+                    </Box>
                   </Box>
+                  {!canSendToLulu && (
+                    <Alert severity="warning" sx={{ mt: 1.5, borderRadius: '8px' }}>
+                      Missing {[!isGenerated && 'generated PDFs', isGenerated && !item.coverImageUrl && 'generated cover', isGenerated && !item.interiorPdfUrl && 'generated interior', !item.podPackageId && 'POD package ID'].filter(Boolean).join(', ')} before Lulu submission.
+                    </Alert>
+                  )}
                 </Box>
+              )
+            })}
+            {generatedItems.length === 0 && (
+              <Alert severity="info" sx={{ borderRadius: '8px' }}>
+                No generated PDFs yet. Generate the ready items, then inspect or edit the cover/interior before approving for Lulu.
+              </Alert>
+            )}
+          </DetailPanel>
+
+          <DetailPanel title="Activity" icon={<CheckCircleIcon sx={{ color: '#71717A' }} />}>
+            {group.events?.length > 0 ? (
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                {group.events.slice(0, 8).map((event) => (
+                  <Box key={event._id} sx={{ p: 1.5, bgcolor: '#FAFAFA', borderRadius: '8px', border: '1px solid #E3E3E7' }}>
+                    <Typography variant="body2" sx={{ color: '#27272A', fontWeight: 700 }}>
+                      {String(event.type || event.action || 'Order update').replace(/_/g, ' ')}
+                    </Typography>
+                    {event.note && (
+                      <Typography variant="body2" sx={{ color: '#71717A', mt: 0.25 }}>
+                        {event.note}
+                      </Typography>
+                    )}
+                    <Typography variant="caption" sx={{ color: '#A1A1AA' }}>
+                      {formatDate(event.createdAt, true)}
+                    </Typography>
+                  </Box>
+                ))}
               </Box>
-            ))}
-          </Paper>
+            ) : (
+              <Typography variant="body2" sx={{ color: '#A1A1AA' }}>No activity yet.</Typography>
+            )}
+          </DetailPanel>
         </Box>
 
-        {/* Right Column */}
-        <Box>
-          {/* Customer Info */}
-          <Paper sx={{ p: 3, mb: 3, borderRadius: '12px', border: '1px solid #E3E3E7' }}>
-            <Typography variant="h6" sx={{ fontWeight: 600, color: '#27272A', mb: 2 }}>
-              Customer Info
-            </Typography>
-
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+          <DetailPanel title="Customer" icon={<PersonOutlineOutlinedIcon sx={{ color: '#71717A' }} />}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
-              <Avatar
-                sx={{
-                  width: 48,
-                  height: 48,
-                  bgcolor: '#F97316',
-                  fontSize: '1.25rem',
-                  fontWeight: 600,
-                }}
-              >
-                EM
+              <Avatar sx={{ width: 48, height: 48, bgcolor: '#F97316', fontSize: '1rem', fontWeight: 700 }}>
+                {getInitials(order.buyerName)}
               </Avatar>
-              <Box>
-                <Typography variant="subtitle1" sx={{ fontWeight: 600, color: '#27272A' }}>
-                  {order.buyerName}
+              <Box sx={{ minWidth: 0 }}>
+                <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#27272A' }}>
+                  {order.buyerName || '-'}
                 </Typography>
-                <Typography variant="body2" sx={{ color: '#71717A' }}>
-                  {order.buyerEmail}
+                <Typography variant="body2" sx={{ color: '#71717A', wordBreak: 'break-word' }}>
+                  {order.buyerEmail || '-'}
                 </Typography>
               </Box>
             </Box>
-
-            <Divider sx={{ my: 2 }} />
-
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-              <Typography sx={{ fontSize: '16px' }}>📍</Typography>
-              <Typography variant="body2" sx={{ color: '#27272A', fontWeight: 500 }}>
-                {order.address.street}
-              </Typography>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+              <InfoStat icon={<EmailOutlinedIcon fontSize="small" />} label="Email" value={order.buyerEmail} />
+              <InfoStat icon={<PhoneOutlinedIcon fontSize="small" />} label="Phone" value={group.shippingAddress?.phone} />
             </Box>
-            <Typography variant="body2" sx={{ color: '#71717A', ml: 3 }}>
-              {order.address.city}, {order.address.state} {order.address.zip}
-            </Typography>
-            <Typography variant="body2" sx={{ color: '#71717A', ml: 3, mb: 2 }}>
-              {order.address.country}
-            </Typography>
+          </DetailPanel>
 
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-              <Typography sx={{ fontSize: '16px' }}>📞</Typography>
-              <Typography variant="body2" sx={{ color: '#27272A' }}>
-                {order.phone}
-              </Typography>
-            </Box>
-
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-              <Typography sx={{ fontSize: '16px' }}>📅</Typography>
-              <Typography variant="body2" sx={{ color: '#71717A' }}>
-                Joined {order.joinedDate}
-              </Typography>
-            </Box>
-
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-              <Typography sx={{ fontSize: '16px' }}>🏷️</Typography>
-              <Typography variant="body2" sx={{ color: '#71717A' }}>
-                Buyer Type: {order.buyerType}
-              </Typography>
-            </Box>
-
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-              <Typography sx={{ fontSize: '16px' }}>📦</Typography>
-              <Typography variant="body2" sx={{ color: '#71717A' }}>
-                Total Orders: {order.totalOrders}
-              </Typography>
-            </Box>
-
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <Typography sx={{ fontSize: '16px' }}>💰</Typography>
-              <Typography variant="body2" sx={{ color: '#71717A' }}>
-                Total Spent: {formatMoney(order.totalSpent)}
-              </Typography>
-            </Box>
-
-            <Button
-              variant="outlined"
-              fullWidth
-              sx={{
-                mt: 2,
-                borderColor: '#E3E3E7',
-                color: '#27272A',
-                '&:hover': {
-                  borderColor: '#D4D4D8',
-                  bgcolor: '#FAFAFA',
-                },
-              }}
-            >
-              View Customer Profile
-            </Button>
-          </Paper>
-
-          {/* Order History */}
-          <Paper sx={{ p: 3, borderRadius: '12px', border: '1px solid #E3E3E7' }}>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-              <Typography variant="h6" sx={{ fontWeight: 600, color: '#27272A' }}>
-                Order History
-              </Typography>
-              <Typography
-                variant="body2"
-                sx={{ color: '#0EA5E9', cursor: 'pointer', fontWeight: 500 }}
-              >
-                View All
-              </Typography>
-            </Box>
-
-            {order.orderHistory.map((historyItem) => (
-              <Box key={historyItem.id} sx={{ mb: 2, '&:last-child': { mb: 0 } }}>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
-                  <Typography variant="body2" sx={{ color: '#0EA5E9', fontWeight: 500 }}>
-                    #{historyItem.id}
+          <DetailPanel title="Shipping" icon={<LocationOnOutlinedIcon sx={{ color: '#71717A' }} />}>
+            {shippingLines.length > 0 ? (
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                {shippingLines.map((line, index) => (
+                  <Typography key={`${line}-${index}`} variant="body2" sx={{ color: index === 0 ? '#27272A' : '#71717A', fontWeight: index === 0 ? 700 : 400 }}>
+                    {line}
                   </Typography>
-                  <Typography variant="body2" sx={{ color: '#27272A', fontWeight: 600 }}>
-                    {formatMoney(historyItem.amount)}
-                  </Typography>
-                </Box>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <Typography variant="caption" sx={{ color: '#71717A' }}>
-                    {historyItem.date}
-                  </Typography>
-                  <Chip
-                    label={historyItem.status}
-                    size="small"
-                    sx={{
-                      height: '20px',
-                      fontSize: '0.7rem',
-                      bgcolor: '#F4F4F5',
-                      color: '#71717A',
-                    }}
-                  />
-                </Box>
+                ))}
               </Box>
-            ))}
+            ) : (
+              <Typography variant="body2" sx={{ color: '#A1A1AA' }}>No shipping address.</Typography>
+            )}
+          </DetailPanel>
 
-            <Divider sx={{ my: 2 }} />
+          <DetailPanel title="Payment" icon={<ReceiptLongOutlinedIcon sx={{ color: '#71717A' }} />}>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.25 }}>
+              <PaymentRow label="Subtotal" value={formatMoney(subtotal)} />
+              <PaymentRow label="Shipping" value={formatMoney(shipping)} />
+              <PaymentRow label="Tax" value={formatMoney(tax)} />
+              <Divider />
+              <PaymentRow label="Order Total" value={formatMoney(order.total)} strong />
+            </Box>
+          </DetailPanel>
 
-            <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-              <Typography variant="body2" sx={{ color: '#71717A' }}>
-                Total Orders
-              </Typography>
-              <Typography variant="body2" sx={{ color: '#27272A', fontWeight: 600 }}>
-                {order.totalOrders}
-              </Typography>
-            </Box>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 1 }}>
-              <Typography variant="body2" sx={{ color: '#71717A' }}>
-                Total Spent
-              </Typography>
-              <Typography variant="body2" sx={{ color: '#27272A', fontWeight: 600 }}>
-                {formatMoney(order.totalSpent)}
-              </Typography>
-            </Box>
-          </Paper>
+          <DetailPanel title="Notes" icon={<NotesOutlinedIcon sx={{ color: '#71717A' }} />}>
+            <Typography variant="body2" sx={{ color: group.notes ? '#27272A' : '#A1A1AA', whiteSpace: 'pre-wrap' }}>
+              {group.notes || 'No notes for this order.'}
+            </Typography>
+          </DetailPanel>
         </Box>
       </Box>
+
+      {canManage && (
+        <OrderFormDialog
+          open={editOpen}
+          mode="edit"
+          activeStore={activeStore}
+          orderGroup={group}
+          onClose={() => setEditOpen(false)}
+          onSaved={() => {
+            setEditOpen(false)
+            fetchGroup()
+          }}
+        />
+      )}
+
+      {canManage && (
+        <TemplatePersonalizationDialog
+          open={templateOpen}
+          order={templateOrder}
+          product={templateProduct}
+          onClose={() => setTemplateOpen(false)}
+          onFinalized={() => {
+            setTemplateOpen(false)
+            fetchGroup()
+          }}
+        />
+      )}
+
+      {canManage && (
+        <LuluReviewDialog
+          open={luluOpen}
+          order={luluOrder}
+          onClose={() => setLuluOpen(false)}
+          onSubmitted={() => {
+            setLuluOpen(false)
+            fetchGroup()
+          }}
+        />
+      )}
+
+      <Snackbar
+        open={snack.open}
+        autoHideDuration={4000}
+        onClose={() => setSnack((current) => ({ ...current, open: false }))}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+      >
+        <Alert
+          onClose={() => setSnack((current) => ({ ...current, open: false }))}
+          severity={snack.severity}
+          variant="filled"
+          sx={{ width: '100%' }}
+        >
+          {snack.message}
+        </Alert>
+      </Snackbar>
     </Box>
   )
 }
