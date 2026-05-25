@@ -9,7 +9,6 @@ import Divider from '@mui/material/Divider'
 import DashboardIcon from '@mui/icons-material/DashboardOutlined'
 import ShoppingCartIcon from '@mui/icons-material/ShoppingCartOutlined'
 import LocalPrintshopIcon from '@mui/icons-material/LocalPrintshopOutlined'
-import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdfOutlined'
 import InventoryIcon from '@mui/icons-material/Inventory2Outlined'
 import GroupIcon from '@mui/icons-material/GroupOutlined'
 import StoreIcon from '@mui/icons-material/StorefrontOutlined'
@@ -33,7 +32,6 @@ const MAIN_NAV = [
   { title: 'Dashboard', path: '/dashboard', icon: DashboardIcon },
   { title: 'Etsy Orders', path: '/orders/etsy', icon: ShoppingCartIcon },
   { title: 'Etsy 2', path: '/orders/etsy2', icon: ShoppingCartIcon },
-  { title: 'Generated PDFs', path: '/orders/generated-pdfs', icon: PictureAsPdfIcon },
   { title: 'Lulu Orders', path: '/orders/lulu', icon: LocalPrintshopIcon },
   { title: 'Product Library 2', path: '/product-library-2', icon: InventoryIcon },
 ]

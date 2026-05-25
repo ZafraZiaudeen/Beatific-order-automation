@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Alert,
   Avatar,
@@ -16,29 +16,28 @@ import {
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import CalendarTodayOutlinedIcon from '@mui/icons-material/CalendarTodayOutlined'
 import CheckCircleIcon from '@mui/icons-material/CheckCircle'
+import DownloadOutlinedIcon from '@mui/icons-material/DownloadOutlined'
 import EditIcon from '@mui/icons-material/Edit'
 import EmailOutlinedIcon from '@mui/icons-material/EmailOutlined'
 import Inventory2OutlinedIcon from '@mui/icons-material/Inventory2Outlined'
 import LocalShippingOutlinedIcon from '@mui/icons-material/LocalShippingOutlined'
 import LocationOnOutlinedIcon from '@mui/icons-material/LocationOnOutlined'
+import MoreVertIcon from '@mui/icons-material/MoreVert'
 import NotesOutlinedIcon from '@mui/icons-material/NotesOutlined'
-import OpenInNewIcon from '@mui/icons-material/OpenInNew'
 import PersonOutlineOutlinedIcon from '@mui/icons-material/PersonOutlineOutlined'
 import PhoneOutlinedIcon from '@mui/icons-material/PhoneOutlined'
-import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdfOutlined'
 import PrintIcon from '@mui/icons-material/Print'
 import ReceiptLongOutlinedIcon from '@mui/icons-material/ReceiptLongOutlined'
 import SyncIcon from '@mui/icons-material/Sync'
+import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined'
 import WarningAmberIcon from '@mui/icons-material/WarningAmber'
 import api from '../lib/api'
 import useAuthStore from '../stores/authStore'
 import { canManageWorkspace } from '../lib/permissions'
 import { buildAssetThumbnailUrl } from '../lib/assets'
-import LuluReviewDialog from '../components/orders/LuluReviewDialog'
 import OrderFormDialog from '../components/orders/OrderFormDialog'
-import TemplatePersonalizationDialog from '../components/orders/TemplatePersonalizationDialog'
 import Etsy2StatusBadge from '../components/etsy2/Etsy2StatusBadge'
-import { deriveBatchStatus } from '../lib/etsy2Constants'
+import { deriveBatchStatus, ITEM_STATUSES } from '../lib/etsy2Constants'
 import {
   addressLines,
   buildOrderFileUrl,
@@ -52,6 +51,7 @@ import {
 } from '../lib/etsy2Orders'
 
 const valueOrDash = (value) => value || '-'
+const isImageUrl = (value = '') => /\.(png|jpe?g|webp|gif|svg)(\?.*)?$/i.test(value)
 
 function InfoStat({ icon, label, value }) {
   return (
@@ -94,6 +94,118 @@ function DetailPanel({ title, icon, action, children }) {
       </Box>
       {children}
     </Paper>
+  )
+}
+
+function GeneratedPdfPreview({ asset }) {
+  if (!asset?.url) {
+    return (
+      <Box
+        sx={{
+          height: { xs: 420, lg: 620 },
+          bgcolor: '#1F2933',
+          borderRadius: '8px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          color: '#CBD5E1',
+        }}
+      >
+        <Typography variant="body2" sx={{ fontWeight: 700 }}>
+          No generated PDF available
+        </Typography>
+      </Box>
+    )
+  }
+
+  return (
+    <Box
+      sx={{
+        height: { xs: 460, lg: 660 },
+        bgcolor: '#1F2933',
+        borderRadius: '8px',
+        overflow: 'hidden',
+        border: '1px solid #111827',
+      }}
+    >
+      {isImageUrl(asset.url) ? (
+        <Box
+          component="img"
+          src={buildAssetThumbnailUrl(asset.url, 1200)}
+          alt=""
+          sx={{ width: '100%', height: '100%', objectFit: 'contain', bgcolor: '#111827' }}
+        />
+      ) : (
+        <Box
+          component="iframe"
+          title={asset.label}
+          src={asset.url}
+          sx={{ width: '100%', height: '100%', border: 0, bgcolor: '#1F2933' }}
+        />
+      )}
+    </Box>
+  )
+}
+
+function GeneratedThumb({ asset, active, index, onClick }) {
+  return (
+    <Box
+      onClick={onClick}
+      sx={{
+        width: 112,
+        cursor: 'pointer',
+        textAlign: 'center',
+      }}
+    >
+      <Box
+        sx={{
+          width: 112,
+          height: 136,
+          borderRadius: '8px',
+          border: '2px solid',
+          borderColor: active ? '#5B21D6' : '#E5E7EB',
+          bgcolor: '#FFFFFF',
+          overflow: 'hidden',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          boxShadow: active ? '0 8px 20px rgba(91, 33, 214, 0.14)' : 'none',
+        }}
+      >
+        {asset?.url && isImageUrl(asset.url) ? (
+          <Box
+            component="img"
+            src={buildAssetThumbnailUrl(asset.url, 240)}
+            alt=""
+            sx={{ width: '100%', height: '100%', objectFit: 'cover' }}
+          />
+        ) : (
+          <Box sx={{ px: 1.5 }}>
+            <ReceiptLongOutlinedIcon sx={{ fontSize: 34, color: '#5B21D6', mb: 1 }} />
+            <Typography variant="caption" sx={{ color: '#334155', fontWeight: 800, display: 'block' }}>
+              {asset.label}
+            </Typography>
+          </Box>
+        )}
+      </Box>
+      <Typography
+        variant="caption"
+        sx={{
+          mt: 0.75,
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          minWidth: 22,
+          height: 22,
+          borderRadius: '5px',
+          bgcolor: active ? '#5B21D6' : 'transparent',
+          color: active ? '#FFFFFF' : '#64748B',
+          fontWeight: 800,
+        }}
+      >
+        {index + 1}
+      </Typography>
+    </Box>
   )
 }
 
@@ -200,18 +312,16 @@ function ItemBlock({ item, index }) {
 export default function Etsy2OrderDetailPage() {
   const { orderId } = useParams()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const { activeStore, user } = useAuthStore()
   const canManage = canManageWorkspace(user)
   const [group, setGroup] = useState(null)
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
   const [generating, setGenerating] = useState(false)
+  const [sendingToLulu, setSendingToLulu] = useState(false)
+  const [activePreviewKind, setActivePreviewKind] = useState('cover')
   const [editOpen, setEditOpen] = useState(false)
-  const [templateOpen, setTemplateOpen] = useState(false)
-  const [templateOrder, setTemplateOrder] = useState(null)
-  const [templateProduct, setTemplateProduct] = useState(null)
-  const [luluOpen, setLuluOpen] = useState(false)
-  const [luluOrder, setLuluOrder] = useState(null)
   const [snack, setSnack] = useState({ open: false, message: '', severity: 'success' })
 
   const fetchGroup = useCallback(async () => {
@@ -237,7 +347,31 @@ export default function Etsy2OrderDetailPage() {
   const subtotal = group?.items?.reduce((sum, item) => sum + Number(item.price || 0) * Number(item.quantity || 1), 0) || 0
   const shipping = Number(group?.pricing?.shipping || group?.items?.[0]?.shippingCost || 0)
   const tax = Number(group?.pricing?.tax || 0)
-  const generatedItems = group?.items?.filter((item) => item.templateFinalizedAt && (item.coverImageUrl || item.interiorPdfUrl)) || []
+  const generatedItems = order?.items?.filter((item) =>
+    item.status === ITEM_STATUSES.GENERATED ||
+    item.sourceOrder?.coverImageUrl ||
+    item.sourceOrder?.interiorPdfUrl
+  ) || []
+  const previewItem = generatedItems[0] || order?.items?.[0] || null
+  const previewSource = previewItem?.sourceOrder || {}
+  const previewAssets = [
+    previewSource.coverImageUrl ? {
+      kind: 'cover',
+      label: 'Cover PDF',
+      title: 'Cover Preview',
+      fileName: `${previewItem?.name || 'Cover'}.pdf`,
+      url: buildOrderFileUrl(previewSource.coverImageUrl),
+    } : null,
+    previewSource.interiorPdfUrl ? {
+      kind: 'interior',
+      label: 'Inside Pages',
+      title: 'Inside Page Preview',
+      fileName: `${previewItem?.name || 'Inside Pages'} inside.pdf`,
+      url: buildOrderFileUrl(previewSource.interiorPdfUrl),
+    } : null,
+  ].filter(Boolean)
+  const activeAsset = previewAssets.find((asset) => asset.kind === activePreviewKind) || previewAssets[0]
+  const showGeneratedPreview = searchParams.get('view') === 'generated' || batchStatus === ITEM_STATUSES.GENERATED
 
   const handleSync = async () => {
     if (!activeStore?._id) {
@@ -266,7 +400,7 @@ export default function Etsy2OrderDetailPage() {
 
     setGenerating(true)
     try {
-      const { data } = await api.post(`/orders/group/${encodeURIComponent(order.orderId)}/template-finalize`)
+      const { data } = await api.post(`/orders/group/${encodeURIComponent(order.orderId)}/generate-pdf`)
       const hasErrors = (data.results || []).some((result) => !result.success)
       const firstError = (data.results || []).find((result) => !result.success)?.error
       await fetchGroup()
@@ -286,28 +420,54 @@ export default function Etsy2OrderDetailPage() {
     }
   }
 
-  const handleOpenTemplate = async (item) => {
-    if (!item?.productId) {
-      setSnack({ open: true, message: 'Map this item to a product before editing print PDFs.', severity: 'warning' })
+  const handleSendGeneratedToLulu = async () => {
+    const orderIds = generatedItems.map((item) => item.sourceOrder?._id).filter(Boolean)
+    if (orderIds.length === 0) {
+      setSnack({ open: true, message: 'No generated PDFs are ready for Lulu on this order.', severity: 'warning' })
       return
     }
 
-    setTemplateOrder(item)
-    setTemplateProduct(null)
-    setTemplateOpen(true)
-
+    setSendingToLulu(true)
     try {
-      const { data } = await api.get(`/products/${item.productId}`)
-      setTemplateProduct(data)
+      const { data } = await api.post('/lulu/bulk-submit', { orderIds })
+      await fetchGroup()
+      setSnack({
+        open: true,
+        message: `Sent ${data.submitted || 0} of ${orderIds.length} generated item${orderIds.length === 1 ? '' : 's'} to Lulu.`,
+        severity: data.failed > 0 ? 'warning' : 'success',
+      })
     } catch (err) {
-      setTemplateOpen(false)
-      setSnack({ open: true, message: err.response?.data?.message || 'Failed to load product template', severity: 'error' })
+      setSnack({
+        open: true,
+        message: err.response?.data?.message || err.response?.data?.error || 'Failed to send order to Lulu',
+        severity: 'error',
+      })
+    } finally {
+      setSendingToLulu(false)
     }
   }
 
-  const handleApproveLulu = (item) => {
-    setLuluOrder(item)
-    setLuluOpen(true)
+  const handleDownloadGeneratedPdfs = () => {
+    if (previewAssets.length === 0) {
+      setSnack({ open: true, message: 'No generated PDFs are available to download.', severity: 'warning' })
+      return
+    }
+
+    previewAssets.forEach((asset) => {
+      const link = document.createElement('a')
+      link.href = asset.url
+      link.target = '_blank'
+      link.rel = 'noopener noreferrer'
+      link.download = asset.fileName
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+    })
+  }
+
+  const handleEditInCanvas = () => {
+    const itemQuery = previewSource?._id ? `?itemId=${encodeURIComponent(previewSource._id)}` : ''
+    navigate(`/orders/etsy2/${encodeURIComponent(order.orderId)}/canvas${itemQuery}`)
   }
 
   if (loading) {
@@ -323,6 +483,210 @@ export default function Etsy2OrderDetailPage() {
       <Box sx={{ p: 3 }}>
         <Button startIcon={<ArrowBackIcon />} onClick={() => navigate('/orders/etsy2')}>Back to Orders</Button>
         <Alert severity="error" sx={{ mt: 2 }}>Order not found.</Alert>
+      </Box>
+    )
+  }
+
+  if (showGeneratedPreview) {
+    return (
+      <Box sx={{ p: { xs: 1.5, md: 3 } }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, mb: 2, flexWrap: 'wrap' }}>
+          <Button
+            startIcon={<ArrowBackIcon />}
+            onClick={() => navigate('/orders/etsy2')}
+            sx={{ color: '#64748B', fontWeight: 700, textTransform: 'none' }}
+          >
+            Back to Generated Orders
+          </Button>
+          <Button
+            variant="outlined"
+            startIcon={syncing ? <CircularProgress size={16} /> : <SyncIcon />}
+            onClick={handleSync}
+            disabled={syncing}
+            sx={{ borderColor: '#E5E7EB', color: '#111827', borderRadius: '6px', fontWeight: 700 }}
+          >
+            {syncing ? 'Syncing...' : 'Sync Etsy Orders'}
+          </Button>
+        </Box>
+
+        <Box
+          sx={{
+            bgcolor: '#FFFFFF',
+            border: '1px solid #E5E7EB',
+            borderRadius: '12px',
+            p: { xs: 2, md: 3 },
+            display: 'grid',
+            gridTemplateColumns: { xs: '1fr', xl: 'minmax(0, 1fr) 380px' },
+            gap: 3,
+          }}
+        >
+          <Box sx={{ minWidth: 0 }}>
+            <Box sx={{ mb: 3 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+                <Typography variant="h4" sx={{ fontWeight: 800, color: '#0F172A', fontSize: { xs: '1.6rem', md: '2rem' } }}>
+                  Order #{order.orderId}
+                </Typography>
+                <Etsy2StatusBadge status={ITEM_STATUSES.GENERATED} showIcon={false} />
+              </Box>
+              <Typography variant="body2" sx={{ color: '#64748B', mt: 0.75 }}>
+                Generated on {formatDate(previewSource.templateFinalizedAt || previewSource.updatedAt || order.date, true)}
+              </Typography>
+            </Box>
+
+            <GeneratedPdfPreview asset={activeAsset} />
+
+            <Box sx={{ display: 'flex', gap: 2, mt: 2.5, flexWrap: 'wrap' }}>
+              {previewAssets.map((asset, index) => (
+                <GeneratedThumb
+                  key={asset.kind}
+                  asset={asset}
+                  index={index}
+                  active={asset.kind === activeAsset?.kind}
+                  onClick={() => setActivePreviewKind(asset.kind)}
+                />
+              ))}
+            </Box>
+            <Typography variant="body2" sx={{ color: '#64748B', mt: 2 }}>
+              Showing 1 to {Math.max(previewAssets.length, 1)} of {Math.max(previewAssets.length, 1)} generated file{previewAssets.length === 1 ? '' : 's'}
+            </Typography>
+          </Box>
+
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
+            <Paper sx={{ p: 2.5, borderRadius: '10px', border: '1px solid #E5E7EB', boxShadow: 'none' }}>
+              <Typography variant="h6" sx={{ fontWeight: 800, color: '#0F172A', mb: 2 }}>
+                Order Details
+              </Typography>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.65 }}>
+                {[
+                  ['Order ID', `#${order.orderId}`],
+                  ['Buyer', order.buyerName],
+                  ['Template', previewSource.matchedVariantName || previewSource.projectName || 'Print Template'],
+                  ['Generated Date', formatDate(previewSource.templateFinalizedAt || previewSource.updatedAt || order.date, true)],
+                ].map(([label, value]) => (
+                  <Box key={label} sx={{ display: 'flex', justifyContent: 'space-between', gap: 2 }}>
+                    <Typography variant="body2" sx={{ color: '#64748B', fontWeight: 600 }}>{label}</Typography>
+                    <Typography variant="body2" sx={{ color: label === 'Order ID' ? '#4F46E5' : '#334155', fontWeight: 700, textAlign: 'right' }}>
+                      {valueOrDash(value)}
+                    </Typography>
+                  </Box>
+                ))}
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2, alignItems: 'center' }}>
+                  <Typography variant="body2" sx={{ color: '#64748B', fontWeight: 600 }}>Product</Typography>
+                  <Box sx={{ textAlign: 'right' }}>
+                    <Typography variant="body2" sx={{ color: '#0F172A', fontWeight: 800 }}>
+                      {previewItem?.name || previewSource.productTitle || '-'}
+                    </Typography>
+                    <Typography variant="caption" sx={{ color: '#64748B' }}>
+                      {previewItem?.variant || previewSource.matchedVariantName || 'Print-ready PDF'}
+                    </Typography>
+                  </Box>
+                </Box>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2, alignItems: 'center' }}>
+                  <Typography variant="body2" sx={{ color: '#64748B', fontWeight: 600 }}>Status</Typography>
+                  <Etsy2StatusBadge status={ITEM_STATUSES.GENERATED} showIcon={false} />
+                </Box>
+              </Box>
+
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.25, mt: 3 }}>
+                {canManage && (
+                  <Button
+                    variant="contained"
+                    startIcon={<EditIcon />}
+                    onClick={handleEditInCanvas}
+                    sx={{ bgcolor: '#5B21D6', borderRadius: '6px', fontWeight: 800, '&:hover': { bgcolor: '#4C1D95' } }}
+                  >
+                    Edit in Canvas
+                  </Button>
+                )}
+                {canManage && (
+                  <Button
+                    variant="contained"
+                    startIcon={sendingToLulu ? <CircularProgress size={16} color="inherit" /> : <LocalShippingOutlinedIcon />}
+                    onClick={handleSendGeneratedToLulu}
+                    disabled={sendingToLulu}
+                    sx={{ bgcolor: '#16A34A', borderRadius: '6px', fontWeight: 800, '&:hover': { bgcolor: '#15803D' } }}
+                  >
+                    {sendingToLulu ? 'Sending...' : 'Send to Lulu'}
+                  </Button>
+                )}
+                <Button
+                  variant="outlined"
+                  startIcon={<VisibilityOutlinedIcon />}
+                  onClick={() => activeAsset?.url && window.open(activeAsset.url, '_blank', 'noopener,noreferrer')}
+                  disabled={!activeAsset?.url}
+                  sx={{ borderColor: '#E5E7EB', color: '#111827', borderRadius: '6px', fontWeight: 800 }}
+                >
+                  Preview PDF
+                </Button>
+                <Button
+                  variant="outlined"
+                  startIcon={<DownloadOutlinedIcon />}
+                  onClick={handleDownloadGeneratedPdfs}
+                  sx={{ borderColor: '#E5E7EB', color: '#111827', borderRadius: '6px', fontWeight: 800 }}
+                >
+                  Download PDF
+                </Button>
+                <Button
+                  variant="outlined"
+                  startIcon={<MoreVertIcon />}
+                  sx={{ borderColor: '#E5E7EB', color: '#111827', borderRadius: '6px', fontWeight: 800 }}
+                >
+                  More Actions
+                </Button>
+              </Box>
+            </Paper>
+
+            <Paper sx={{ p: 2.5, borderRadius: '10px', border: '1px solid #E5E7EB', boxShadow: 'none' }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
+                <PersonOutlineOutlinedIcon sx={{ color: '#0F172A' }} />
+                <Typography variant="subtitle1" sx={{ fontWeight: 800, color: '#0F172A' }}>Customer Info</Typography>
+              </Box>
+              <Typography variant="body2" sx={{ color: '#0F172A', fontWeight: 800 }}>{order.buyerName || '-'}</Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 1, color: '#64748B' }}>
+                <EmailOutlinedIcon fontSize="small" />
+                <Typography variant="body2">{order.buyerEmail || '-'}</Typography>
+              </Box>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.75, color: '#64748B' }}>
+                <LocationOnOutlinedIcon fontSize="small" />
+                <Typography variant="body2">{group.shippingAddress?.country || '-'}</Typography>
+              </Box>
+            </Paper>
+
+            <Paper sx={{ p: 2.5, borderRadius: '10px', border: '1px solid #E5E7EB', boxShadow: 'none' }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
+                <CheckCircleIcon sx={{ color: '#0F172A' }} />
+                <Typography variant="subtitle1" sx={{ fontWeight: 800, color: '#0F172A' }}>Order History</Typography>
+              </Box>
+              <Box sx={{ display: 'flex', gap: 1.25, alignItems: 'flex-start' }}>
+                <CheckCircleIcon sx={{ color: '#5B21D6', fontSize: 20, mt: 0.2 }} />
+                <Box>
+                  <Typography variant="body2" sx={{ color: '#334155', fontWeight: 800 }}>
+                    {formatDate(previewSource.templateFinalizedAt || previewSource.updatedAt || order.date, true)}
+                  </Typography>
+                  <Typography variant="body2" sx={{ color: '#64748B' }}>
+                    PDF generated successfully
+                  </Typography>
+                </Box>
+              </Box>
+            </Paper>
+          </Box>
+        </Box>
+
+        <Snackbar
+          open={snack.open}
+          autoHideDuration={4000}
+          onClose={() => setSnack((current) => ({ ...current, open: false }))}
+          anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+        >
+          <Alert
+            onClose={() => setSnack((current) => ({ ...current, open: false }))}
+            severity={snack.severity}
+            variant="filled"
+            sx={{ width: '100%' }}
+          >
+            {snack.message}
+          </Alert>
+        </Snackbar>
       </Box>
     )
   }
@@ -425,93 +789,6 @@ export default function Etsy2OrderDetailPage() {
             ))}
           </DetailPanel>
 
-          <DetailPanel
-            title="Generated Print PDFs"
-            icon={<PictureAsPdfIcon sx={{ color: '#71717A' }} />}
-            action={canManage && (
-              <Button
-                size="small"
-                variant="outlined"
-                startIcon={generating ? <CircularProgress size={14} /> : <PrintIcon />}
-                onClick={handleGenerate}
-                disabled={generating}
-                sx={{ borderColor: '#E3E3E7', color: '#27272A' }}
-              >
-                Generate All
-              </Button>
-            )}
-          >
-            {group.items.map((item) => {
-              const isGenerated = Boolean(item.templateFinalizedAt && (item.coverImageUrl || item.interiorPdfUrl))
-              const canSendToLulu = Boolean(isGenerated && item.coverImageUrl && item.interiorPdfUrl && item.podPackageId)
-              return (
-                <Box key={item._id} sx={{ py: 2, borderTop: '1px solid #E3E3E7', '&:first-of-type': { borderTop: 0, pt: 0 } }}>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-                    <Box sx={{ minWidth: 0 }}>
-                      <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
-                        <Typography variant="subtitle2" sx={{ color: '#27272A', fontWeight: 700 }}>
-                          {item.productTitle}
-                        </Typography>
-                        <Etsy2StatusBadge status={isGenerated ? 'generated' : getItemStatus(item)} />
-                      </Box>
-                      <Typography variant="caption" sx={{ display: 'block', color: '#71717A', mt: 0.5 }}>
-                        POD package: {item.podPackageId || 'Missing'} / Txn {item.etsyItemId || '-'}
-                      </Typography>
-                    </Box>
-                    <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                      {isGenerated && item.coverImageUrl && (
-                        <Button size="small" variant="outlined" endIcon={<OpenInNewIcon />} onClick={() => window.open(buildOrderFileUrl(item.coverImageUrl), '_blank')}>
-                          Generated Cover
-                        </Button>
-                      )}
-                      {isGenerated && item.interiorPdfUrl && (
-                        <Button size="small" variant="outlined" endIcon={<OpenInNewIcon />} onClick={() => window.open(buildOrderFileUrl(item.interiorPdfUrl), '_blank')}>
-                          Generated Interior
-                        </Button>
-                      )}
-                      {canManage && (
-                        <Button size="small" variant="outlined" startIcon={<EditIcon />} onClick={() => handleOpenTemplate(item)}>
-                          Edit Values
-                        </Button>
-                      )}
-                      {canManage && item.productId && (
-                        <Button
-                          size="small"
-                          variant="outlined"
-                          startIcon={<EditIcon />}
-                          onClick={() => navigate(`/product-library-2/product/${item.productId}/designer`)}
-                        >
-                          Product Canvas
-                        </Button>
-                      )}
-                      {canManage && (
-                        <Button
-                          size="small"
-                          variant="contained"
-                          disabled={!canSendToLulu}
-                          onClick={() => handleApproveLulu(item)}
-                          sx={{ bgcolor: '#F97316', '&:hover': { bgcolor: '#EA580C' } }}
-                        >
-                          Approve & Send
-                        </Button>
-                      )}
-                    </Box>
-                  </Box>
-                  {!canSendToLulu && (
-                    <Alert severity="warning" sx={{ mt: 1.5, borderRadius: '8px' }}>
-                      Missing {[!isGenerated && 'generated PDFs', isGenerated && !item.coverImageUrl && 'generated cover', isGenerated && !item.interiorPdfUrl && 'generated interior', !item.podPackageId && 'POD package ID'].filter(Boolean).join(', ')} before Lulu submission.
-                    </Alert>
-                  )}
-                </Box>
-              )
-            })}
-            {generatedItems.length === 0 && (
-              <Alert severity="info" sx={{ borderRadius: '8px' }}>
-                No generated PDFs yet. Generate the ready items, then inspect or edit the cover/interior before approving for Lulu.
-              </Alert>
-            )}
-          </DetailPanel>
-
           <DetailPanel title="Activity" icon={<CheckCircleIcon sx={{ color: '#71717A' }} />}>
             {group.events?.length > 0 ? (
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
@@ -599,31 +876,6 @@ export default function Etsy2OrderDetailPage() {
           onClose={() => setEditOpen(false)}
           onSaved={() => {
             setEditOpen(false)
-            fetchGroup()
-          }}
-        />
-      )}
-
-      {canManage && (
-        <TemplatePersonalizationDialog
-          open={templateOpen}
-          order={templateOrder}
-          product={templateProduct}
-          onClose={() => setTemplateOpen(false)}
-          onFinalized={() => {
-            setTemplateOpen(false)
-            fetchGroup()
-          }}
-        />
-      )}
-
-      {canManage && (
-        <LuluReviewDialog
-          open={luluOpen}
-          order={luluOrder}
-          onClose={() => setLuluOpen(false)}
-          onSubmitted={() => {
-            setLuluOpen(false)
             fetchGroup()
           }}
         />

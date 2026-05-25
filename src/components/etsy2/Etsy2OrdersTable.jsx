@@ -2,6 +2,8 @@ import { useState } from 'react'
 import {
   Avatar,
   Box,
+  Checkbox,
+  CircularProgress,
   Collapse,
   IconButton,
   Paper,
@@ -23,7 +25,15 @@ import Etsy2StatusBadge from './Etsy2StatusBadge'
 import { deriveBatchStatus } from '../../lib/etsy2Constants'
 import { formatDate, formatMoney, getInitials } from '../../lib/etsy2Orders'
 
-function OrderRow({ order, onViewOrder, onGenerateOrder }) {
+function OrderRow({
+  order,
+  onViewOrder,
+  onGenerateOrder,
+  canManage,
+  selected,
+  onToggleOrder,
+  generating,
+}) {
   const [open, setOpen] = useState(false)
   const batchStatus = deriveBatchStatus(order.items)
   const hasAIFlag = order.items?.some((item) => item.status === 'ai_flagged')
@@ -39,6 +49,16 @@ function OrderRow({ order, onViewOrder, onGenerateOrder }) {
           cursor: 'pointer',
         }}
       >
+        {canManage && (
+          <TableCell sx={{ width: 48 }}>
+            <Checkbox
+              checked={selected}
+              onClick={(e) => e.stopPropagation()}
+              onChange={(e) => onToggleOrder?.(order.orderId, e.target.checked)}
+            />
+          </TableCell>
+        )}
+
         <TableCell sx={{ width: 48 }}>
           <IconButton
             size="small"
@@ -140,22 +160,25 @@ function OrderRow({ order, onViewOrder, onGenerateOrder }) {
               </IconButton>
             </Tooltip>
             <Tooltip title="Generate PDFs">
-              <IconButton
-                size="small"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onGenerateOrder?.(order)
-                }}
-              >
-                <PrintOutlinedIcon sx={{ fontSize: '18px' }} />
-              </IconButton>
+              <span>
+                <IconButton
+                  size="small"
+                  disabled={generating}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onGenerateOrder?.(order)
+                  }}
+                >
+                  {generating ? <CircularProgress size={18} /> : <PrintOutlinedIcon sx={{ fontSize: '18px' }} />}
+                </IconButton>
+              </span>
             </Tooltip>
           </Box>
         </TableCell>
       </TableRow>
 
       <TableRow>
-        <TableCell style={{ paddingBottom: 0, paddingTop: 0 }} colSpan={9}>
+        <TableCell style={{ paddingBottom: 0, paddingTop: 0 }} colSpan={canManage ? 10 : 9}>
           <Collapse in={open} timeout="auto" unmountOnExit>
             <Box sx={{ py: 2, px: 3, bgcolor: '#FAFAFA' }}>
               <Typography variant="subtitle2" sx={{ mb: 1.5, color: '#27272A', fontWeight: 600 }}>
@@ -233,12 +256,32 @@ function OrderRow({ order, onViewOrder, onGenerateOrder }) {
   )
 }
 
-export default function Etsy2OrdersTable({ orders = [], onViewOrder, onGenerateOrder }) {
+export default function Etsy2OrdersTable({
+  orders = [],
+  onViewOrder,
+  onGenerateOrder,
+  canManage = false,
+  selectedOrderIds = [],
+  onToggleOrder,
+  onToggleVisible,
+  allVisibleSelected = false,
+  partiallyVisibleSelected = false,
+  generatingOrderIds = {},
+}) {
   return (
     <TableContainer component={Paper} sx={{ borderRadius: '12px', boxShadow: 'none', border: '1px solid #E3E3E7' }}>
       <Table>
         <TableHead>
           <TableRow sx={{ bgcolor: '#FAFAFA' }}>
+            {canManage && (
+              <TableCell sx={{ width: 48 }}>
+                <Checkbox
+                  checked={allVisibleSelected}
+                  indeterminate={partiallyVisibleSelected}
+                  onChange={(e) => onToggleVisible?.(e.target.checked)}
+                />
+              </TableCell>
+            )}
             <TableCell sx={{ width: 48 }} />
             <TableCell sx={{ fontWeight: 600, color: '#71717A', fontSize: '0.75rem', textTransform: 'uppercase' }}>
               Order #
@@ -273,6 +316,10 @@ export default function Etsy2OrdersTable({ orders = [], onViewOrder, onGenerateO
               order={order}
               onViewOrder={onViewOrder}
               onGenerateOrder={onGenerateOrder}
+              canManage={canManage}
+              selected={selectedOrderIds.includes(order.orderId)}
+              onToggleOrder={onToggleOrder}
+              generating={Boolean(generatingOrderIds[order.orderId])}
             />
           ))}
         </TableBody>

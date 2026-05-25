@@ -10,9 +10,9 @@ import EtsyOrdersPage from './pages/EtsyOrdersPage'
 import EtsyOrderDetailPage from './pages/EtsyOrderDetailPage'
 import Etsy2OrdersPage from './pages/Etsy2OrdersPage'
 import Etsy2OrderDetailPage from './pages/Etsy2OrderDetailPage'
+import Etsy2CanvasEditorPage from './pages/Etsy2CanvasEditorPage'
 import Etsy2ItemMappingPage from './pages/Etsy2ItemMappingPage'
 import Etsy2StatusFlowPage from './pages/Etsy2StatusFlowPage'
-import GeneratedPdfsPage from './pages/GeneratedPdfsPage'
 import LuluOrdersPage from './pages/LuluOrdersPage'
 import TeamPage from './pages/TeamPage'
 import StoresPage from './pages/StoresPage'
@@ -40,6 +40,15 @@ export default function App() {
         <Route path="/verify-email" element={<VerifyEmailPage />} />
         <Route path="/invite/:token" element={<AcceptInvitePage />} />
 
+        <Route
+          path="/orders/etsy2/:orderId/canvas"
+          element={
+            <ProtectedRoute>
+              <Etsy2CanvasEditorPage />
+            </ProtectedRoute>
+          }
+        />
+
         {/* Dashboard routes — protected */}
         <Route
           element={
@@ -54,10 +63,9 @@ export default function App() {
           <Route path="/orders/etsy" element={<EtsyOrdersPage />} />
           <Route path="/orders/etsy/:etsyOrderId" element={<EtsyOrderDetailPage />} />
           <Route path="/orders/etsy2" element={<Etsy2OrdersPage />} />
-          <Route path="/orders/etsy2/:orderId" element={<Etsy2OrderDetailPage />} />
           <Route path="/orders/etsy2/:orderId/item/:itemId/mapping" element={<Etsy2ItemMappingPage />} />
+          <Route path="/orders/etsy2/:orderId" element={<Etsy2OrderDetailPage />} />
           <Route path="/orders/etsy2/flow" element={<Etsy2StatusFlowPage />} />
-          <Route path="/orders/generated-pdfs" element={<GeneratedPdfsPage />} />
           <Route path="/orders/lulu" element={<LuluOrdersPage />} />
 
           {/* Products */}

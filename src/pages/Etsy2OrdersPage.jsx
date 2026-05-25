@@ -17,27 +17,27 @@ import {
   ToggleButton,
   ToggleButtonGroup,
   Tooltip,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  Checkbox,
-  LinearProgress,
 } from '@mui/material'
 import SearchIcon from '@mui/icons-material/Search'
 import SyncIcon from '@mui/icons-material/Sync'
 import AddIcon from '@mui/icons-material/Add'
 import PrintIcon from '@mui/icons-material/Print'
+import FileDownloadOutlinedIcon from '@mui/icons-material/FileDownloadOutlined'
+import FilterListOutlinedIcon from '@mui/icons-material/FilterListOutlined'
+import LocalShippingOutlinedIcon from '@mui/icons-material/LocalShippingOutlined'
+import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown'
 import ViewListOutlinedIcon from '@mui/icons-material/ViewListOutlined'
 import ViewKanbanOutlinedIcon from '@mui/icons-material/ViewKanbanOutlined'
 import Etsy2OrdersTable from '../components/etsy2/Etsy2OrdersTable'
+import Etsy2GeneratedOrdersTable from '../components/etsy2/Etsy2GeneratedOrdersTable'
 import OrderKanban from '../components/orders/OrderKanban'
 import OrderFormDialog from '../components/orders/OrderFormDialog'
 import api from '../lib/api'
 import useAuthStore from '../stores/authStore'
 import { canManageWorkspace } from '../lib/permissions'
-import { ORDER_FILTERS } from '../lib/etsy2Constants'
-import { buildOrderGroups, getPresetDateRange, reviewFlagsFor, toEtsy2Order } from '../lib/etsy2Orders'
+import { ITEM_STATUSES, ORDER_FILTERS } from '../lib/etsy2Constants'
+import { getGeneratedOrderSourceIds } from '../lib/generatedOrders'
+import { buildOrderGroups, getPresetDateRange, toEtsy2Order } from '../lib/etsy2Orders'
 
 const ITEMS_PER_PAGE = 10
 
@@ -62,10 +62,11 @@ export default function Etsy2OrdersPage() {
   const [view, setView] = useState(() => localStorage.getItem('beatific_etsy2_order_view') || 'list')
   const [statusCounts, setStatusCounts] = useState({})
   const [syncing, setSyncing] = useState(false)
-  const [bulkOpen, setBulkOpen] = useState(false)
+  const [selectedOrderIds, setSelectedOrderIds] = useState([])
+  const [generatingOrderIds, setGeneratingOrderIds] = useState({})
   const [bulkGenerating, setBulkGenerating] = useState(false)
-  const [bulkSelected, setBulkSelected] = useState([])
-  const [bulkResults, setBulkResults] = useState([])
+  const [sendingOrderIds, setSendingOrderIds] = useState({})
+  const [bulkSending, setBulkSending] = useState(false)
   const [manualOpen, setManualOpen] = useState(false)
   const [snack, setSnack] = useState({ open: false, message: '', severity: 'success' })
 
@@ -113,6 +114,7 @@ export default function Etsy2OrdersPage() {
 
   useEffect(() => {
     setPage(1)
+    setSelectedOrderIds([])
   }, [activeFilter, dateRange, search, activeStore?._id, view])
 
   const etsy2Orders = useMemo(
@@ -138,22 +140,6 @@ export default function Etsy2OrdersPage() {
     )),
     [activeFilter, etsy2Orders]
   )
-
-  const readyForGeneration = useMemo(() => {
-    const groups = buildOrderGroups(orders)
-    return groups
-      .map((group) => {
-        const readyItems = group.items.filter((item) => (
-          item.requiresTemplateFinalization &&
-          item.isProductMapped &&
-          !item.templateFinalizedAt &&
-          reviewFlagsFor(item).length === 0 &&
-          item.podPackageId
-        ))
-        return { group, order: toEtsy2Order(group), readyItems }
-      })
-      .filter((entry) => entry.readyItems.length > 0)
-  }, [orders])
 
   const totalPages = Math.max(1, Math.ceil(filteredOrders.length / ITEMS_PER_PAGE))
   const paginatedOrders = filteredOrders.slice(
@@ -197,8 +183,9 @@ export default function Etsy2OrdersPage() {
     const etsyOrderId = order?.orderId || order?.etsyOrderId
     if (!etsyOrderId) return
 
+    setGeneratingOrderIds((current) => ({ ...current, [etsyOrderId]: true }))
     try {
-      const { data } = await api.post(`/orders/group/${encodeURIComponent(etsyOrderId)}/template-finalize`)
+      const { data } = await api.post(`/orders/group/${encodeURIComponent(etsyOrderId)}/generate-pdf`)
       const hasErrors = (data.results || []).some((result) => !result.success)
       const firstError = (data.results || []).find((result) => !result.success)?.error
       await Promise.all([fetchOrders(), fetchCounts()])
@@ -213,43 +200,48 @@ export default function Etsy2OrdersPage() {
         message: err.response?.data?.error || err.message || 'Failed to generate PDFs',
         severity: 'error',
       })
+    } finally {
+      setGeneratingOrderIds((current) => {
+        const next = { ...current }
+        delete next[etsyOrderId]
+        return next
+      })
     }
   }
 
-  const openBulkGenerate = () => {
-    const ids = readyForGeneration.map((entry) => entry.group.etsyOrderId)
-    setBulkSelected(ids)
-    setBulkResults([])
-    setBulkOpen(true)
-  }
-
   const handleBulkGenerate = async () => {
-    if (bulkSelected.length === 0) return
+    if (selectedOrderIds.length === 0) return
     setBulkGenerating(true)
-    setBulkResults([])
-
     const results = []
-    for (const etsyOrderId of bulkSelected) {
+    setGeneratingOrderIds((current) => selectedOrderIds.reduce((next, id) => ({ ...next, [id]: true }), { ...current }))
+
+    for (const etsyOrderId of selectedOrderIds) {
       try {
-        const { data } = await api.post(`/orders/group/${encodeURIComponent(etsyOrderId)}/template-finalize`)
+        const { data } = await api.post(`/orders/group/${encodeURIComponent(etsyOrderId)}/generate-pdf`)
         const hasErrors = (data.results || []).some((result) => !result.success)
+        const firstError = (data.results || []).find((result) => !result.success)?.error
         results.push({
           etsyOrderId,
           success: !hasErrors,
-          message: data.message || 'Generated',
+          message: hasErrors ? firstError || data.message || 'Generation completed with errors' : data.message || 'Generated',
         })
       } catch (err) {
         results.push({
           etsyOrderId,
           success: false,
-          message: err.response?.data?.message || err.message || 'Generation failed',
+          message: err.response?.data?.error || err.response?.data?.message || err.message || 'Generation failed',
         })
       }
-      setBulkResults([...results])
+      setGeneratingOrderIds((current) => {
+        const next = { ...current }
+        delete next[etsyOrderId]
+        return next
+      })
     }
 
     await Promise.all([fetchOrders(), fetchCounts()])
     setBulkGenerating(false)
+    setSelectedOrderIds([])
     setSnack({
       open: true,
       message: `Generated ${results.filter((result) => result.success).length} of ${results.length} selected order groups`,
@@ -265,6 +257,99 @@ export default function Etsy2OrdersPage() {
   const handleFilterChange = (filterValue) => {
     setActiveFilter(filterValue)
     setPage(1)
+    setSelectedOrderIds([])
+  }
+
+  const handleToggleOrder = (orderId, checked) => {
+    setSelectedOrderIds((current) => (
+      checked
+        ? [...new Set([...current, orderId])]
+        : current.filter((id) => id !== orderId)
+    ))
+  }
+
+  const handleToggleVisible = (checked) => {
+    const visibleIds = paginatedOrders.map((order) => order.orderId)
+    setSelectedOrderIds((current) => (
+      checked
+        ? [...new Set([...current, ...visibleIds])]
+        : current.filter((id) => !visibleIds.includes(id))
+    ))
+  }
+
+  const selectedVisibleCount = paginatedOrders.filter((order) => selectedOrderIds.includes(order.orderId)).length
+  const generatedFilterActive = activeFilter === ITEM_STATUSES.GENERATED
+
+  const openGeneratedPreview = (order) => {
+    const etsyOrderId = order?.orderId || order?.etsyOrderId || order?.firstOrder?.etsyOrderId
+    if (etsyOrderId) navigate(`/orders/etsy2/${encodeURIComponent(etsyOrderId)}?view=generated`)
+  }
+
+  const handleEditCanvas = (order) => {
+    const etsyOrderId = order?.orderId || order?.etsyOrderId || order?.firstOrder?.etsyOrderId
+    if (etsyOrderId) navigate(`/orders/etsy2/${encodeURIComponent(etsyOrderId)}/canvas`)
+  }
+
+  const handleSendToLulu = async (order) => {
+    const sourceIds = getGeneratedOrderSourceIds(order)
+    if (sourceIds.length === 0) {
+      setSnack({ open: true, message: 'No generated PDFs are ready for Lulu on this order.', severity: 'warning' })
+      return
+    }
+
+    setSendingOrderIds((current) => ({ ...current, [order.orderId]: true }))
+    try {
+      const { data } = await api.post('/lulu/bulk-submit', { orderIds: sourceIds })
+      await Promise.all([fetchOrders(), fetchCounts()])
+      setSnack({
+        open: true,
+        message: `Sent ${data.submitted || 0} of ${sourceIds.length} generated item${sourceIds.length === 1 ? '' : 's'} to Lulu.`,
+        severity: data.failed > 0 ? 'warning' : 'success',
+      })
+    } catch (err) {
+      setSnack({
+        open: true,
+        message: err.response?.data?.message || err.response?.data?.error || 'Failed to send order to Lulu',
+        severity: 'error',
+      })
+    } finally {
+      setSendingOrderIds((current) => {
+        const next = { ...current }
+        delete next[order.orderId]
+        return next
+      })
+    }
+  }
+
+  const handleBulkSendToLulu = async () => {
+    const selectedOrders = filteredOrders.filter((order) => selectedOrderIds.includes(order.orderId))
+    const sourceIds = selectedOrders.flatMap(getGeneratedOrderSourceIds)
+    if (sourceIds.length === 0) {
+      setSnack({ open: true, message: 'Select generated orders with cover and inside PDFs first.', severity: 'warning' })
+      return
+    }
+
+    setBulkSending(true)
+    setSendingOrderIds((current) => selectedOrders.reduce((next, order) => ({ ...next, [order.orderId]: true }), { ...current }))
+    try {
+      const { data } = await api.post('/lulu/bulk-submit', { orderIds: sourceIds })
+      await Promise.all([fetchOrders(), fetchCounts()])
+      setSelectedOrderIds([])
+      setSnack({
+        open: true,
+        message: `Sent ${data.submitted || 0} of ${sourceIds.length} generated item${sourceIds.length === 1 ? '' : 's'} to Lulu.`,
+        severity: data.failed > 0 ? 'warning' : 'success',
+      })
+    } catch (err) {
+      setSnack({
+        open: true,
+        message: err.response?.data?.message || err.response?.data?.error || 'Failed to send selected orders to Lulu',
+        severity: 'error',
+      })
+    } finally {
+      setBulkSending(false)
+      setSendingOrderIds({})
+    }
   }
 
   return (
@@ -324,15 +409,15 @@ export default function Etsy2OrdersPage() {
                 Add Order
               </Button>
             )}
-            {canManage && (
+            {canManage && !generatedFilterActive && (
               <Button
                 variant="contained"
                 startIcon={<PrintIcon />}
-                onClick={openBulkGenerate}
-                disabled={readyForGeneration.length === 0}
+                onClick={handleBulkGenerate}
+                disabled={selectedOrderIds.length === 0 || bulkGenerating}
                 sx={{ bgcolor: '#F97316', '&:hover': { bgcolor: '#EA580C' } }}
               >
-                Bulk Generate
+                {bulkGenerating ? 'Generating...' : 'Generate Selected'}
               </Button>
             )}
             <Button
@@ -442,11 +527,162 @@ export default function Etsy2OrdersPage() {
         </Box>
       ) : (
         <>
-          <Etsy2OrdersTable
-            orders={paginatedOrders}
-            onViewOrder={openEtsy2Detail}
-            onGenerateOrder={handleGenerate}
-          />
+          {canManage && !generatedFilterActive && (
+            <Box
+              sx={{
+                mb: 2,
+                p: 2,
+                bgcolor: '#FFFFFF',
+                border: '1px solid #E3E3E7',
+                borderRadius: '12px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 2,
+                flexWrap: 'wrap',
+              }}
+            >
+              <Box>
+                <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#27272A' }}>
+                  {activeFilter === 'all' ? 'Orders' : `${filterCounts.find((filter) => filter.value === activeFilter)?.label || 'Filtered'} Orders`} ({filteredOrders.length})
+                </Typography>
+                <Typography variant="body2" sx={{ color: '#71717A' }}>
+                  Select mapped order groups and generate their print PDFs together.
+                </Typography>
+              </Box>
+              <Button
+                variant="contained"
+                startIcon={bulkGenerating ? <CircularProgress size={16} color="inherit" /> : <PrintIcon />}
+                onClick={handleBulkGenerate}
+                disabled={selectedOrderIds.length === 0 || bulkGenerating}
+                sx={{ bgcolor: '#F97316', '&:hover': { bgcolor: '#EA580C' } }}
+              >
+                {bulkGenerating ? 'Generating...' : `Generate PDFs for Selected${selectedOrderIds.length ? ` (${selectedOrderIds.length})` : ''}`}
+              </Button>
+            </Box>
+          )}
+
+          {generatedFilterActive ? (
+            <Box
+              sx={{
+                mb: 3,
+                bgcolor: '#FFFFFF',
+                border: '1px solid #E5E7EB',
+                borderRadius: '12px',
+                overflow: 'hidden',
+              }}
+            >
+              <Box
+                sx={{
+                  p: 2.5,
+                  display: 'flex',
+                  alignItems: { xs: 'stretch', lg: 'flex-end' },
+                  justifyContent: 'space-between',
+                  gap: 2,
+                  flexDirection: { xs: 'column', lg: 'row' },
+                }}
+              >
+                <Box>
+                  <Typography variant="h6" sx={{ fontWeight: 800, color: '#111827' }}>
+                    Generated Orders ({filteredOrders.length})
+                  </Typography>
+                  <Typography variant="body2" sx={{ color: '#64748B', mt: 0.5 }}>
+                    PDFs have been successfully generated and are ready to preview, edit, or send to Lulu.
+                  </Typography>
+                  {canManage && (
+                    <Box sx={{ display: 'flex', gap: 1, mt: 2, flexWrap: 'wrap' }}>
+                      <Button
+                        variant="contained"
+                        startIcon={bulkSending ? <CircularProgress size={16} color="inherit" /> : <LocalShippingOutlinedIcon />}
+                        onClick={handleBulkSendToLulu}
+                        disabled={selectedOrderIds.length === 0 || bulkSending}
+                        sx={{
+                          bgcolor: '#5B21D6',
+                          fontWeight: 800,
+                          borderRadius: '6px',
+                          px: 2.5,
+                          '&:hover': { bgcolor: '#4C1D95' },
+                        }}
+                      >
+                        {bulkSending ? 'Sending...' : 'Send Selected to Lulu'}
+                      </Button>
+                      <Button
+                        variant="outlined"
+                        endIcon={<KeyboardArrowDownIcon />}
+                        startIcon={<FileDownloadOutlinedIcon />}
+                        sx={{ borderColor: '#E5E7EB', color: '#111827', fontWeight: 700, borderRadius: '6px' }}
+                      >
+                        Export
+                      </Button>
+                    </Box>
+                  )}
+                </Box>
+
+                <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <TextField
+                    size="small"
+                    placeholder="Search orders..."
+                    value={search}
+                    onChange={(e) => {
+                      setSearch(e.target.value)
+                      setPage(1)
+                    }}
+                    slotProps={{
+                      input: {
+                        startAdornment: (
+                          <InputAdornment position="start">
+                            <SearchIcon sx={{ color: '#94A3B8' }} />
+                          </InputAdornment>
+                        ),
+                      },
+                    }}
+                    sx={{
+                      minWidth: { xs: '100%', sm: 320 },
+                      '& .MuiOutlinedInput-root': {
+                        borderRadius: '6px',
+                        '& fieldset': { borderColor: '#E5E7EB' },
+                      },
+                    }}
+                  />
+                  <Button
+                    variant="outlined"
+                    startIcon={<FilterListOutlinedIcon />}
+                    endIcon={<KeyboardArrowDownIcon />}
+                    sx={{ borderColor: '#E5E7EB', color: '#111827', fontWeight: 700, borderRadius: '6px', minHeight: 40 }}
+                  >
+                    Filters
+                  </Button>
+                </Box>
+              </Box>
+
+              <Etsy2GeneratedOrdersTable
+                orders={paginatedOrders}
+                onPreview={openGeneratedPreview}
+                onEditCanvas={handleEditCanvas}
+                onSendToLulu={handleSendToLulu}
+                canManage={canManage}
+                selectedOrderIds={selectedOrderIds}
+                onToggleOrder={handleToggleOrder}
+                onToggleVisible={handleToggleVisible}
+                allVisibleSelected={paginatedOrders.length > 0 && selectedVisibleCount === paginatedOrders.length}
+                partiallyVisibleSelected={selectedVisibleCount > 0 && selectedVisibleCount < paginatedOrders.length}
+                sendingOrderIds={sendingOrderIds}
+              />
+            </Box>
+          ) : (
+            <Etsy2OrdersTable
+              orders={paginatedOrders}
+              onViewOrder={openEtsy2Detail}
+              onGenerateOrder={handleGenerate}
+              canManage={canManage}
+              selectedOrderIds={selectedOrderIds}
+              onToggleOrder={handleToggleOrder}
+              onToggleVisible={handleToggleVisible}
+              allVisibleSelected={paginatedOrders.length > 0 && selectedVisibleCount === paginatedOrders.length}
+              partiallyVisibleSelected={selectedVisibleCount > 0 && selectedVisibleCount < paginatedOrders.length}
+              generatingOrderIds={generatingOrderIds}
+            />
+          )}
 
           {filteredOrders.length === 0 && (
             <Box
@@ -505,78 +741,6 @@ export default function Etsy2OrdersPage() {
           }}
         />
       )}
-
-      <Dialog open={bulkOpen} onClose={bulkGenerating ? undefined : () => setBulkOpen(false)} maxWidth="md" fullWidth>
-        <DialogTitle sx={{ fontWeight: 700 }}>
-          Bulk Generate Print PDFs
-          <Typography variant="body2" sx={{ color: '#71717A', mt: 0.5 }}>
-            Ready orders have mapped products, no review flags, and a Lulu POD package ID.
-          </Typography>
-        </DialogTitle>
-        {bulkGenerating && <LinearProgress />}
-        <DialogContent dividers>
-          {readyForGeneration.length === 0 ? (
-            <Alert severity="info">No orders are ready for PDF generation.</Alert>
-          ) : (
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.25 }}>
-              {readyForGeneration.map(({ group, order: readyOrder, readyItems }) => {
-                const checked = bulkSelected.includes(group.etsyOrderId)
-                const result = bulkResults.find((item) => item.etsyOrderId === group.etsyOrderId)
-                return (
-                  <Box
-                    key={group.etsyOrderId}
-                    sx={{
-                      p: 1.5,
-                      border: '1px solid #E3E3E7',
-                      borderRadius: '10px',
-                      bgcolor: '#FFFFFF',
-                      display: 'flex',
-                      gap: 1.5,
-                      alignItems: 'flex-start',
-                    }}
-                  >
-                    <Checkbox
-                      checked={checked}
-                      disabled={bulkGenerating}
-                      onChange={(event) => {
-                        setBulkSelected((current) => (
-                          event.target.checked
-                            ? [...new Set([...current, group.etsyOrderId])]
-                            : current.filter((id) => id !== group.etsyOrderId)
-                        ))
-                      }}
-                    />
-                    <Box sx={{ flex: 1, minWidth: 0 }}>
-                      <Typography variant="subtitle2" sx={{ color: '#27272A', fontWeight: 700 }}>
-                        #{group.etsyOrderId} / {readyOrder.buyerName || 'Unknown customer'}
-                      </Typography>
-                      <Typography variant="body2" sx={{ color: '#71717A' }}>
-                        {readyItems.length} ready item{readyItems.length === 1 ? '' : 's'} / {readyOrder.shop || 'Etsy'}
-                      </Typography>
-                      {result && (
-                        <Alert severity={result.success ? 'success' : 'error'} sx={{ mt: 1, borderRadius: '8px' }}>
-                          {result.message}
-                        </Alert>
-                      )}
-                    </Box>
-                  </Box>
-                )
-              })}
-            </Box>
-          )}
-        </DialogContent>
-        <DialogActions sx={{ p: 2 }}>
-          <Button onClick={() => setBulkOpen(false)} disabled={bulkGenerating} color="inherit">Close</Button>
-          <Button
-            variant="contained"
-            onClick={handleBulkGenerate}
-            disabled={bulkGenerating || bulkSelected.length === 0}
-            sx={{ bgcolor: '#F97316', '&:hover': { bgcolor: '#EA580C' } }}
-          >
-            {bulkGenerating ? 'Generating...' : `Generate ${bulkSelected.length} Order${bulkSelected.length === 1 ? '' : 's'}`}
-          </Button>
-        </DialogActions>
-      </Dialog>
 
       <Snackbar
         open={snack.open}

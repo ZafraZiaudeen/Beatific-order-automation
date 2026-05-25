@@ -28,7 +28,6 @@ import ZoomInIcon from '@mui/icons-material/ZoomInOutlined'
 import ZoomOutIcon from '@mui/icons-material/ZoomOutOutlined'
 import FitScreenIcon from '@mui/icons-material/FitScreenOutlined'
 import TextFieldsIcon from '@mui/icons-material/TextFieldsOutlined'
-import LayersIcon from '@mui/icons-material/LayersOutlined'
 import { Stage, Layer, Image as KonvaImage, Rect, Text, Transformer } from 'react-konva'
 import { v4 as uuidv4 } from 'uuid'
 import api from '../../lib/api'
@@ -41,97 +40,6 @@ const TARGETS = {
   cover: { label: 'Cover', productKey: 'cover', policyKey: 'cover' },
   interiorFirstPage: { label: 'Inside First Page', productKey: 'interior', policyKey: 'interior' },
 }
-
-const FIXED_ORDER_FIELDS = [
-  {
-    key: 'front_cover_name',
-    label: 'First name',
-    target: 'cover',
-    sampleValue: 'Emma',
-    xRatio: 0.66,
-    yRatio: 0.34,
-    widthRatio: 0.26,
-    height: 42,
-    fontSize: 34,
-    align: 'center',
-  },
-  {
-    key: 'front_cover_last_name',
-    label: 'Last name',
-    target: 'cover',
-    sampleValue: 'Grace',
-    xRatio: 0.66,
-    yRatio: 0.41,
-    widthRatio: 0.26,
-    height: 42,
-    fontSize: 34,
-    align: 'center',
-  },
-  {
-    key: 'spine_text',
-    label: 'Spine text',
-    target: 'cover',
-    sampleValue: 'Emma Grace',
-    xRatio: 0.49,
-    yRatio: 0.35,
-    widthRatio: 0.25,
-    height: 30,
-    fontSize: 18,
-    align: 'center',
-    rotation: 90,
-  },
-  {
-    key: 'back_cover_text',
-    label: 'Back cover text',
-    target: 'cover',
-    sampleValue: 'A keepsake made just for you.',
-    xRatio: 0.08,
-    yRatio: 0.58,
-    widthRatio: 0.30,
-    height: 110,
-    fontSize: 18,
-    align: 'center',
-    lineHeight: 1.25,
-  },
-  {
-    key: 'cover_color',
-    label: 'Cover color',
-    target: 'cover',
-    sampleValue: 'Sage',
-    xRatio: 0.05,
-    yRatio: 0.05,
-    widthRatio: 0.18,
-    height: 28,
-    fontSize: 14,
-    align: 'left',
-    required: false,
-  },
-  {
-    key: 'quote',
-    label: 'Quote',
-    target: 'interiorFirstPage',
-    sampleValue: 'You are beautifully made.',
-    xRatio: 0.18,
-    yRatio: 0.36,
-    widthRatio: 0.64,
-    height: 118,
-    fontSize: 28,
-    align: 'center',
-    lineHeight: 1.25,
-  },
-  {
-    key: 'name',
-    label: 'Name',
-    target: 'interiorFirstPage',
-    sampleValue: 'Emma',
-    xRatio: 0.30,
-    yRatio: 0.56,
-    widthRatio: 0.40,
-    height: 44,
-    fontSize: 26,
-    align: 'center',
-  },
-]
 
 const pageFromLibraryItem = (item) => {
   if (!item?.pageWidth || !item?.pageHeight) return null
@@ -190,41 +98,6 @@ const cloneFields = (fields = []) =>
     id: uuidv4(),
     replacementBox: field.replacementBox ? { ...field.replacementBox } : null,
   }))
-
-const buildFixedOrderFields = (currentFields, pages) =>
-  FIXED_ORDER_FIELDS.map((spec) => {
-    const existing = currentFields.find((field) => field.key === spec.key)
-    const page = spec.target === 'cover' ? pages.cover : pages.interior
-    const pageWidth = page?.pageWidth || 612
-    const pageHeight = page?.pageHeight || 792
-    const width = Math.max(70, spec.width || pageWidth * spec.widthRatio)
-    const height = Math.max(22, spec.height || spec.fontSize * 1.4)
-
-    return {
-      ...(existing || {}),
-      id: existing?.id || uuidv4(),
-      key: spec.key,
-      label: spec.label,
-      sampleValue: existing?.sampleValue || spec.sampleValue,
-      target: spec.target,
-      x: existing?.x ?? Math.max(0, Math.min(pageWidth - width, pageWidth * spec.xRatio)),
-      y: existing?.y ?? Math.max(0, Math.min(pageHeight - height, pageHeight * spec.yRatio)),
-      width: existing?.width || width,
-      height: existing?.height || height,
-      fontSize: existing?.fontSize || spec.fontSize,
-      fontFamily: existing?.fontFamily || 'Canela Regular',
-      fontStyle: normalizeFontStyle(existing?.fontStyle || 'normal'),
-      fontWeight: existing?.fontWeight || 400,
-      fontFile: existing?.fontFile || 'Canela-Regular-Trial.otf',
-      fill: existing?.fill || '#000000',
-      align: existing?.align || spec.align || 'center',
-      lineHeight: existing?.lineHeight || spec.lineHeight || 1.2,
-      rotation: existing?.rotation ?? spec.rotation ?? 0,
-      required: existing?.required ?? spec.required ?? true,
-      replacementTextId: existing?.replacementTextId || null,
-      replacementBox: existing?.replacementBox ? { ...existing.replacementBox } : null,
-    }
-  })
 
 const getVariant = (product, templateKey) => {
   if (!product || templateKey === DEFAULT_TEMPLATE_KEY) return null
@@ -1040,20 +913,6 @@ export default function ProductTemplateEditor({ product, onBack, onSaved, librar
     createBlank({ x: Math.max(0, pageWidth / 2 - 110), y: Math.max(0, pageHeight / 2 - 21) })
   }
 
-  const applyFixedOrderFields = () => {
-    if (!fieldsEditable) return
-    const next = buildFixedOrderFields(fields, {
-      cover: effective.template.cover,
-      interior: effective.template.interior,
-    }).filter((field) => !libraryMode || field.target === libraryTarget)
-    setFields(next)
-    setSelectedId(next[0]?.id || null)
-    setTarget('cover')
-    setPreviewModes(next.reduce((modes, field) => ({ ...modes, [field.id]: 'sample' }), {}))
-    setMessage('Fixed Etsy 2 fields applied')
-    setError('')
-  }
-
   const importPdf = async (file) => {
     if (!file) return
     setUploading(target)
@@ -1229,9 +1088,6 @@ export default function ProductTemplateEditor({ product, onBack, onSaved, librar
 
         <Divider orientation="vertical" flexItem />
 
-        <Button variant="outlined" startIcon={<TextFieldsIcon />} onClick={applyFixedOrderFields} disabled={!fieldsEditable}>
-          Use Fixed Fields
-        </Button>
         <Button variant="outlined" startIcon={<SaveIcon />} onClick={() => saveFields()} disabled={saving}>{saving ? 'Saving' : 'Save'}</Button>
         {!libraryMode && (
           <Button variant="contained" startIcon={<PictureAsPdfIcon />} onClick={generateSample} disabled={generating || !fields.length}>{generating ? 'Generating' : 'Sample PDFs'}</Button>
@@ -1289,13 +1145,6 @@ export default function ProductTemplateEditor({ product, onBack, onSaved, librar
             <span>
               <IconButton sx={buttonRailSx(false)} onClick={addCenteredBlankField} disabled={!page?.previewImageUrl || !fieldsEditable}>
                 <TextFieldsIcon />
-              </IconButton>
-            </span>
-          </Tooltip>
-          <Tooltip title="Use fixed Etsy 2 fields" placement="right">
-            <span>
-              <IconButton sx={buttonRailSx(false)} onClick={applyFixedOrderFields} disabled={!fieldsEditable}>
-                <LayersIcon />
               </IconButton>
             </span>
           </Tooltip>
