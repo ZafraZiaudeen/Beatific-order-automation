@@ -31,6 +31,7 @@ import { alpha } from '@mui/material/styles'
 const MAIN_NAV = [
   { title: 'Dashboard', path: '/dashboard', icon: DashboardIcon },
   { title: 'Etsy Orders', path: '/orders/etsy', icon: ShoppingCartIcon },
+  { title: 'Etsy 2', path: '/orders/etsy2', icon: ShoppingCartIcon },
   { title: 'Lulu Orders', path: '/orders/lulu', icon: LocalPrintshopIcon },
   { title: 'Product Library 2', path: '/product-library-2', icon: InventoryIcon },
 ]

@@ -124,7 +124,10 @@ const normalizeCountryCode = (country) => {
   return COUNTRY_NAME_TO_CODE[trimmed.toLowerCase()] || trimmed.slice(0, 2).toUpperCase()
 }
 
-const isValidLuluPodPackageId = (value) => /^\d{4}X\d{4}[A-Z0-9]{18}$/.test(String(value || '').trim().toUpperCase())
+const isValidLuluPodPackageId = (value) => {
+  const normalized = String(value || '').trim().toUpperCase()
+  return /^\d{4}X\d{4}[A-Z0-9]{18}$/.test(normalized.replace(/\./g, ''))
+}
 
 const getInitials = (value) => {
   const parts = value?.trim().split(/\s+/).filter(Boolean) || []
