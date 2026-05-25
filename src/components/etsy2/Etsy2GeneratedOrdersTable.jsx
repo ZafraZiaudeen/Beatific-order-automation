@@ -16,6 +16,7 @@ import {
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
 import LocalShippingOutlinedIcon from '@mui/icons-material/LocalShippingOutlined'
 import MoreVertIcon from '@mui/icons-material/MoreVert'
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined'
 import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined'
 import ArticleOutlinedIcon from '@mui/icons-material/ArticleOutlined'
 import Etsy2StatusBadge from './Etsy2StatusBadge'
@@ -70,6 +71,7 @@ export default function Etsy2GeneratedOrdersTable({
   onEditCanvas,
   onSendToLulu,
   sendingOrderIds = {},
+  onDeleteOrder,
 }) {
   return (
     <TableContainer component={Paper} sx={{ boxShadow: 'none', borderTop: '1px solid #E5E7EB', borderRadius: 0 }}>
@@ -184,6 +186,18 @@ export default function Etsy2GeneratedOrdersTable({
                         sx={{ borderColor: '#E5E7EB', color: '#111827', fontWeight: 700, borderRadius: '6px' }}
                       >
                         Send to Lulu
+                      </Button>
+                    )}
+                    {canManage && (
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        color="error"
+                        startIcon={<DeleteOutlineIcon />}
+                        onClick={() => onDeleteOrder?.(order)}
+                        sx={{ fontWeight: 700, borderRadius: '6px' }}
+                      >
+                        Delete
                       </Button>
                     )}
                     <IconButton size="small" sx={{ color: '#334155' }}>

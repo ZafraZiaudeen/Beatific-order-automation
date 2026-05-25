@@ -52,6 +52,15 @@ import {
 
 const valueOrDash = (value) => value || '-'
 const isImageUrl = (value = '') => /\.(png|jpe?g|webp|gif|svg)(\?.*)?$/i.test(value)
+const summarizePdfGenerationResult = (data) => {
+  const failures = (data?.results || []).filter((result) => !result.success)
+  if (failures.length === 0) return 'PDFs generated successfully.'
+
+  const uniqueReasons = [...new Set(failures.map((result) => result?.error).filter(Boolean))]
+  if (uniqueReasons.length === 0) return 'PDF generation completed with errors.'
+  if (uniqueReasons.length === 1) return uniqueReasons[0]
+  return `${uniqueReasons[0]} (+${uniqueReasons.length - 1} more issue${uniqueReasons.length === 2 ? '' : 's'})`
+}
 
 function InfoStat({ icon, label, value }) {
   return (
@@ -402,11 +411,10 @@ export default function Etsy2OrderDetailPage() {
     try {
       const { data } = await api.post(`/orders/group/${encodeURIComponent(order.orderId)}/generate-pdf`)
       const hasErrors = (data.results || []).some((result) => !result.success)
-      const firstError = (data.results || []).find((result) => !result.success)?.error
       await fetchGroup()
       setSnack({
         open: true,
-        message: hasErrors ? firstError || 'PDF generation completed with errors.' : 'PDFs generated successfully.',
+        message: hasErrors ? summarizePdfGenerationResult(data) : 'PDFs generated successfully.',
         severity: hasErrors ? 'warning' : 'success',
       })
     } catch (err) {
@@ -743,7 +751,14 @@ export default function Etsy2OrderDetailPage() {
               startIcon={generating ? <CircularProgress size={16} /> : <PrintIcon />}
               onClick={handleGenerate}
               disabled={generating}
-              sx={{ borderColor: '#E3E3E7', color: '#27272A' }}
+              size="small"
+              sx={{
+                borderColor: '#E3E3E7',
+                color: '#27272A',
+                minHeight: 32,
+                px: 1.5,
+                fontSize: '0.8125rem',
+              }}
             >
               {generating ? 'Generating...' : 'Generate PDFs'}
             </Button>

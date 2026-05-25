@@ -18,6 +18,7 @@ import {
 } from '@mui/material'
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown'
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp'
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined'
 import PrintOutlinedIcon from '@mui/icons-material/PrintOutlined'
 import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined'
 import WarningAmberIcon from '@mui/icons-material/WarningAmber'
@@ -33,6 +34,7 @@ function OrderRow({
   selected,
   onToggleOrder,
   generating,
+  onDeleteOrder,
 }) {
   const [open, setOpen] = useState(false)
   const batchStatus = deriveBatchStatus(order.items)
@@ -173,6 +175,20 @@ function OrderRow({
                 </IconButton>
               </span>
             </Tooltip>
+            {canManage && (
+              <Tooltip title="Delete order">
+                <IconButton
+                  size="small"
+                  color="error"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onDeleteOrder?.(order)
+                  }}
+                >
+                  <DeleteOutlineIcon sx={{ fontSize: '18px' }} />
+                </IconButton>
+              </Tooltip>
+            )}
           </Box>
         </TableCell>
       </TableRow>
@@ -267,6 +283,7 @@ export default function Etsy2OrdersTable({
   allVisibleSelected = false,
   partiallyVisibleSelected = false,
   generatingOrderIds = {},
+  onDeleteOrder,
 }) {
   return (
     <TableContainer component={Paper} sx={{ borderRadius: '12px', boxShadow: 'none', border: '1px solid #E3E3E7' }}>
@@ -320,6 +337,7 @@ export default function Etsy2OrdersTable({
               selected={selectedOrderIds.includes(order.orderId)}
               onToggleOrder={onToggleOrder}
               generating={Boolean(generatingOrderIds[order.orderId])}
+              onDeleteOrder={onDeleteOrder}
             />
           ))}
         </TableBody>
