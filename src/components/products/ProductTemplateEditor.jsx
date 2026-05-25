@@ -28,10 +28,12 @@ import ZoomInIcon from '@mui/icons-material/ZoomInOutlined'
 import ZoomOutIcon from '@mui/icons-material/ZoomOutOutlined'
 import FitScreenIcon from '@mui/icons-material/FitScreenOutlined'
 import TextFieldsIcon from '@mui/icons-material/TextFieldsOutlined'
+import LayersIcon from '@mui/icons-material/LayersOutlined'
 import { Stage, Layer, Image as KonvaImage, Rect, Text, Transformer } from 'react-konva'
 import { v4 as uuidv4 } from 'uuid'
 import api from '../../lib/api'
 import { FONT_OPTIONS, getFontOption, normalizeFontStyle } from '../../lib/fonts'
+import { FIXED_PERSONALIZATION_FIELDS, getFixedPersonalizationField } from '../../lib/fixedPersonalizationFields'
 
 const DEFAULT_TEMPLATE_KEY = 'default'
 const DEFAULT_TEMPLATE_POLICY = { cover: 'inherit', interior: 'inherit', fields: 'inherit' }
@@ -543,6 +545,8 @@ function FieldPanel({
   }
 
   const selectedFontOption = getFontOption(selected.fontFile || selected.fontFamily)
+  const selectedFixedField = getFixedPersonalizationField(selected.key)
+  const oneLineHeight = Math.max(1, Math.round((Number(selected.fontSize) || 12) * (Number(selected.lineHeight) || 1.2) * 100) / 100)
 
   return (
     <Box sx={{ width: { xs: 320, md: 372 }, borderLeft: '1px solid', borderColor: 'divider', bgcolor: 'background.paper', display: 'flex', flexDirection: 'column', transition: 'width 180ms ease', overflow: 'hidden' }}>
@@ -602,8 +606,32 @@ function FieldPanel({
               <ToggleButton value="both">Both</ToggleButton>
             </ToggleButtonGroup>
           </Box>
+          <TextField
+            disabled={!fieldsEditable}
+            select
+            label="Email key"
+            size="small"
+            value={selectedFixedField?.key || ''}
+            onChange={(e) => {
+              const fixedField = getFixedPersonalizationField(e.target.value)
+              if (!fixedField) return
+              updateField(selected.id, {
+                key: fixedField.key,
+                label: fixedField.label,
+                target: fixedField.target,
+                sampleValue: selected.sampleValue || fixedField.sampleValue,
+              })
+              setTarget(fixedField.target)
+            }}
+            helperText={selectedFixedField?.prompt || 'Select the matching fixed email field'}
+          >
+            {!selectedFixedField && <MenuItem value="">{selected.key ? `Custom: ${selected.key}` : 'Select field'}</MenuItem>}
+            {FIXED_PERSONALIZATION_FIELDS.map((field) => (
+              <MenuItem key={field.key} value={field.key}>{field.label}</MenuItem>
+            ))}
+          </TextField>
           <TextField disabled={!fieldsEditable} label="Form label" size="small" value={selected.label} onChange={(e) => updateField(selected.id, { label: e.target.value })} />
-          <TextField disabled={!fieldsEditable} label="Form key" size="small" value={selected.key} onChange={(e) => updateField(selected.id, { key: slugify(e.target.value) })} />
+          <TextField disabled={!fieldsEditable} label="Form key" size="small" value={selected.key} InputProps={{ readOnly: Boolean(selectedFixedField) }} onChange={(e) => updateField(selected.id, { key: slugify(e.target.value) })} />
           <TextField disabled={!fieldsEditable} label="Sample value" size="small" value={selected.sampleValue} onChange={(e) => updateField(selected.id, { sampleValue: e.target.value })} multiline minRows={2} />
           <TextField
             disabled={!fieldsEditable}
@@ -635,6 +663,26 @@ function FieldPanel({
           <Divider />
 
           <TextField disabled={!fieldsEditable} label="Font size" size="small" type="number" value={selected.fontSize} onChange={(e) => updateField(selected.id, { fontSize: Number(e.target.value) })} />
+          <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1 }}>
+            <TextField
+              disabled={!fieldsEditable}
+              label="Line width"
+              size="small"
+              type="number"
+              value={Math.round(selected.width * 100) / 100}
+              onChange={(e) => updateField(selected.id, { width: Number(e.target.value) })}
+              inputProps={{ step: 1, min: 1 }}
+              helperText="Wraps after this width"
+            />
+            <Button
+              disabled={!fieldsEditable}
+              variant="outlined"
+              onClick={() => updateField(selected.id, { height: oneLineHeight })}
+              sx={{ minHeight: 40, textTransform: 'none' }}
+            >
+              Set 1-line height
+            </Button>
+          </Box>
           <TextField
             disabled={!fieldsEditable}
             select

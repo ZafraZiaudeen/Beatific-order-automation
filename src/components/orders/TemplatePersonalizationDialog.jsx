@@ -17,6 +17,7 @@ import Typography from '@mui/material/Typography'
 import OpenInNewIcon from '@mui/icons-material/OpenInNew'
 import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdfOutlined'
 import api from '../../lib/api'
+import { getFixedPersonalizationField } from '../../lib/fixedPersonalizationFields'
 
 const targetLabel = (target) => target === 'cover' ? 'Cover' : 'Inside First Page'
 const DEFAULT_TEMPLATE_POLICY = { cover: 'inherit', interior: 'inherit', fields: 'inherit' }
@@ -137,7 +138,7 @@ export default function TemplatePersonalizationDialog({ open, order, product, on
                 <Stack spacing={1}>
                   {Object.entries(rawPersonalization).map(([key, value]) => (
                     <Box key={key}>
-                      <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.secondary' }}>{key}</Typography>
+                      <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.secondary' }}>{getFixedPersonalizationField(key)?.label || key}</Typography>
                       <Typography variant="body2" sx={{ wordBreak: 'break-word' }}>{value}</Typography>
                     </Box>
                   ))}

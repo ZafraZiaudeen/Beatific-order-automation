@@ -114,13 +114,13 @@ export const buildOrderGroups = (orders) => {
 export const reviewFlagsFor = (item) => (item.aiFlags || []).filter((flag) => flag !== 'Missing Product Mapping')
 
 export const getItemStatus = (item) => {
+  const hasBothGeneratedPdfs = Boolean(item.coverImageUrl && item.interiorPdfUrl)
   if (reviewFlagsFor(item).length > 0) return ITEM_STATUSES.AI_FLAGGED
   if (!item.isProductMapped) return ITEM_STATUSES.UNMAPPED
   if (item.hasCustomArtwork || item.etsyStatus === 'custom_orders') return ITEM_STATUSES.CUSTOM
-  if (item.templateFinalizedAt || (item.coverImageUrl && item.interiorPdfUrl && item.etsyStatus === 'completed')) {
+  if (hasBothGeneratedPdfs && item.templateFinalizedAt && !item.requiresTemplateFinalization) {
     return ITEM_STATUSES.GENERATED
   }
-  if (['in_progress', 'drawings', 'ready_to_order'].includes(item.etsyStatus)) return ITEM_STATUSES.IN_PROGRESS
   return ITEM_STATUSES.MAPPED
 }
 

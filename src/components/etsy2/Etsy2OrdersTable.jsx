@@ -18,11 +18,13 @@ import {
 } from '@mui/material'
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown'
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp'
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined'
 import PrintOutlinedIcon from '@mui/icons-material/PrintOutlined'
 import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined'
 import WarningAmberIcon from '@mui/icons-material/WarningAmber'
+import CancelOutlinedIcon from '@mui/icons-material/CancelOutlined'
 import Etsy2StatusBadge from './Etsy2StatusBadge'
-import { deriveBatchStatus } from '../../lib/etsy2Constants'
+import { deriveBatchStatus, ITEM_STATUSES } from '../../lib/etsy2Constants'
 import { formatDate, formatMoney, getInitials } from '../../lib/etsy2Orders'
 
 function OrderRow({
@@ -33,10 +35,13 @@ function OrderRow({
   selected,
   onToggleOrder,
   generating,
+  onCancelGeneration,
+  onDeleteOrder,
 }) {
   const [open, setOpen] = useState(false)
   const batchStatus = deriveBatchStatus(order.items)
   const hasAIFlag = order.items?.some((item) => item.status === 'ai_flagged')
+  const hasMappedItem = order.items?.some((item) => item.status === ITEM_STATUSES.MAPPED)
   const shipByIsLate = order.shipByDate && new Date(order.shipByDate) < new Date() && order.status !== 'completed'
 
   return (
@@ -159,11 +164,11 @@ function OrderRow({
                 <VisibilityOutlinedIcon sx={{ fontSize: '18px' }} />
               </IconButton>
             </Tooltip>
-            <Tooltip title="Generate PDFs">
+            <Tooltip title={generating ? 'Generating PDFs' : hasMappedItem ? 'Generate PDFs' : 'Only mapped orders can generate PDFs'}>
               <span>
                 <IconButton
                   size="small"
-                  disabled={generating}
+                  disabled={generating || !hasMappedItem}
                   onClick={(e) => {
                     e.stopPropagation()
                     onGenerateOrder?.(order)
@@ -173,6 +178,34 @@ function OrderRow({
                 </IconButton>
               </span>
             </Tooltip>
+            {generating && (
+              <Tooltip title="Cancel PDF generation">
+                <IconButton
+                  size="small"
+                  color="error"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onCancelGeneration?.(order)
+                  }}
+                >
+                  <CancelOutlinedIcon sx={{ fontSize: '18px' }} />
+                </IconButton>
+              </Tooltip>
+            )}
+            {canManage && (
+              <Tooltip title="Delete order">
+                <IconButton
+                  size="small"
+                  color="error"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onDeleteOrder?.(order)
+                  }}
+                >
+                  <DeleteOutlineIcon sx={{ fontSize: '18px' }} />
+                </IconButton>
+              </Tooltip>
+            )}
           </Box>
         </TableCell>
       </TableRow>
@@ -267,6 +300,8 @@ export default function Etsy2OrdersTable({
   allVisibleSelected = false,
   partiallyVisibleSelected = false,
   generatingOrderIds = {},
+  onCancelGeneration,
+  onDeleteOrder,
 }) {
   return (
     <TableContainer component={Paper} sx={{ borderRadius: '12px', boxShadow: 'none', border: '1px solid #E3E3E7' }}>
@@ -320,6 +355,8 @@ export default function Etsy2OrdersTable({
               selected={selectedOrderIds.includes(order.orderId)}
               onToggleOrder={onToggleOrder}
               generating={Boolean(generatingOrderIds[order.orderId])}
+              onCancelGeneration={onCancelGeneration}
+              onDeleteOrder={onDeleteOrder}
             />
           ))}
         </TableBody>

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Alert,
@@ -27,6 +27,7 @@ import NotesOutlinedIcon from '@mui/icons-material/NotesOutlined'
 import PersonOutlineOutlinedIcon from '@mui/icons-material/PersonOutlineOutlined'
 import PhoneOutlinedIcon from '@mui/icons-material/PhoneOutlined'
 import PrintIcon from '@mui/icons-material/Print'
+import CancelOutlinedIcon from '@mui/icons-material/CancelOutlined'
 import ReceiptLongOutlinedIcon from '@mui/icons-material/ReceiptLongOutlined'
 import SyncIcon from '@mui/icons-material/Sync'
 import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined'
@@ -49,10 +50,15 @@ import {
   reviewFlagsFor,
   toEtsy2GroupOrder,
 } from '../lib/etsy2Orders'
+import {
+  cancelPdfGenerationJob,
+  isPdfGenerationJobActive,
+  listPdfGenerationJobs,
+  startPdfGenerationJob,
+} from '../lib/pdfGenerationJobs'
 
 const valueOrDash = (value) => value || '-'
 const isImageUrl = (value = '') => /\.(png|jpe?g|webp|gif|svg)(\?.*)?$/i.test(value)
-
 function InfoStat({ icon, label, value }) {
   return (
     <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start', minWidth: 0 }}>
@@ -318,7 +324,8 @@ export default function Etsy2OrderDetailPage() {
   const [group, setGroup] = useState(null)
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
-  const [generating, setGenerating] = useState(false)
+  const [generationJob, setGenerationJob] = useState(null)
+  const completedGenerationJobIdsRef = useRef(new Set())
   const [sendingToLulu, setSendingToLulu] = useState(false)
   const [activePreviewKind, setActivePreviewKind] = useState('cover')
   const [editOpen, setEditOpen] = useState(false)
@@ -340,17 +347,39 @@ export default function Etsy2OrderDetailPage() {
     fetchGroup()
   }, [fetchGroup])
 
+  const refreshGenerationJob = useCallback(async () => {
+    try {
+      const jobs = await listPdfGenerationJobs()
+      const job = jobs.find((item) => item.etsyOrderId === orderId)
+      if (!job) return
+      setGenerationJob(job)
+      if (
+        ['succeeded', 'failed', 'cancelled'].includes(job.status) &&
+        !completedGenerationJobIdsRef.current.has(job.id)
+      ) {
+        completedGenerationJobIdsRef.current.add(job.id)
+        await fetchGroup()
+      }
+    } catch {
+      // Keep the detail page usable if job polling briefly fails.
+    }
+  }, [fetchGroup, orderId])
+
+  useEffect(() => {
+    refreshGenerationJob()
+  }, [refreshGenerationJob])
+
   const order = useMemo(() => (group ? toEtsy2GroupOrder(group) : null), [group])
+  const generating = isPdfGenerationJobActive(generationJob)
   const batchStatus = order ? deriveBatchStatus(order.items) : null
   const hasAIFlag = order?.items?.some((item) => item.status === 'ai_flagged')
+  const hasMappedItem = order?.items?.some((item) => item.status === ITEM_STATUSES.MAPPED)
   const shippingLines = addressLines(group?.shippingAddress)
   const subtotal = group?.items?.reduce((sum, item) => sum + Number(item.price || 0) * Number(item.quantity || 1), 0) || 0
   const shipping = Number(group?.pricing?.shipping || group?.items?.[0]?.shippingCost || 0)
   const tax = Number(group?.pricing?.tax || 0)
   const generatedItems = order?.items?.filter((item) =>
-    item.status === ITEM_STATUSES.GENERATED ||
-    item.sourceOrder?.coverImageUrl ||
-    item.sourceOrder?.interiorPdfUrl
+    item.status === ITEM_STATUSES.GENERATED
   ) || []
   const previewItem = generatedItems[0] || order?.items?.[0] || null
   const previewSource = previewItem?.sourceOrder || {}
@@ -371,7 +400,16 @@ export default function Etsy2OrderDetailPage() {
     } : null,
   ].filter(Boolean)
   const activeAsset = previewAssets.find((asset) => asset.kind === activePreviewKind) || previewAssets[0]
-  const showGeneratedPreview = searchParams.get('view') === 'generated' || batchStatus === ITEM_STATUSES.GENERATED
+  const showGeneratedPreview = generatedItems.length > 0 && (
+    searchParams.get('view') === 'generated' ||
+    batchStatus === ITEM_STATUSES.GENERATED
+  )
+
+  useEffect(() => {
+    if (!generating) return undefined
+    const timer = window.setInterval(refreshGenerationJob, 2500)
+    return () => window.clearInterval(timer)
+  }, [generating, refreshGenerationJob])
 
   const handleSync = async () => {
     if (!activeStore?._id) {
@@ -397,17 +435,18 @@ export default function Etsy2OrderDetailPage() {
 
   const handleGenerate = async () => {
     if (!order?.orderId) return
+    if (!hasMappedItem) {
+      setSnack({ open: true, message: 'Only mapped order items can generate PDFs.', severity: 'warning' })
+      return
+    }
 
-    setGenerating(true)
     try {
-      const { data } = await api.post(`/orders/group/${encodeURIComponent(order.orderId)}/generate-pdf`)
-      const hasErrors = (data.results || []).some((result) => !result.success)
-      const firstError = (data.results || []).find((result) => !result.success)?.error
-      await fetchGroup()
+      const job = await startPdfGenerationJob(order.orderId)
+      setGenerationJob(job)
       setSnack({
         open: true,
-        message: hasErrors ? firstError || 'PDF generation completed with errors.' : 'PDFs generated successfully.',
-        severity: hasErrors ? 'warning' : 'success',
+        message: 'PDF generation started. You can leave this page and it will keep running.',
+        severity: 'success',
       })
     } catch (err) {
       setSnack({
@@ -415,8 +454,22 @@ export default function Etsy2OrderDetailPage() {
         message: err.response?.data?.error || err.message || 'Failed to generate PDFs',
         severity: 'error',
       })
-    } finally {
-      setGenerating(false)
+    }
+  }
+
+  const handleCancelGeneration = async () => {
+    if (!generationJob?.id) return
+    try {
+      const job = await cancelPdfGenerationJob(generationJob.id)
+      setGenerationJob(job)
+      setSnack({ open: true, message: 'PDF generation cancellation requested.', severity: 'info' })
+      refreshGenerationJob()
+    } catch (err) {
+      setSnack({
+        open: true,
+        message: err.response?.data?.message || err.message || 'Failed to cancel PDF generation',
+        severity: 'error',
+      })
     }
   }
 
@@ -561,6 +614,7 @@ export default function Etsy2OrderDetailPage() {
                   ['Order ID', `#${order.orderId}`],
                   ['Buyer', order.buyerName],
                   ['Template', previewSource.matchedVariantName || previewSource.projectName || 'Print Template'],
+                  ['Pod package ID', previewSource.podPackageId || previewItem?.podPackageId || order?.podPackageId],
                   ['Generated Date', formatDate(previewSource.templateFinalizedAt || previewSource.updatedAt || order.date, true)],
                 ].map(([label, value]) => (
                   <Box key={label} sx={{ display: 'flex', justifyContent: 'space-between', gap: 2 }}>
@@ -742,11 +796,34 @@ export default function Etsy2OrderDetailPage() {
               variant="outlined"
               startIcon={generating ? <CircularProgress size={16} /> : <PrintIcon />}
               onClick={handleGenerate}
-              disabled={generating}
-              sx={{ borderColor: '#E3E3E7', color: '#27272A' }}
+              disabled={generating || !hasMappedItem}
+              size="small"
+              sx={{
+                borderColor: '#E3E3E7',
+                color: '#27272A',
+                minHeight: 32,
+                px: 1.5,
+                fontSize: '0.8125rem',
+              }}
             >
               {generating ? 'Generating...' : 'Generate PDFs'}
             </Button>
+            {generating && (
+              <Button
+                variant="outlined"
+                color="error"
+                startIcon={<CancelOutlinedIcon />}
+                onClick={handleCancelGeneration}
+                size="small"
+                sx={{
+                  minHeight: 32,
+                  px: 1.5,
+                  fontSize: '0.8125rem',
+                }}
+              >
+                Cancel
+              </Button>
+            )}
           </Box>
         </Box>
       </Box>

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Box,
@@ -22,6 +22,7 @@ import SearchIcon from '@mui/icons-material/Search'
 import SyncIcon from '@mui/icons-material/Sync'
 import AddIcon from '@mui/icons-material/Add'
 import PrintIcon from '@mui/icons-material/Print'
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined'
 import FileDownloadOutlinedIcon from '@mui/icons-material/FileDownloadOutlined'
 import FilterListOutlinedIcon from '@mui/icons-material/FilterListOutlined'
 import LocalShippingOutlinedIcon from '@mui/icons-material/LocalShippingOutlined'
@@ -38,6 +39,12 @@ import { canManageWorkspace } from '../lib/permissions'
 import { ITEM_STATUSES, ORDER_FILTERS } from '../lib/etsy2Constants'
 import { getGeneratedOrderSourceIds } from '../lib/generatedOrders'
 import { buildOrderGroups, getPresetDateRange, toEtsy2Order } from '../lib/etsy2Orders'
+import {
+  cancelPdfGenerationJob,
+  isPdfGenerationJobActive,
+  listPdfGenerationJobs,
+  startPdfGenerationJob,
+} from '../lib/pdfGenerationJobs'
 
 const ITEMS_PER_PAGE = 10
 
@@ -48,6 +55,23 @@ const DATE_RANGE_OPTIONS = [
   { value: '90d', label: 'Last 3 months' },
   { value: '1y', label: 'This year' },
 ]
+
+const orderWithOnlyStatusItems = (order, status) => {
+  if (status === 'all') return order
+  const items = (order.items || []).filter((item) => item.status === status)
+  if (items.length === 0) return null
+
+  return {
+    ...order,
+    items,
+    totalItems: items.length,
+    totalQuantity: items.reduce((sum, item) => sum + Number(item.quantity || 1), 0),
+    total: items.reduce((sum, item) => sum + Number(item.price || 0) * Number(item.quantity || 1), 0),
+    hasUnmapped: items.some((item) => item.status === ITEM_STATUSES.UNMAPPED),
+    hasAiFlags: items.some((item) => item.status === ITEM_STATUSES.AI_FLAGGED),
+    reviewFlags: [...new Set(items.flatMap((item) => item.aiFlags || []))],
+  }
+}
 
 export default function Etsy2OrdersPage() {
   const navigate = useNavigate()
@@ -63,7 +87,8 @@ export default function Etsy2OrdersPage() {
   const [statusCounts, setStatusCounts] = useState({})
   const [syncing, setSyncing] = useState(false)
   const [selectedOrderIds, setSelectedOrderIds] = useState([])
-  const [generatingOrderIds, setGeneratingOrderIds] = useState({})
+  const [generationJobs, setGenerationJobs] = useState({})
+  const completedGenerationJobIdsRef = useRef(new Set())
   const [bulkGenerating, setBulkGenerating] = useState(false)
   const [sendingOrderIds, setSendingOrderIds] = useState({})
   const [bulkSending, setBulkSending] = useState(false)
@@ -112,6 +137,39 @@ export default function Etsy2OrdersPage() {
     fetchCounts()
   }, [fetchCounts])
 
+  const refreshGenerationJobs = useCallback(async () => {
+    try {
+      const jobs = await listPdfGenerationJobs()
+      setGenerationJobs((current) => {
+        const next = { ...current }
+        for (const job of jobs) next[job.etsyOrderId] = job
+        return next
+      })
+
+      const newlyFinished = jobs.filter((job) =>
+        ['succeeded', 'failed', 'cancelled'].includes(job.status) &&
+        !completedGenerationJobIdsRef.current.has(job.id)
+      )
+      if (newlyFinished.length > 0) {
+        newlyFinished.forEach((job) => completedGenerationJobIdsRef.current.add(job.id))
+        await Promise.all([fetchOrders(), fetchCounts()])
+      }
+    } catch {
+      // Job polling should not block normal order browsing.
+    }
+  }, [fetchCounts, fetchOrders])
+
+  useEffect(() => {
+    refreshGenerationJobs()
+  }, [refreshGenerationJobs])
+
+  useEffect(() => {
+    const hasActiveJobs = Object.values(generationJobs).some(isPdfGenerationJobActive)
+    if (!hasActiveJobs) return undefined
+    const timer = window.setInterval(refreshGenerationJobs, 2500)
+    return () => window.clearInterval(timer)
+  }, [generationJobs, refreshGenerationJobs])
+
   useEffect(() => {
     setPage(1)
     setSelectedOrderIds([])
@@ -134,10 +192,9 @@ export default function Etsy2OrdersPage() {
   )
 
   const filteredOrders = useMemo(
-    () => etsy2Orders.filter((order) => (
-      activeFilter === 'all' ||
-      order.items?.some((item) => item.status === activeFilter)
-    )),
+    () => etsy2Orders
+      .map((order) => orderWithOnlyStatusItems(order, activeFilter))
+      .filter(Boolean),
     [activeFilter, etsy2Orders]
   )
 
@@ -182,17 +239,18 @@ export default function Etsy2OrdersPage() {
   const handleGenerate = async (order) => {
     const etsyOrderId = order?.orderId || order?.etsyOrderId
     if (!etsyOrderId) return
+    if (!order.items?.some((item) => item.status === ITEM_STATUSES.MAPPED)) {
+      setSnack({ open: true, message: 'Only mapped order items can generate PDFs.', severity: 'warning' })
+      return
+    }
 
-    setGeneratingOrderIds((current) => ({ ...current, [etsyOrderId]: true }))
     try {
-      const { data } = await api.post(`/orders/group/${encodeURIComponent(etsyOrderId)}/generate-pdf`)
-      const hasErrors = (data.results || []).some((result) => !result.success)
-      const firstError = (data.results || []).find((result) => !result.success)?.error
-      await Promise.all([fetchOrders(), fetchCounts()])
+      const job = await startPdfGenerationJob(etsyOrderId)
+      setGenerationJobs((current) => ({ ...current, [etsyOrderId]: job }))
       setSnack({
         open: true,
-        message: hasErrors ? firstError || 'PDF generation completed with errors.' : 'PDFs generated successfully.',
-        severity: hasErrors ? 'warning' : 'success',
+        message: 'PDF generation started. You can leave this page and it will keep running.',
+        severity: 'success',
       })
     } catch (err) {
       setSnack({
@@ -200,53 +258,56 @@ export default function Etsy2OrdersPage() {
         message: err.response?.data?.error || err.message || 'Failed to generate PDFs',
         severity: 'error',
       })
-    } finally {
-      setGeneratingOrderIds((current) => {
-        const next = { ...current }
-        delete next[etsyOrderId]
-        return next
-      })
     }
   }
 
   const handleBulkGenerate = async () => {
-    if (selectedOrderIds.length === 0) return
+    if (selectedMappedOrderIds.length === 0) {
+      setSnack({ open: true, message: 'Select mapped order groups before generating PDFs.', severity: 'warning' })
+      return
+    }
     setBulkGenerating(true)
-    const results = []
-    setGeneratingOrderIds((current) => selectedOrderIds.reduce((next, id) => ({ ...next, [id]: true }), { ...current }))
-
-    for (const etsyOrderId of selectedOrderIds) {
-      try {
-        const { data } = await api.post(`/orders/group/${encodeURIComponent(etsyOrderId)}/generate-pdf`)
-        const hasErrors = (data.results || []).some((result) => !result.success)
-        const firstError = (data.results || []).find((result) => !result.success)?.error
-        results.push({
-          etsyOrderId,
-          success: !hasErrors,
-          message: hasErrors ? firstError || data.message || 'Generation completed with errors' : data.message || 'Generated',
-        })
-      } catch (err) {
-        results.push({
-          etsyOrderId,
-          success: false,
-          message: err.response?.data?.error || err.response?.data?.message || err.message || 'Generation failed',
-        })
-      }
-      setGeneratingOrderIds((current) => {
+    try {
+      const jobs = await Promise.all(selectedMappedOrderIds.map((etsyOrderId) => startPdfGenerationJob(etsyOrderId)))
+      setGenerationJobs((current) => {
         const next = { ...current }
-        delete next[etsyOrderId]
+        for (const job of jobs) next[job.etsyOrderId] = job
         return next
       })
+      setSelectedOrderIds([])
+      setSnack({
+        open: true,
+        message: `Started PDF generation for ${jobs.length} selected order group${jobs.length === 1 ? '' : 's'}.`,
+        severity: 'success',
+      })
+    } catch (err) {
+      setSnack({
+        open: true,
+        message: err.response?.data?.error || err.response?.data?.message || err.message || 'Failed to start selected PDF generation',
+        severity: 'error',
+      })
+    } finally {
+      setBulkGenerating(false)
     }
+  }
 
-    await Promise.all([fetchOrders(), fetchCounts()])
-    setBulkGenerating(false)
-    setSelectedOrderIds([])
-    setSnack({
-      open: true,
-      message: `Generated ${results.filter((result) => result.success).length} of ${results.length} selected order groups`,
-      severity: results.some((result) => !result.success) ? 'warning' : 'success',
-    })
+  const handleCancelGeneration = async (order) => {
+    const etsyOrderId = order?.orderId || order?.etsyOrderId
+    const job = generationJobs[etsyOrderId]
+    if (!job?.id) return
+
+    try {
+      const cancelledJob = await cancelPdfGenerationJob(job.id)
+      setGenerationJobs((current) => ({ ...current, [etsyOrderId]: cancelledJob }))
+      setSnack({ open: true, message: 'PDF generation cancellation requested.', severity: 'info' })
+      refreshGenerationJobs()
+    } catch (err) {
+      setSnack({
+        open: true,
+        message: err.response?.data?.message || err.message || 'Failed to cancel PDF generation',
+        severity: 'error',
+      })
+    }
   }
 
   const openEtsy2Detail = (order) => {
@@ -278,7 +339,24 @@ export default function Etsy2OrdersPage() {
   }
 
   const selectedVisibleCount = paginatedOrders.filter((order) => selectedOrderIds.includes(order.orderId)).length
+  const selectedMappedOrderIds = useMemo(
+    () => filteredOrders
+      .filter((order) =>
+        selectedOrderIds.includes(order.orderId) &&
+        order.items?.some((item) => item.status === ITEM_STATUSES.MAPPED)
+      )
+      .map((order) => order.orderId),
+    [filteredOrders, selectedOrderIds]
+  )
   const generatedFilterActive = activeFilter === ITEM_STATUSES.GENERATED
+  const activeGeneratingOrderIds = useMemo(
+    () => Object.fromEntries(
+      Object.entries(generationJobs)
+        .filter(([, job]) => isPdfGenerationJobActive(job))
+        .map(([etsyOrderId]) => [etsyOrderId, true])
+    ),
+    [generationJobs]
+  )
 
   const openGeneratedPreview = (order) => {
     const etsyOrderId = order?.orderId || order?.etsyOrderId || order?.firstOrder?.etsyOrderId
@@ -352,6 +430,49 @@ export default function Etsy2OrdersPage() {
     }
   }
 
+  const deleteGroupedOrders = async (orderIds, label = 'selected order groups') => {
+    if (!orderIds.length) return
+
+    const orderGroups = etsy2Orders.filter((order) => orderIds.includes(order.orderId))
+    const sourceOrderIds = [...new Set(orderGroups.flatMap((order) => order.sourceGroup?.orderIds || []))]
+    if (!sourceOrderIds.length) {
+      setSnack({ open: true, message: 'No order items were found to delete.', severity: 'warning' })
+      return
+    }
+
+    const confirmed = window.confirm(
+      `Delete ${orderIds.length} ${label}? This removes all items inside those Etsy2 orders and cannot be undone.`
+    )
+    if (!confirmed) return
+
+    try {
+      await api.delete('/orders/bulk', { data: { orderIds: sourceOrderIds } })
+      setSelectedOrderIds((current) => current.filter((id) => !orderIds.includes(id)))
+      await Promise.all([fetchOrders(), fetchCounts()])
+      setSnack({
+        open: true,
+        message: `${orderIds.length} order group${orderIds.length === 1 ? '' : 's'} deleted`,
+        severity: 'success',
+      })
+    } catch (err) {
+      setSnack({
+        open: true,
+        message: err.response?.data?.message || err.response?.data?.error || 'Failed to delete selected orders',
+        severity: 'error',
+      })
+    }
+  }
+
+  const handleDeleteOrder = async (order) => {
+    if (!order?.orderId) return
+    await deleteGroupedOrders([order.orderId], 'order group')
+  }
+
+  const handleBulkDelete = async () => {
+    if (selectedOrderIds.length === 0) return
+    await deleteGroupedOrders(selectedOrderIds, 'selected order groups')
+  }
+
   return (
     <Box sx={{ p: 3 }}>
       <Box sx={{ mb: 3 }}>
@@ -414,10 +535,35 @@ export default function Etsy2OrdersPage() {
                 variant="contained"
                 startIcon={<PrintIcon />}
                 onClick={handleBulkGenerate}
-                disabled={selectedOrderIds.length === 0 || bulkGenerating}
-                sx={{ bgcolor: '#F97316', '&:hover': { bgcolor: '#EA580C' } }}
+                disabled={selectedMappedOrderIds.length === 0 || bulkGenerating}
+                size="small"
+                sx={{
+                  bgcolor: '#F97316',
+                  minHeight: 32,
+                  px: 1.5,
+                  fontSize: '0.8125rem',
+                  '&:hover': { bgcolor: '#EA580C' },
+                }}
               >
                 {bulkGenerating ? 'Generating...' : 'Generate Selected'}
+              </Button>
+            )}
+            {canManage && (
+              <Button
+                variant="outlined"
+                color="error"
+                startIcon={<DeleteOutlineIcon />}
+                onClick={handleBulkDelete}
+                disabled={selectedOrderIds.length === 0}
+                size="small"
+                sx={{
+                  borderRadius: '8px',
+                  minHeight: 32,
+                  px: 1.5,
+                  fontSize: '0.8125rem',
+                }}
+              >
+                Delete Selected
               </Button>
             )}
             <Button
@@ -550,15 +696,6 @@ export default function Etsy2OrdersPage() {
                   Select mapped order groups and generate their print PDFs together.
                 </Typography>
               </Box>
-              <Button
-                variant="contained"
-                startIcon={bulkGenerating ? <CircularProgress size={16} color="inherit" /> : <PrintIcon />}
-                onClick={handleBulkGenerate}
-                disabled={selectedOrderIds.length === 0 || bulkGenerating}
-                sx={{ bgcolor: '#F97316', '&:hover': { bgcolor: '#EA580C' } }}
-              >
-                {bulkGenerating ? 'Generating...' : `Generate PDFs for Selected${selectedOrderIds.length ? ` (${selectedOrderIds.length})` : ''}`}
-              </Button>
             </Box>
           )}
 
@@ -605,6 +742,23 @@ export default function Etsy2OrdersPage() {
                         }}
                       >
                         {bulkSending ? 'Sending...' : 'Send Selected to Lulu'}
+                      </Button>
+                      <Button
+                        variant="outlined"
+                        color="error"
+                        startIcon={<DeleteOutlineIcon />}
+                        onClick={handleBulkDelete}
+                        disabled={selectedOrderIds.length === 0 || bulkSending}
+                        size="small"
+                        sx={{
+                          fontWeight: 700,
+                          borderRadius: '6px',
+                          minHeight: 32,
+                          px: 1.5,
+                          fontSize: '0.8125rem',
+                        }}
+                      >
+                        Delete Selected
                       </Button>
                       <Button
                         variant="outlined"
@@ -664,12 +818,13 @@ export default function Etsy2OrdersPage() {
                 selectedOrderIds={selectedOrderIds}
                 onToggleOrder={handleToggleOrder}
                 onToggleVisible={handleToggleVisible}
-                allVisibleSelected={paginatedOrders.length > 0 && selectedVisibleCount === paginatedOrders.length}
-                partiallyVisibleSelected={selectedVisibleCount > 0 && selectedVisibleCount < paginatedOrders.length}
-                sendingOrderIds={sendingOrderIds}
-              />
-            </Box>
-          ) : (
+              allVisibleSelected={paginatedOrders.length > 0 && selectedVisibleCount === paginatedOrders.length}
+              partiallyVisibleSelected={selectedVisibleCount > 0 && selectedVisibleCount < paginatedOrders.length}
+              sendingOrderIds={sendingOrderIds}
+              onDeleteOrder={handleDeleteOrder}
+            />
+          </Box>
+        ) : (
             <Etsy2OrdersTable
               orders={paginatedOrders}
               onViewOrder={openEtsy2Detail}
@@ -680,7 +835,9 @@ export default function Etsy2OrdersPage() {
               onToggleVisible={handleToggleVisible}
               allVisibleSelected={paginatedOrders.length > 0 && selectedVisibleCount === paginatedOrders.length}
               partiallyVisibleSelected={selectedVisibleCount > 0 && selectedVisibleCount < paginatedOrders.length}
-              generatingOrderIds={generatingOrderIds}
+              generatingOrderIds={activeGeneratingOrderIds}
+              onCancelGeneration={handleCancelGeneration}
+              onDeleteOrder={handleDeleteOrder}
             />
           )}
 
