@@ -1,43 +1,38 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
+  Alert,
   Box,
-  Typography,
-  TextField,
-  InputAdornment,
-  Chip,
   Button,
-  Pagination,
+  Chip,
   CircularProgress,
   FormControl,
-  Select,
+  InputAdornment,
   MenuItem,
+  Pagination,
+  Select,
   Snackbar,
-  Alert,
+  TextField,
   ToggleButton,
   ToggleButtonGroup,
   Tooltip,
+  Typography,
 } from '@mui/material'
 import SearchIcon from '@mui/icons-material/Search'
 import SyncIcon from '@mui/icons-material/Sync'
 import AddIcon from '@mui/icons-material/Add'
 import PrintIcon from '@mui/icons-material/Print'
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined'
-import FileDownloadOutlinedIcon from '@mui/icons-material/FileDownloadOutlined'
-import FilterListOutlinedIcon from '@mui/icons-material/FilterListOutlined'
-import LocalShippingOutlinedIcon from '@mui/icons-material/LocalShippingOutlined'
-import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown'
+import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined'
 import ViewListOutlinedIcon from '@mui/icons-material/ViewListOutlined'
 import ViewKanbanOutlinedIcon from '@mui/icons-material/ViewKanbanOutlined'
 import Etsy2OrdersTable from '../components/etsy2/Etsy2OrdersTable'
-import Etsy2GeneratedOrdersTable from '../components/etsy2/Etsy2GeneratedOrdersTable'
 import OrderKanban from '../components/orders/OrderKanban'
 import OrderFormDialog from '../components/orders/OrderFormDialog'
 import api from '../lib/api'
 import useAuthStore from '../stores/authStore'
 import { canManageWorkspace } from '../lib/permissions'
 import { ITEM_STATUSES, ORDER_FILTERS } from '../lib/etsy2Constants'
-import { getGeneratedOrderSourceIds } from '../lib/generatedOrders'
 import { buildOrderGroups, getPresetDateRange, toEtsy2Order } from '../lib/etsy2Orders'
 import {
   cancelPdfGenerationJob,
@@ -55,6 +50,8 @@ const DATE_RANGE_OPTIONS = [
   { value: '90d', label: 'Last 3 months' },
   { value: '1y', label: 'This year' },
 ]
+
+const LIST_FILTERS = ORDER_FILTERS.filter((filter) => filter.value !== ITEM_STATUSES.GENERATED)
 
 const orderWithOnlyStatusItems = (order, status) => {
   if (status === 'all') return order
@@ -90,8 +87,6 @@ export default function Etsy2OrdersPage() {
   const [generationJobs, setGenerationJobs] = useState({})
   const completedGenerationJobIdsRef = useRef(new Set())
   const [bulkGenerating, setBulkGenerating] = useState(false)
-  const [sendingOrderIds, setSendingOrderIds] = useState({})
-  const [bulkSending, setBulkSending] = useState(false)
   const [manualOpen, setManualOpen] = useState(false)
   const [snack, setSnack] = useState({ open: false, message: '', severity: 'success' })
 
@@ -155,7 +150,7 @@ export default function Etsy2OrdersPage() {
         await Promise.all([fetchOrders(), fetchCounts()])
       }
     } catch {
-      // Job polling should not block normal order browsing.
+      // Keep the list usable if polling fails briefly.
     }
   }, [fetchCounts, fetchOrders])
 
@@ -181,28 +176,21 @@ export default function Etsy2OrdersPage() {
   )
 
   const filterCounts = useMemo(
-    () => ORDER_FILTERS.map((filter) => {
+    () => LIST_FILTERS.map((filter) => {
       if (filter.value === 'all') return { ...filter, count: etsy2Orders.length }
-      const count = etsy2Orders.filter((order) =>
-        order.items?.some((item) => item.status === filter.value)
-      ).length
+      const count = etsy2Orders.filter((order) => order.items?.some((item) => item.status === filter.value)).length
       return { ...filter, count }
     }),
     [etsy2Orders]
   )
 
   const filteredOrders = useMemo(
-    () => etsy2Orders
-      .map((order) => orderWithOnlyStatusItems(order, activeFilter))
-      .filter(Boolean),
+    () => etsy2Orders.map((order) => orderWithOnlyStatusItems(order, activeFilter)).filter(Boolean),
     [activeFilter, etsy2Orders]
   )
 
   const totalPages = Math.max(1, Math.ceil(filteredOrders.length / ITEMS_PER_PAGE))
-  const paginatedOrders = filteredOrders.slice(
-    (page - 1) * ITEMS_PER_PAGE,
-    page * ITEMS_PER_PAGE
-  )
+  const paginatedOrders = filteredOrders.slice((page - 1) * ITEMS_PER_PAGE, page * ITEMS_PER_PAGE)
 
   useEffect(() => {
     if (page > totalPages) setPage(totalPages)
@@ -261,11 +249,22 @@ export default function Etsy2OrdersPage() {
     }
   }
 
+  const selectedMappedOrderIds = useMemo(
+    () => filteredOrders
+      .filter((order) =>
+        selectedOrderIds.includes(order.orderId) &&
+        order.items?.some((item) => item.status === ITEM_STATUSES.MAPPED)
+      )
+      .map((order) => order.orderId),
+    [filteredOrders, selectedOrderIds]
+  )
+
   const handleBulkGenerate = async () => {
     if (selectedMappedOrderIds.length === 0) {
       setSnack({ open: true, message: 'Select mapped order groups before generating PDFs.', severity: 'warning' })
       return
     }
+
     setBulkGenerating(true)
     try {
       const jobs = await Promise.all(selectedMappedOrderIds.map((etsyOrderId) => startPdfGenerationJob(etsyOrderId)))
@@ -323,32 +322,18 @@ export default function Etsy2OrdersPage() {
 
   const handleToggleOrder = (orderId, checked) => {
     setSelectedOrderIds((current) => (
-      checked
-        ? [...new Set([...current, orderId])]
-        : current.filter((id) => id !== orderId)
+      checked ? [...new Set([...current, orderId])] : current.filter((id) => id !== orderId)
     ))
   }
 
   const handleToggleVisible = (checked) => {
     const visibleIds = paginatedOrders.map((order) => order.orderId)
     setSelectedOrderIds((current) => (
-      checked
-        ? [...new Set([...current, ...visibleIds])]
-        : current.filter((id) => !visibleIds.includes(id))
+      checked ? [...new Set([...current, ...visibleIds])] : current.filter((id) => !visibleIds.includes(id))
     ))
   }
 
   const selectedVisibleCount = paginatedOrders.filter((order) => selectedOrderIds.includes(order.orderId)).length
-  const selectedMappedOrderIds = useMemo(
-    () => filteredOrders
-      .filter((order) =>
-        selectedOrderIds.includes(order.orderId) &&
-        order.items?.some((item) => item.status === ITEM_STATUSES.MAPPED)
-      )
-      .map((order) => order.orderId),
-    [filteredOrders, selectedOrderIds]
-  )
-  const generatedFilterActive = activeFilter === ITEM_STATUSES.GENERATED
   const activeGeneratingOrderIds = useMemo(
     () => Object.fromEntries(
       Object.entries(generationJobs)
@@ -357,78 +342,6 @@ export default function Etsy2OrdersPage() {
     ),
     [generationJobs]
   )
-
-  const openGeneratedPreview = (order) => {
-    const etsyOrderId = order?.orderId || order?.etsyOrderId || order?.firstOrder?.etsyOrderId
-    if (etsyOrderId) navigate(`/orders/etsy2/${encodeURIComponent(etsyOrderId)}?view=generated`)
-  }
-
-  const handleEditCanvas = (order) => {
-    const etsyOrderId = order?.orderId || order?.etsyOrderId || order?.firstOrder?.etsyOrderId
-    if (etsyOrderId) navigate(`/orders/etsy2/${encodeURIComponent(etsyOrderId)}/canvas`)
-  }
-
-  const handleSendToLulu = async (order) => {
-    const sourceIds = getGeneratedOrderSourceIds(order)
-    if (sourceIds.length === 0) {
-      setSnack({ open: true, message: 'No generated PDFs are ready for Lulu on this order.', severity: 'warning' })
-      return
-    }
-
-    setSendingOrderIds((current) => ({ ...current, [order.orderId]: true }))
-    try {
-      const { data } = await api.post('/lulu/bulk-submit', { orderIds: sourceIds })
-      await Promise.all([fetchOrders(), fetchCounts()])
-      setSnack({
-        open: true,
-        message: `Sent ${data.submitted || 0} of ${sourceIds.length} generated item${sourceIds.length === 1 ? '' : 's'} to Lulu.`,
-        severity: data.failed > 0 ? 'warning' : 'success',
-      })
-    } catch (err) {
-      setSnack({
-        open: true,
-        message: err.response?.data?.message || err.response?.data?.error || 'Failed to send order to Lulu',
-        severity: 'error',
-      })
-    } finally {
-      setSendingOrderIds((current) => {
-        const next = { ...current }
-        delete next[order.orderId]
-        return next
-      })
-    }
-  }
-
-  const handleBulkSendToLulu = async () => {
-    const selectedOrders = filteredOrders.filter((order) => selectedOrderIds.includes(order.orderId))
-    const sourceIds = selectedOrders.flatMap(getGeneratedOrderSourceIds)
-    if (sourceIds.length === 0) {
-      setSnack({ open: true, message: 'Select generated orders with cover and inside PDFs first.', severity: 'warning' })
-      return
-    }
-
-    setBulkSending(true)
-    setSendingOrderIds((current) => selectedOrders.reduce((next, order) => ({ ...next, [order.orderId]: true }), { ...current }))
-    try {
-      const { data } = await api.post('/lulu/bulk-submit', { orderIds: sourceIds })
-      await Promise.all([fetchOrders(), fetchCounts()])
-      setSelectedOrderIds([])
-      setSnack({
-        open: true,
-        message: `Sent ${data.submitted || 0} of ${sourceIds.length} generated item${sourceIds.length === 1 ? '' : 's'} to Lulu.`,
-        severity: data.failed > 0 ? 'warning' : 'success',
-      })
-    } catch (err) {
-      setSnack({
-        open: true,
-        message: err.response?.data?.message || err.response?.data?.error || 'Failed to send selected orders to Lulu',
-        severity: 'error',
-      })
-    } finally {
-      setBulkSending(false)
-      setSendingOrderIds({})
-    }
-  }
 
   const deleteGroupedOrders = async (orderIds, label = 'selected order groups') => {
     if (!orderIds.length) return
@@ -478,17 +391,7 @@ export default function Etsy2OrdersPage() {
       <Box sx={{ mb: 3 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1, gap: 2, flexWrap: 'wrap' }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            <Box
-              sx={{
-                width: 40,
-                height: 40,
-                bgcolor: '#F97316',
-                borderRadius: '8px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
+            <Box sx={{ width: 40, height: 40, bgcolor: '#F97316', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Typography sx={{ fontSize: '20px', color: '#FFFFFF', fontWeight: 700 }}>E</Typography>
             </Box>
             <Box>
@@ -500,50 +403,45 @@ export default function Etsy2OrdersPage() {
               </Typography>
             </Box>
           </Box>
+
           <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
             <FormControl size="small" sx={{ minWidth: 140 }}>
               <Select
                 value={dateRange}
                 onChange={(e) => setDateRange(e.target.value)}
-                sx={{
-                  bgcolor: '#FFFFFF',
-                  borderRadius: '8px',
-                  '& fieldset': { borderColor: '#E3E3E7' },
-                }}
+                sx={{ bgcolor: '#FFFFFF', borderRadius: '8px', '& fieldset': { borderColor: '#E3E3E7' } }}
               >
                 {DATE_RANGE_OPTIONS.map((option) => (
                   <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
                 ))}
               </Select>
             </FormControl>
+            <Button
+              variant="outlined"
+              startIcon={<DescriptionOutlinedIcon />}
+              onClick={() => navigate('/orders/generated')}
+              sx={{ borderColor: '#E3E3E7', color: '#27272A', '&:hover': { borderColor: '#D4D4D8', bgcolor: '#FAFAFA' } }}
+            >
+              Generated PDFs
+            </Button>
             {canManage && (
               <Button
                 variant="outlined"
                 startIcon={<AddIcon />}
                 onClick={() => setManualOpen(true)}
-                sx={{
-                  borderColor: '#E3E3E7',
-                  color: '#27272A',
-                  '&:hover': { borderColor: '#D4D4D8', bgcolor: '#FAFAFA' },
-                }}
+                sx={{ borderColor: '#E3E3E7', color: '#27272A', '&:hover': { borderColor: '#D4D4D8', bgcolor: '#FAFAFA' } }}
               >
                 Add Order
               </Button>
             )}
-            {canManage && !generatedFilterActive && (
+            {canManage && (
               <Button
                 variant="contained"
                 startIcon={<PrintIcon />}
                 onClick={handleBulkGenerate}
                 disabled={selectedMappedOrderIds.length === 0 || bulkGenerating}
                 size="small"
-                sx={{
-                  bgcolor: '#F97316',
-                  minHeight: 32,
-                  px: 1.5,
-                  fontSize: '0.8125rem',
-                  '&:hover': { bgcolor: '#EA580C' },
-                }}
+                sx={{ bgcolor: '#F97316', minHeight: 32, px: 1.5, fontSize: '0.8125rem', '&:hover': { bgcolor: '#EA580C' } }}
               >
                 {bulkGenerating ? 'Generating...' : 'Generate Selected'}
               </Button>
@@ -556,12 +454,7 @@ export default function Etsy2OrdersPage() {
                 onClick={handleBulkDelete}
                 disabled={selectedOrderIds.length === 0}
                 size="small"
-                sx={{
-                  borderRadius: '8px',
-                  minHeight: 32,
-                  px: 1.5,
-                  fontSize: '0.8125rem',
-                }}
+                sx={{ borderRadius: '8px', minHeight: 32, px: 1.5, fontSize: '0.8125rem' }}
               >
                 Delete Selected
               </Button>
@@ -571,14 +464,7 @@ export default function Etsy2OrdersPage() {
               startIcon={syncing ? <CircularProgress size={16} /> : <SyncIcon />}
               onClick={handleSync}
               disabled={syncing}
-              sx={{
-                borderColor: '#E3E3E7',
-                color: '#27272A',
-                '&:hover': {
-                  borderColor: '#D4D4D8',
-                  bgcolor: '#FAFAFA',
-                },
-              }}
+              sx={{ borderColor: '#E3E3E7', color: '#27272A', '&:hover': { borderColor: '#D4D4D8', bgcolor: '#FAFAFA' } }}
             >
               {syncing ? 'Syncing...' : 'Sync'}
             </Button>
@@ -620,12 +506,8 @@ export default function Etsy2OrdersPage() {
             '& .MuiOutlinedInput-root': {
               bgcolor: '#FFFFFF',
               borderRadius: '10px',
-              '& fieldset': {
-                borderColor: '#E3E3E7',
-              },
-              '&:hover fieldset': {
-                borderColor: '#D4D4D8',
-              },
+              '& fieldset': { borderColor: '#E3E3E7' },
+              '&:hover fieldset': { borderColor: '#D4D4D8' },
             },
           }}
         />
@@ -645,9 +527,7 @@ export default function Etsy2OrdersPage() {
                 borderColor: activeFilter === filter.value ? '#F97316' : '#E3E3E7',
                 fontWeight: 500,
                 fontSize: '0.875rem',
-                '&:hover': {
-                  bgcolor: activeFilter === filter.value ? '#EA580C' : '#FAFAFA',
-                },
+                '&:hover': { bgcolor: activeFilter === filter.value ? '#EA580C' : '#FAFAFA' },
               }}
             />
           ))}
@@ -673,213 +553,46 @@ export default function Etsy2OrdersPage() {
         </Box>
       ) : (
         <>
-          {canManage && !generatedFilterActive && (
-            <Box
-              sx={{
-                mb: 2,
-                p: 2,
-                bgcolor: '#FFFFFF',
-                border: '1px solid #E3E3E7',
-                borderRadius: '12px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: 2,
-                flexWrap: 'wrap',
-              }}
-            >
+          {canManage && (
+            <Box sx={{ mb: 2, p: 2, bgcolor: '#FFFFFF', border: '1px solid #E3E3E7', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, flexWrap: 'wrap' }}>
               <Box>
                 <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#27272A' }}>
                   {activeFilter === 'all' ? 'Orders' : `${filterCounts.find((filter) => filter.value === activeFilter)?.label || 'Filtered'} Orders`} ({filteredOrders.length})
                 </Typography>
                 <Typography variant="body2" sx={{ color: '#71717A' }}>
-                  Select mapped order groups and generate their print PDFs together.
+                  Generate PDFs from mapped orders here. Preview, edit, and resend print-ready files from the separate Generated PDFs page.
                 </Typography>
               </Box>
             </Box>
           )}
 
-          {generatedFilterActive ? (
-            <Box
-              sx={{
-                mb: 3,
-                bgcolor: '#FFFFFF',
-                border: '1px solid #E5E7EB',
-                borderRadius: '12px',
-                overflow: 'hidden',
-              }}
-            >
-              <Box
-                sx={{
-                  p: 2.5,
-                  display: 'flex',
-                  alignItems: { xs: 'stretch', lg: 'flex-end' },
-                  justifyContent: 'space-between',
-                  gap: 2,
-                  flexDirection: { xs: 'column', lg: 'row' },
-                }}
-              >
-                <Box>
-                  <Typography variant="h6" sx={{ fontWeight: 800, color: '#111827' }}>
-                    Generated Orders ({filteredOrders.length})
-                  </Typography>
-                  <Typography variant="body2" sx={{ color: '#64748B', mt: 0.5 }}>
-                    PDFs have been successfully generated and are ready to preview, edit, or send to Lulu.
-                  </Typography>
-                  {canManage && (
-                    <Box sx={{ display: 'flex', gap: 1, mt: 2, flexWrap: 'wrap' }}>
-                      <Button
-                        variant="contained"
-                        startIcon={bulkSending ? <CircularProgress size={16} color="inherit" /> : <LocalShippingOutlinedIcon />}
-                        onClick={handleBulkSendToLulu}
-                        disabled={selectedOrderIds.length === 0 || bulkSending}
-                        sx={{
-                          bgcolor: '#5B21D6',
-                          fontWeight: 800,
-                          borderRadius: '6px',
-                          px: 2.5,
-                          '&:hover': { bgcolor: '#4C1D95' },
-                        }}
-                      >
-                        {bulkSending ? 'Sending...' : 'Send Selected to Lulu'}
-                      </Button>
-                      <Button
-                        variant="outlined"
-                        color="error"
-                        startIcon={<DeleteOutlineIcon />}
-                        onClick={handleBulkDelete}
-                        disabled={selectedOrderIds.length === 0 || bulkSending}
-                        size="small"
-                        sx={{
-                          fontWeight: 700,
-                          borderRadius: '6px',
-                          minHeight: 32,
-                          px: 1.5,
-                          fontSize: '0.8125rem',
-                        }}
-                      >
-                        Delete Selected
-                      </Button>
-                      <Button
-                        variant="outlined"
-                        endIcon={<KeyboardArrowDownIcon />}
-                        startIcon={<FileDownloadOutlinedIcon />}
-                        sx={{ borderColor: '#E5E7EB', color: '#111827', fontWeight: 700, borderRadius: '6px' }}
-                      >
-                        Export
-                      </Button>
-                    </Box>
-                  )}
-                </Box>
-
-                <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'center', flexWrap: 'wrap' }}>
-                  <TextField
-                    size="small"
-                    placeholder="Search orders..."
-                    value={search}
-                    onChange={(e) => {
-                      setSearch(e.target.value)
-                      setPage(1)
-                    }}
-                    slotProps={{
-                      input: {
-                        startAdornment: (
-                          <InputAdornment position="start">
-                            <SearchIcon sx={{ color: '#94A3B8' }} />
-                          </InputAdornment>
-                        ),
-                      },
-                    }}
-                    sx={{
-                      minWidth: { xs: '100%', sm: 320 },
-                      '& .MuiOutlinedInput-root': {
-                        borderRadius: '6px',
-                        '& fieldset': { borderColor: '#E5E7EB' },
-                      },
-                    }}
-                  />
-                  <Button
-                    variant="outlined"
-                    startIcon={<FilterListOutlinedIcon />}
-                    endIcon={<KeyboardArrowDownIcon />}
-                    sx={{ borderColor: '#E5E7EB', color: '#111827', fontWeight: 700, borderRadius: '6px', minHeight: 40 }}
-                  >
-                    Filters
-                  </Button>
-                </Box>
-              </Box>
-
-              <Etsy2GeneratedOrdersTable
-                orders={paginatedOrders}
-                onPreview={openGeneratedPreview}
-                onEditCanvas={handleEditCanvas}
-                onSendToLulu={handleSendToLulu}
-                canManage={canManage}
-                selectedOrderIds={selectedOrderIds}
-                onToggleOrder={handleToggleOrder}
-                onToggleVisible={handleToggleVisible}
-              allVisibleSelected={paginatedOrders.length > 0 && selectedVisibleCount === paginatedOrders.length}
-              partiallyVisibleSelected={selectedVisibleCount > 0 && selectedVisibleCount < paginatedOrders.length}
-              sendingOrderIds={sendingOrderIds}
-              onDeleteOrder={handleDeleteOrder}
-            />
-          </Box>
-        ) : (
-            <Etsy2OrdersTable
-              orders={paginatedOrders}
-              onViewOrder={openEtsy2Detail}
-              onGenerateOrder={handleGenerate}
-              canManage={canManage}
-              selectedOrderIds={selectedOrderIds}
-              onToggleOrder={handleToggleOrder}
-              onToggleVisible={handleToggleVisible}
-              allVisibleSelected={paginatedOrders.length > 0 && selectedVisibleCount === paginatedOrders.length}
-              partiallyVisibleSelected={selectedVisibleCount > 0 && selectedVisibleCount < paginatedOrders.length}
-              generatingOrderIds={activeGeneratingOrderIds}
-              onCancelGeneration={handleCancelGeneration}
-              onDeleteOrder={handleDeleteOrder}
-            />
-          )}
+          <Etsy2OrdersTable
+            orders={paginatedOrders}
+            onViewOrder={openEtsy2Detail}
+            onGenerateOrder={handleGenerate}
+            canManage={canManage}
+            selectedOrderIds={selectedOrderIds}
+            onToggleOrder={handleToggleOrder}
+            onToggleVisible={handleToggleVisible}
+            allVisibleSelected={paginatedOrders.length > 0 && selectedVisibleCount === paginatedOrders.length}
+            partiallyVisibleSelected={selectedVisibleCount > 0 && selectedVisibleCount < paginatedOrders.length}
+            generatingOrderIds={activeGeneratingOrderIds}
+            onCancelGeneration={handleCancelGeneration}
+            onDeleteOrder={handleDeleteOrder}
+          />
 
           {filteredOrders.length === 0 && (
-            <Box
-              sx={{
-                mt: 2,
-                p: 4,
-                bgcolor: '#FFFFFF',
-                border: '1px solid #E3E3E7',
-                borderRadius: '12px',
-                textAlign: 'center',
-              }}
-            >
-              <Typography variant="subtitle1" sx={{ fontWeight: 600, color: '#27272A' }}>
-                No orders found
-              </Typography>
-              <Typography variant="body2" sx={{ color: '#71717A', mt: 0.5 }}>
-                Try another filter or sync email orders.
-              </Typography>
-            </Box>
+            <Alert severity="info" sx={{ mt: 2, borderRadius: '12px' }}>
+              No orders found. Try another filter or sync email orders.
+            </Alert>
           )}
 
           {filteredOrders.length > 0 && (
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 3, gap: 2, flexWrap: 'wrap' }}>
               <Typography variant="body2" sx={{ color: '#71717A' }}>
-                Showing {(page - 1) * ITEMS_PER_PAGE + 1} to{' '}
-                {Math.min(page * ITEMS_PER_PAGE, filteredOrders.length)} of {filteredOrders.length} orders
+                Showing {(page - 1) * ITEMS_PER_PAGE + 1} to {Math.min(page * ITEMS_PER_PAGE, filteredOrders.length)} of {filteredOrders.length} orders
               </Typography>
-              {totalPages > 1 && (
-                <Pagination
-                  count={totalPages}
-                  page={page}
-                  onChange={(_, value) => setPage(value)}
-                  color="primary"
-                  sx={{
-                    '& .MuiPaginationItem-root': {
-                      borderRadius: '8px',
-                    },
-                  }}
-                />
-              )}
+              {totalPages > 1 && <Pagination count={totalPages} page={page} onChange={(_, value) => setPage(value)} color="primary" />}
             </Box>
           )}
         </>

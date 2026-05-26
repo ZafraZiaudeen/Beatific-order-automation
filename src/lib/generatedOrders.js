@@ -1,11 +1,23 @@
 import { ITEM_STATUSES } from './etsy2Constants'
 
+export const GENERATED_ORDER_STATUSES = [
+  ITEM_STATUSES.GENERATED,
+  ITEM_STATUSES.FAILED,
+  ITEM_STATUSES.SHIPPED,
+]
+
+export const isGeneratedOrderItem = (item) => GENERATED_ORDER_STATUSES.includes(item?.status)
+
+export const getGeneratedOrderItems = (order) =>
+  (order?.items || []).filter(isGeneratedOrderItem)
+
+export const hasGeneratedOrderItems = (order) =>
+  getGeneratedOrderItems(order).length > 0
+
 export const getGeneratedOrderItem = (order) =>
-  order?.items?.find((item) => item.status === ITEM_STATUSES.GENERATED) ||
-  order?.items?.[0]
+  getGeneratedOrderItems(order)[0] || order?.items?.[0]
 
 export const getGeneratedOrderSourceIds = (order) =>
-  (order?.items || [])
-    .filter((item) => item.status === ITEM_STATUSES.GENERATED)
+  getGeneratedOrderItems(order)
     .map((item) => item.sourceOrder?._id)
     .filter(Boolean)

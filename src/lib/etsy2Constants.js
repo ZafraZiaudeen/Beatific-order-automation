@@ -4,6 +4,7 @@
 // Item-Level Statuses
 export const ITEM_STATUSES = {
   AI_FLAGGED: 'ai_flagged',
+  FAILED: 'failed',
   UNMAPPED: 'unmapped',
   CUSTOM: 'custom',
   MAPPED: 'mapped',
@@ -20,6 +21,13 @@ export const ITEM_STATUS_CONFIG = {
     bgColor: '#FEE2E2',
     description: 'AI detected potentially inappropriate content',
     icon: 'warning',
+  },
+  [ITEM_STATUSES.FAILED]: {
+    label: 'Failed',
+    color: '#DC2626',
+    bgColor: '#FEE2E2',
+    description: 'Lulu rejected the generated files or fulfillment data',
+    icon: 'error',
   },
   [ITEM_STATUSES.UNMAPPED]: {
     label: 'Unmapped',
@@ -67,6 +75,7 @@ export const ITEM_STATUS_CONFIG = {
 
 // Batch status hierarchy (from most critical to least critical)
 export const BATCH_STATUS_HIERARCHY = [
+  ITEM_STATUSES.FAILED,
   ITEM_STATUSES.AI_FLAGGED,
   ITEM_STATUSES.UNMAPPED,
   ITEM_STATUSES.CUSTOM,
@@ -79,6 +88,7 @@ export const BATCH_STATUS_HIERARCHY = [
 // Filter chips for the orders list
 export const ORDER_FILTERS = [
   { value: 'all', label: 'All', count: 0 },
+  { value: ITEM_STATUSES.FAILED, label: 'Failed', count: 0 },
   { value: ITEM_STATUSES.UNMAPPED, label: 'Unmapped', count: 0 },
   { value: ITEM_STATUSES.CUSTOM, label: 'Custom', count: 0 },
   { value: ITEM_STATUSES.MAPPED, label: 'Mapped', count: 0 },

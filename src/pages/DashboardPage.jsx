@@ -157,10 +157,17 @@ export default function DashboardPage() {
 
   const quickActions = [
     {
+      icon: ShoppingCartOutlinedIcon,
+      title: 'Orders',
+      description: 'Open the Etsy 2 workflow for intake, review, PDF generation, and fulfillment handoff.',
+      to: '/orders/etsy2',
+      gradient: softGradients.primary,
+    },
+    {
       icon: Inventory2OutlinedIcon,
       title: 'Product Library',
       description: 'Map Etsy listing IDs to template files and Lulu specs.',
-      to: '/products',
+      to: '/product-library-2',
       gradient: softGradients.warning,
     },
     canManage && {
@@ -179,7 +186,7 @@ export default function DashboardPage() {
         subtitle={`Soft UI order control center for ${company?.name || 'your workspace'}. Track Etsy intake, template readiness, and Lulu fulfillment in one place.`}
         actions={
           canManage && (
-            <SoftButton startIcon={<ShoppingCartOutlinedIcon />} onClick={() => navigate('/orders/etsy')}>
+            <SoftButton startIcon={<ShoppingCartOutlinedIcon />} onClick={() => navigate('/orders/etsy2')}>
               Open Orders
             </SoftButton>
           )
@@ -253,7 +260,7 @@ export default function DashboardPage() {
                   size="small"
                   variant="text"
                   endIcon={<ArrowForwardIcon />}
-                  onClick={() => navigate('/orders/etsy')}
+                  onClick={() => navigate('/orders/etsy2')}
                   sx={{ color: '#71717a' }}
                 >
                   View all
@@ -279,8 +286,8 @@ export default function DashboardPage() {
                 description="Fetch email orders or add a manual order to begin the workflow."
                 action={
                   canManage && (
-                    <SoftButton onClick={() => navigate('/orders/etsy')}>
-                      Open Etsy Orders
+                    <SoftButton onClick={() => navigate('/orders/etsy2')}>
+                      Open Orders
                     </SoftButton>
                   )
                 }
@@ -290,7 +297,7 @@ export default function DashboardPage() {
                 {recentOrders.map((order) => (
                   <Box
                     key={order._id}
-                    onClick={() => navigate('/orders/etsy')}
+                    onClick={() => navigate(`/orders/etsy2/${encodeURIComponent(order.etsyOrderId)}`)}
                     sx={{
                       display: 'grid',
                       gridTemplateColumns: { xs: '1fr', sm: '110px minmax(0, 1fr) minmax(120px, 0.8fr) auto' },

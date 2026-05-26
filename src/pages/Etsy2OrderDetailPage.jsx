@@ -39,6 +39,7 @@ import { buildAssetThumbnailUrl } from '../lib/assets'
 import OrderFormDialog from '../components/orders/OrderFormDialog'
 import Etsy2StatusBadge from '../components/etsy2/Etsy2StatusBadge'
 import { deriveBatchStatus, ITEM_STATUSES } from '../lib/etsy2Constants'
+import { getGeneratedOrderItems, getGeneratedOrderSourceIds } from '../lib/generatedOrders'
 import {
   addressLines,
   buildOrderFileUrl,
@@ -378,9 +379,7 @@ export default function Etsy2OrderDetailPage() {
   const subtotal = group?.items?.reduce((sum, item) => sum + Number(item.price || 0) * Number(item.quantity || 1), 0) || 0
   const shipping = Number(group?.pricing?.shipping || group?.items?.[0]?.shippingCost || 0)
   const tax = Number(group?.pricing?.tax || 0)
-  const generatedItems = order?.items?.filter((item) =>
-    item.status === ITEM_STATUSES.GENERATED
-  ) || []
+  const generatedItems = getGeneratedOrderItems(order)
   const previewItem = generatedItems[0] || order?.items?.[0] || null
   const previewSource = previewItem?.sourceOrder || {}
   const previewAssets = [
@@ -402,7 +401,8 @@ export default function Etsy2OrderDetailPage() {
   const activeAsset = previewAssets.find((asset) => asset.kind === activePreviewKind) || previewAssets[0]
   const showGeneratedPreview = generatedItems.length > 0 && (
     searchParams.get('view') === 'generated' ||
-    batchStatus === ITEM_STATUSES.GENERATED
+    batchStatus === ITEM_STATUSES.GENERATED ||
+    batchStatus === ITEM_STATUSES.FAILED
   )
 
   useEffect(() => {
@@ -474,7 +474,7 @@ export default function Etsy2OrderDetailPage() {
   }
 
   const handleSendGeneratedToLulu = async () => {
-    const orderIds = generatedItems.map((item) => item.sourceOrder?._id).filter(Boolean)
+    const orderIds = getGeneratedOrderSourceIds(order)
     if (orderIds.length === 0) {
       setSnack({ open: true, message: 'No generated PDFs are ready for Lulu on this order.', severity: 'warning' })
       return
@@ -519,7 +519,7 @@ export default function Etsy2OrderDetailPage() {
   }
 
   const handleEditInCanvas = () => {
-    const itemQuery = previewSource?._id ? `?itemId=${encodeURIComponent(previewSource._id)}` : ''
+    const itemQuery = previewSource?._id ? `?source=generated&itemId=${encodeURIComponent(previewSource._id)}` : '?source=generated'
     navigate(`/orders/etsy2/${encodeURIComponent(order.orderId)}/canvas${itemQuery}`)
   }
 
@@ -546,7 +546,7 @@ export default function Etsy2OrderDetailPage() {
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, mb: 2, flexWrap: 'wrap' }}>
           <Button
             startIcon={<ArrowBackIcon />}
-            onClick={() => navigate('/orders/etsy2')}
+            onClick={() => navigate(`/orders/generated/${encodeURIComponent(order.orderId)}`)}
             sx={{ color: '#64748B', fontWeight: 700, textTransform: 'none' }}
           >
             Back to Generated Orders
@@ -579,7 +579,7 @@ export default function Etsy2OrderDetailPage() {
                 <Typography variant="h4" sx={{ fontWeight: 800, color: '#0F172A', fontSize: { xs: '1.6rem', md: '2rem' } }}>
                   Order #{order.orderId}
                 </Typography>
-                <Etsy2StatusBadge status={ITEM_STATUSES.GENERATED} showIcon={false} />
+                <Etsy2StatusBadge status={previewItem?.status || ITEM_STATUSES.GENERATED} showIcon={false} />
               </Box>
               <Typography variant="body2" sx={{ color: '#64748B', mt: 0.75 }}>
                 Generated on {formatDate(previewSource.templateFinalizedAt || previewSource.updatedAt || order.date, true)}
@@ -637,7 +637,7 @@ export default function Etsy2OrderDetailPage() {
                 </Box>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2, alignItems: 'center' }}>
                   <Typography variant="body2" sx={{ color: '#64748B', fontWeight: 600 }}>Status</Typography>
-                  <Etsy2StatusBadge status={ITEM_STATUSES.GENERATED} showIcon={false} />
+                  <Etsy2StatusBadge status={previewItem?.status || ITEM_STATUSES.GENERATED} showIcon={false} />
                 </Box>
               </Box>
 
@@ -660,7 +660,7 @@ export default function Etsy2OrderDetailPage() {
                     disabled={sendingToLulu}
                     sx={{ bgcolor: '#16A34A', borderRadius: '6px', fontWeight: 800, '&:hover': { bgcolor: '#15803D' } }}
                   >
-                    {sendingToLulu ? 'Sending...' : 'Send to Lulu'}
+                    {sendingToLulu ? 'Sending...' : previewItem?.status === ITEM_STATUSES.FAILED ? 'Resend to Lulu' : 'Send to Lulu'}
                   </Button>
                 )}
                 <Button
