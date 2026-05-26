@@ -241,7 +241,7 @@ function ReviewChecklistItem({
   )
 }
 
-export default function LuluReviewDialog({ open, onClose, order, onSubmitted }) {
+export default function LuluReviewDialog({ open, onClose, order, onSubmitted, onFailed }) {
   const { activeStore } = useAuthStore()
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
@@ -305,6 +305,7 @@ export default function LuluReviewDialog({ open, onClose, order, onSubmitted }) 
       onClose()
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to submit to Lulu')
+      onFailed?.()
     } finally {
       setSubmitting(false)
     }
