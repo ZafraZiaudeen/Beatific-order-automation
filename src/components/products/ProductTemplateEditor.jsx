@@ -23,6 +23,8 @@ import SaveIcon from '@mui/icons-material/SaveOutlined'
 import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdfOutlined'
 import AddIcon from '@mui/icons-material/Add'
 import DeleteIcon from '@mui/icons-material/DeleteOutlined'
+import LockOutlinedIcon from '@mui/icons-material/LockOutlined'
+import LockOpenOutlinedIcon from '@mui/icons-material/LockOpenOutlined'
 import OpenInNewIcon from '@mui/icons-material/OpenInNew'
 import ZoomInIcon from '@mui/icons-material/ZoomInOutlined'
 import ZoomOutIcon from '@mui/icons-material/ZoomOutOutlined'
@@ -188,14 +190,16 @@ function TemplateStage({
   const pageWidth = page?.pageWidth || 612
   const pageHeight = page?.pageHeight || 792
   const activeFields = fields.filter((field) => field.target === target)
+  const selectedField = fields.find((field) => field.id === selectedId) || null
+  const selectedLocked = Boolean(selectedField?.locked)
   useEffect(() => {
     const stage = stageRef.current
     const transformer = transformerRef.current
     if (!stage || !transformer) return
-    const node = selectedId && fieldsEditable ? stage.findOne(`#${selectedId}`) : null
+    const node = selectedId && fieldsEditable && !selectedLocked ? stage.findOne(`#${selectedId}`) : null
     transformer.nodes(node ? [node] : [])
     transformer.getLayer()?.batchDraw()
-  }, [selectedId, fields, target, fieldsEditable])
+  }, [selectedId, fields, target, fieldsEditable, selectedLocked])
 
   const pointer = () => {
     const stage = stageRef.current
@@ -363,6 +367,7 @@ function TemplateStage({
 
               {activeFields.map((field) => {
                 const selected = selectedId === field.id
+                const fieldLocked = Boolean(field.locked)
                 const previewMode = previewModes[field.id] || 'sample'
                 const showSample = previewMode !== 'original'
                 const maskOriginal = previewMode === 'sample' && field.replacementBox
@@ -392,7 +397,7 @@ function TemplateStage({
                       stroke={selected ? '#F97316' : 'rgba(249, 115, 22, 0.74)'}
                       strokeWidth={selected ? 1.5 : 1}
                       dash={selected ? [] : [4, 3]}
-                      draggable={fieldsEditable}
+                      draggable={fieldsEditable && !fieldLocked}
                       onClick={(event) => {
                         event.cancelBubble = true
                         onSelect(field.id)
@@ -401,9 +406,12 @@ function TemplateStage({
                         event.cancelBubble = true
                         onSelect(field.id)
                       }}
-                      onDragEnd={(event) => fieldsEditable && onChange(field.id, { x: event.target.x(), y: event.target.y() })}
+                      onDragEnd={(event) => {
+                        if (!fieldsEditable || fieldLocked) return
+                        onChange(field.id, { x: event.target.x(), y: event.target.y() })
+                      }}
                       onTransformEnd={(event) => {
-                        if (!fieldsEditable) return
+                        if (!fieldsEditable || fieldLocked) return
                         const node = event.target
                         const scaleX = node.scaleX()
                         const scaleY = node.scaleY()
@@ -546,6 +554,7 @@ function FieldPanel({
 
   const selectedFontOption = getFontOption(selected.fontFile || selected.fontFamily)
   const selectedFixedField = getFixedPersonalizationField(selected.key)
+  const selectedLocked = Boolean(selected?.locked)
   const oneLineHeight = Math.max(1, Math.round((Number(selected.fontSize) || 12) * (Number(selected.lineHeight) || 1.2) * 100) / 100)
 
   return (
@@ -556,6 +565,18 @@ function FieldPanel({
             <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>Template Fields</Typography>
             <Typography variant="caption" color="text.secondary">{targetFields.length} on this page</Typography>
           </Box>
+          <Tooltip title={selectedLocked ? 'Unlock field' : 'Lock field'}>
+            <span>
+              <IconButton
+                size="small"
+                color={selectedLocked ? 'primary' : 'default'}
+                onClick={() => updateField(selected.id, { locked: !selectedLocked })}
+                disabled={!fieldsEditable}
+              >
+                {selectedLocked ? <LockOutlinedIcon fontSize="small" /> : <LockOpenOutlinedIcon fontSize="small" />}
+              </IconButton>
+            </span>
+          </Tooltip>
           <Tooltip title="Delete field">
             <span>
               <IconButton size="small" color="error" onClick={deleteSelected} disabled={!fieldsEditable}>
@@ -615,11 +636,13 @@ function FieldPanel({
             onChange={(e) => {
               const fixedField = getFixedPersonalizationField(e.target.value)
               if (!fixedField) return
+              const shouldDefaultRotation = typeof fixedField.defaultRotation === 'number' && !(selected.rotation || 0)
               updateField(selected.id, {
                 key: fixedField.key,
                 label: fixedField.label,
                 target: fixedField.target,
                 sampleValue: selected.sampleValue || fixedField.sampleValue,
+                rotation: shouldDefaultRotation ? fixedField.defaultRotation : selected.rotation,
               })
               setTarget(fixedField.target)
             }}
@@ -849,6 +872,8 @@ export default function ProductTemplateEditor({ product, onBack, onSaved, librar
     const id = uuidv4()
     setFields((current) => {
       const key = uniqueKey(draft.label || draft.text || 'field', current)
+      const rawRotation = typeof draft.rotation === 'number' ? draft.rotation : Number(draft.rotation || 0)
+      const nextRotation = key === 'spine_text' && !rawRotation ? 90 : rawRotation
       const next = {
         id,
         key,
@@ -867,7 +892,7 @@ export default function ProductTemplateEditor({ product, onBack, onSaved, librar
         fill: draft.fill || '#000000',
         align: draft.align || 'left',
         lineHeight: draft.lineHeight || 1.2,
-        rotation: typeof draft.rotation === 'number' ? draft.rotation : Number(draft.rotation || 0),
+        rotation: nextRotation,
         required: true,
         replacementTextId: draft.replacementTextId || null,
         replacementBox: draft.replacementBox || null,

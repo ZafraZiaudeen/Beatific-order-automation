@@ -12,6 +12,7 @@ export const FIXED_PERSONALIZATION_FIELDS = [
     target: 'cover',
     prompt: 'Spine Text: Add text for the book spine:',
     sampleValue: 'I love you always',
+    defaultRotation: 90,
   },
   {
     key: 'back_cover_text',

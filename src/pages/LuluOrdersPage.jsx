@@ -13,12 +13,18 @@ import CircularProgress from '@mui/material/CircularProgress'
 import FormControl from '@mui/material/FormControl'
 import Select from '@mui/material/Select'
 import MenuItem from '@mui/material/MenuItem'
+import Dialog from '@mui/material/Dialog'
+import DialogTitle from '@mui/material/DialogTitle'
+import DialogContent from '@mui/material/DialogContent'
+import DialogActions from '@mui/material/DialogActions'
+import Divider from '@mui/material/Divider'
 import LocalPrintshopOutlinedIcon from '@mui/icons-material/LocalPrintshopOutlined'
 import ContentCopyIcon from '@mui/icons-material/ContentCopy'
 import RefreshIcon from '@mui/icons-material/RefreshOutlined'
 import ReplayIcon from '@mui/icons-material/ReplayOutlined'
 import SendOutlinedIcon from '@mui/icons-material/SendOutlined'
 import WarningAmberIcon from '@mui/icons-material/WarningAmberOutlined'
+import AutoFixHighOutlinedIcon from '@mui/icons-material/AutoFixHighOutlined'
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutlined'
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined'
 import api from '../lib/api'
@@ -70,6 +76,142 @@ const getPresetDateRange = (preset) => {
   return { dateFrom: start.toISOString(), dateTo: end.toISOString() }
 }
 
+const formatJson = (value) => {
+  if (!value) return 'No saved details'
+  try {
+    return JSON.stringify(value, null, 2)
+  } catch {
+    return String(value)
+  }
+}
+
+function FailureDetailDialog({
+  order,
+  open,
+  onClose,
+  onRetry,
+  retrying,
+  onExplain,
+  explaining,
+}) {
+  if (!order) return null
+
+  const errorDetails = formatJson(order.luluErrorDetails)
+  const orderSnapshot = formatJson({
+    etsyOrderId: order.etsyOrderId,
+    customerName: order.customerName,
+    productTitle: order.productTitle,
+    quantity: order.quantity,
+    podPackageId: order.podPackageId,
+    shippingLevel: order.shippingLevel,
+    coverImageUrl: order.coverImageUrl,
+    interiorPdfUrl: order.interiorPdfUrl,
+    shippingAddress: order.shippingAddress,
+  })
+
+  const copyFailure = () => {
+    navigator.clipboard.writeText(formatJson({
+      message: order.luluErrorMessage,
+      failedAt: order.luluErrorAt,
+      order: JSON.parse(orderSnapshot),
+      details: order.luluErrorDetails,
+      explanation: order.luluErrorExplanation,
+    }))
+  }
+
+  return (
+    <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
+      <DialogTitle>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2 }}>
+          <Box>
+            <Typography variant="h6" sx={{ fontWeight: 800 }}>Lulu failure log</Typography>
+            <Typography variant="body2" color="text.secondary">
+              Order #{order.etsyOrderId} - {order.customerName}
+            </Typography>
+          </Box>
+          <Tooltip title="Copy complete failure log">
+            <IconButton onClick={copyFailure}>
+              <ContentCopyIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+        </Box>
+      </DialogTitle>
+      <DialogContent dividers>
+        <Box sx={{ display: 'grid', gap: 2 }}>
+          <Alert severity="error">
+            {order.luluErrorMessage || 'No saved error message'}
+          </Alert>
+
+          {order.luluErrorExplanation && (
+            <Alert severity="info" icon={<AutoFixHighOutlinedIcon />}>
+              <Typography component="pre" sx={{ m: 0, whiteSpace: 'pre-wrap', font: 'inherit' }}>
+                {order.luluErrorExplanation}
+              </Typography>
+            </Alert>
+          )}
+
+          <Box>
+            <Typography variant="subtitle2" sx={{ fontWeight: 800, mb: 1 }}>Order details</Typography>
+            <Box component="pre" sx={{
+              m: 0,
+              p: 1.5,
+              bgcolor: '#111827',
+              color: '#f8fafc',
+              borderRadius: 1,
+              overflow: 'auto',
+              fontSize: 12,
+              lineHeight: 1.55,
+              maxHeight: 240,
+            }}>
+              {orderSnapshot}
+            </Box>
+          </Box>
+
+          <Divider />
+
+          <Box>
+            <Typography variant="subtitle2" sx={{ fontWeight: 800, mb: 1 }}>Full Lulu response and request payload</Typography>
+            <Box component="pre" sx={{
+              m: 0,
+              p: 1.5,
+              bgcolor: '#111827',
+              color: '#f8fafc',
+              borderRadius: 1,
+              overflow: 'auto',
+              fontSize: 12,
+              lineHeight: 1.55,
+              maxHeight: 360,
+            }}>
+              {errorDetails}
+            </Box>
+          </Box>
+        </Box>
+      </DialogContent>
+      <DialogActions sx={{ px: 3, py: 2 }}>
+        <SoftButton onClick={onClose} variant="outlined">Close</SoftButton>
+        <SoftButton
+          onClick={() => onExplain(order)}
+          variant="outlined"
+          startIcon={explaining ? <CircularProgress size={14} /> : <AutoFixHighOutlinedIcon />}
+          disabled={explaining}
+        >
+          {explaining ? 'Explaining...' : 'Explain with OpenRouter'}
+        </SoftButton>
+        <SoftButton
+          onClick={() => onRetry(order._id)}
+          color="warning"
+          variant="contained"
+          startIcon={retrying ? <CircularProgress size={14} /> : <ReplayIcon />}
+          disabled={retrying}
+          sx={{ color: '#fff' }}
+        >
+          {retrying ? 'Retrying...' : 'Retry'}
+        </SoftButton>
+      </DialogActions>
+    </Dialog>
+  )
+}
+
 export default function LuluOrdersPage() {
   const { activeStore, user } = useAuthStore()
   const canManage = canManageWorkspace(user)
@@ -83,6 +225,8 @@ export default function LuluOrdersPage() {
   const [submitting, setSubmitting] = useState(false)
   const [refreshingId, setRefreshingId] = useState(null)
   const [retryingId, setRetryingId] = useState(null)
+  const [detailOrder, setDetailOrder] = useState(null)
+  const [explainingId, setExplainingId] = useState(null)
   const [dateRange, setDateRange] = useState('all')
   const [snack, setSnack] = useState({ open: false, message: '', severity: 'success' })
 
@@ -156,11 +300,34 @@ export default function LuluOrdersPage() {
     try {
       await api.post(`/lulu/retry/${orderId}`)
       fetchOrders()
+      setDetailOrder(null)
       setSnack({ open: true, message: 'Order resubmitted to Lulu', severity: 'success' })
     } catch (err) {
       setSnack({ open: true, message: err.response?.data?.message || 'Failed to retry', severity: 'error' })
     } finally {
       setRetryingId(null)
+    }
+  }
+
+  const handleExplainFailure = async (order) => {
+    setExplainingId(order._id)
+    try {
+      const { data } = await api.post(`/lulu/explain/${order._id}`)
+      const updatedOrder = {
+        ...order,
+        luluErrorExplanation: data.explanation,
+      }
+      setDetailOrder(updatedOrder)
+      setOrders((prev) => prev.map((item) => item._id === order._id ? updatedOrder : item))
+      setSnack({
+        open: true,
+        message: data.cached ? 'Using saved OpenRouter explanation' : 'OpenRouter explanation generated',
+        severity: 'success',
+      })
+    } catch (err) {
+      setSnack({ open: true, message: err.response?.data?.message || 'Failed to explain Lulu error', severity: 'error' })
+    } finally {
+      setExplainingId(null)
     }
   }
 
@@ -428,7 +595,7 @@ export default function LuluOrdersPage() {
                     </SoftTableCell>
                     <SoftTableCell>
                       <SoftBadge label={order.luluStatus || 'pending'} color={
-                        order.luluStatus === 'completed' ? 'success' :
+                        order.luluStatus === 'shipped' ? 'success' :
                         order.luluStatus === 'failed' ? 'error' :
                         order.luluStatus === 'in_production' ? 'info' :
                         'default'
@@ -457,6 +624,17 @@ export default function LuluOrdersPage() {
                               : <RefreshIcon fontSize="small" />}
                           </IconButton>
                         </Tooltip>
+                        {order.luluStatus === 'failed' && (
+                          <Tooltip title="View Lulu failure log">
+                            <IconButton
+                              size="small"
+                              color="error"
+                              onClick={() => setDetailOrder(order)}
+                            >
+                              <WarningAmberIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                        )}
                         {order.luluStatus === 'failed' && (
                           <Tooltip title="Retry submission">
                             <IconButton
@@ -487,6 +665,19 @@ export default function LuluOrdersPage() {
           onClose={() => setReviewOrder(null)}
           order={reviewOrder}
           onSubmitted={() => { fetchOrders(); setReviewOrder(null) }}
+          onFailed={fetchOrders}
+        />
+      )}
+
+      {canManage && (
+        <FailureDetailDialog
+          open={!!detailOrder}
+          onClose={() => setDetailOrder(null)}
+          order={detailOrder}
+          onRetry={handleRetry}
+          retrying={Boolean(detailOrder && retryingId === detailOrder._id)}
+          onExplain={handleExplainFailure}
+          explaining={Boolean(detailOrder && explainingId === detailOrder._id)}
         />
       )}
 
