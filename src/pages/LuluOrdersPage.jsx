@@ -403,7 +403,7 @@ export default function LuluOrdersPage() {
             {missingFiles.length > 0 && (
               <Alert severity="warning" sx={{ mb: 2 }}>
                 {missingFiles.length} order(s) cannot be submitted missing cover image, interior PDF, or Pod Package ID.
-                Go to Etsy Orders to upload files/paste asset URLs and set the Pod Package ID.
+                Go to Etsy 2 Orders to upload files, paste asset URLs, and set the Pod Package ID.
               </Alert>
             )}
 

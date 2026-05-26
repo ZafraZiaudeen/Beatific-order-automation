@@ -1,0 +1,364 @@
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import {
+  Alert,
+  Box,
+  Button,
+  Chip,
+  CircularProgress,
+  FormControl,
+  InputAdornment,
+  MenuItem,
+  Pagination,
+  Select,
+  Snackbar,
+  TextField,
+  Typography,
+} from '@mui/material'
+import SearchIcon from '@mui/icons-material/Search'
+import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined'
+import LocalShippingOutlinedIcon from '@mui/icons-material/LocalShippingOutlined'
+import CircularProgressIcon from '@mui/icons-material/AutorenewOutlined'
+import api from '../lib/api'
+import useAuthStore from '../stores/authStore'
+import { canManageWorkspace } from '../lib/permissions'
+import Etsy2GeneratedOrdersTable from '../components/etsy2/Etsy2GeneratedOrdersTable'
+import { ITEM_STATUSES } from '../lib/etsy2Constants'
+import {
+  getGeneratedOrderItem,
+  getGeneratedOrderSourceIds,
+  hasGeneratedOrderItems,
+} from '../lib/generatedOrders'
+import { buildOrderGroups, getPresetDateRange, toEtsy2Order } from '../lib/etsy2Orders'
+
+const ITEMS_PER_PAGE = 10
+
+const DATE_RANGE_OPTIONS = [
+  { value: 'all', label: 'All time' },
+  { value: '7d', label: 'Last 7 days' },
+  { value: '30d', label: 'Last 30 days' },
+  { value: '90d', label: 'Last 3 months' },
+  { value: '1y', label: 'This year' },
+]
+
+const STATUS_FILTERS = [
+  { value: 'all', label: 'All PDFs' },
+  { value: ITEM_STATUSES.GENERATED, label: 'Generated' },
+  { value: ITEM_STATUSES.FAILED, label: 'Failed' },
+  { value: ITEM_STATUSES.SHIPPED, label: 'Shipped' },
+]
+
+export default function GeneratedOrdersPage() {
+  const navigate = useNavigate()
+  const { activeStore, user } = useAuthStore()
+  const canManage = canManageWorkspace(user)
+  const [orders, setOrders] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [search, setSearch] = useState('')
+  const [dateRange, setDateRange] = useState('all')
+  const [statusFilter, setStatusFilter] = useState('all')
+  const [page, setPage] = useState(1)
+  const [selectedOrderIds, setSelectedOrderIds] = useState([])
+  const [bulkSending, setBulkSending] = useState(false)
+  const [sendingOrderIds, setSendingOrderIds] = useState({})
+  const [snack, setSnack] = useState({ open: false, message: '', severity: 'success' })
+
+  const fetchOrders = useCallback(async () => {
+    setLoading(true)
+    try {
+      const { data } = await api.get('/orders', {
+        params: {
+          page: 1,
+          limit: 500,
+          ...(activeStore?._id ? { storeId: activeStore._id } : {}),
+          ...(search ? { search } : {}),
+          ...getPresetDateRange(dateRange),
+        },
+      })
+      setOrders(data.orders || [])
+    } catch {
+      setSnack({ open: true, message: 'Failed to load generated PDFs', severity: 'error' })
+    } finally {
+      setLoading(false)
+    }
+  }, [activeStore?._id, dateRange, search])
+
+  useEffect(() => {
+    fetchOrders()
+  }, [fetchOrders])
+
+  useEffect(() => {
+    setPage(1)
+    setSelectedOrderIds([])
+  }, [dateRange, search, statusFilter, activeStore?._id])
+
+  const groupedOrders = useMemo(
+    () => buildOrderGroups(orders).map(toEtsy2Order),
+    [orders]
+  )
+
+  const generatedOrders = useMemo(
+    () => groupedOrders.filter(hasGeneratedOrderItems),
+    [groupedOrders]
+  )
+
+  const filteredOrders = useMemo(() => {
+    if (statusFilter === 'all') return generatedOrders
+    return generatedOrders.filter((order) =>
+      order.items.some((item) => item.status === statusFilter)
+    )
+  }, [generatedOrders, statusFilter])
+
+  const statusCounts = useMemo(
+    () => STATUS_FILTERS.map((filter) => ({
+      ...filter,
+      count: filter.value === 'all'
+        ? generatedOrders.length
+        : generatedOrders.filter((order) => order.items.some((item) => item.status === filter.value)).length,
+    })),
+    [generatedOrders]
+  )
+
+  const totalPages = Math.max(1, Math.ceil(filteredOrders.length / ITEMS_PER_PAGE))
+  const paginatedOrders = filteredOrders.slice((page - 1) * ITEMS_PER_PAGE, page * ITEMS_PER_PAGE)
+
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages)
+  }, [page, totalPages])
+
+  const handleToggleOrder = (orderId, checked) => {
+    setSelectedOrderIds((current) => (
+      checked ? [...new Set([...current, orderId])] : current.filter((id) => id !== orderId)
+    ))
+  }
+
+  const handleToggleVisible = (checked) => {
+    const visibleIds = paginatedOrders.map((order) => order.orderId)
+    setSelectedOrderIds((current) => (
+      checked
+        ? [...new Set([...current, ...visibleIds])]
+        : current.filter((id) => !visibleIds.includes(id))
+    ))
+  }
+
+  const selectedVisibleCount = paginatedOrders.filter((order) => selectedOrderIds.includes(order.orderId)).length
+
+  const openGeneratedDetail = (order) => {
+    const etsyOrderId = order?.orderId || order?.etsyOrderId || order?.firstOrder?.etsyOrderId
+    if (etsyOrderId) navigate(`/orders/generated/${encodeURIComponent(etsyOrderId)}`)
+  }
+
+  const handleEditCanvas = (order) => {
+    const etsyOrderId = order?.orderId || order?.etsyOrderId || order?.firstOrder?.etsyOrderId
+    const itemId = getGeneratedOrderItem(order)?.sourceOrder?._id
+    if (!etsyOrderId) return
+    const itemQuery = itemId ? `?source=generated&itemId=${encodeURIComponent(itemId)}` : '?source=generated'
+    navigate(`/orders/etsy2/${encodeURIComponent(etsyOrderId)}/canvas${itemQuery}`)
+  }
+
+  const handleSendToLulu = async (order) => {
+    const sourceIds = getGeneratedOrderSourceIds(order)
+    if (sourceIds.length === 0) {
+      setSnack({ open: true, message: 'No generated PDFs are available on this order.', severity: 'warning' })
+      return
+    }
+
+    setSendingOrderIds((current) => ({ ...current, [order.orderId]: true }))
+    try {
+      const { data } = await api.post('/lulu/bulk-submit', { orderIds: sourceIds })
+      await fetchOrders()
+      setSnack({
+        open: true,
+        message: `${data.submitted || 0} of ${sourceIds.length} item${sourceIds.length === 1 ? '' : 's'} sent to Lulu.`,
+        severity: data.failed > 0 ? 'warning' : 'success',
+      })
+    } catch (err) {
+      setSnack({
+        open: true,
+        message: err.response?.data?.message || err.response?.data?.error || 'Failed to send order to Lulu',
+        severity: 'error',
+      })
+    } finally {
+      setSendingOrderIds((current) => {
+        const next = { ...current }
+        delete next[order.orderId]
+        return next
+      })
+    }
+  }
+
+  const handleBulkSendToLulu = async () => {
+    const selectedOrders = filteredOrders.filter((order) => selectedOrderIds.includes(order.orderId))
+    const sourceIds = selectedOrders.flatMap(getGeneratedOrderSourceIds)
+    if (sourceIds.length === 0) {
+      setSnack({ open: true, message: 'Select generated orders with saved PDFs first.', severity: 'warning' })
+      return
+    }
+
+    setBulkSending(true)
+    try {
+      const { data } = await api.post('/lulu/bulk-submit', { orderIds: sourceIds })
+      await fetchOrders()
+      setSelectedOrderIds([])
+      setSnack({
+        open: true,
+        message: `${data.submitted || 0} of ${sourceIds.length} item${sourceIds.length === 1 ? '' : 's'} sent to Lulu.`,
+        severity: data.failed > 0 ? 'warning' : 'success',
+      })
+    } catch (err) {
+      setSnack({
+        open: true,
+        message: err.response?.data?.message || err.response?.data?.error || 'Failed to send selected orders',
+        severity: 'error',
+      })
+    } finally {
+      setBulkSending(false)
+    }
+  }
+
+  return (
+    <Box sx={{ p: 3 }}>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 2, flexWrap: 'wrap', mb: 3 }}>
+        <Box>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            <Box sx={{ width: 42, height: 42, borderRadius: '10px', bgcolor: '#5B21D6', color: '#FFFFFF', display: 'grid', placeItems: 'center' }}>
+              <DescriptionOutlinedIcon />
+            </Box>
+            <Box>
+              <Typography variant="h5" sx={{ fontWeight: 700, color: '#27272A' }}>
+                Generated PDFs
+              </Typography>
+              <Typography variant="body2" sx={{ color: '#71717A' }}>
+                {loading ? 'Loading generated print files...' : `${generatedOrders.length} grouped orders with print-ready PDFs`}
+              </Typography>
+            </Box>
+          </Box>
+        </Box>
+
+        <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
+          <FormControl size="small" sx={{ minWidth: 140 }}>
+            <Select value={dateRange} onChange={(e) => setDateRange(e.target.value)}>
+              {DATE_RANGE_OPTIONS.map((option) => (
+                <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+          {canManage && (
+            <Button
+              variant="contained"
+              startIcon={bulkSending ? <CircularProgress size={16} color="inherit" /> : <LocalShippingOutlinedIcon />}
+              onClick={handleBulkSendToLulu}
+              disabled={selectedOrderIds.length === 0 || bulkSending}
+              sx={{ bgcolor: '#5B21D6', '&:hover': { bgcolor: '#4C1D95' }, fontWeight: 800 }}
+            >
+              {bulkSending ? 'Sending...' : 'Send Selected'}
+            </Button>
+          )}
+          <Button
+            variant="outlined"
+            startIcon={<CircularProgressIcon />}
+            onClick={fetchOrders}
+            sx={{ borderColor: '#E5E7EB', color: '#111827', fontWeight: 700 }}
+          >
+            Refresh
+          </Button>
+        </Box>
+      </Box>
+
+      <Box sx={{ mb: 3 }}>
+        <TextField
+          fullWidth
+          placeholder="Search generated orders by ID, buyer, item, SKU, or email..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          slotProps={{
+            input: {
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchIcon sx={{ color: '#71717A' }} />
+                </InputAdornment>
+              ),
+            },
+          }}
+          sx={{
+            '& .MuiOutlinedInput-root': {
+              bgcolor: '#FFFFFF',
+              borderRadius: '10px',
+              '& fieldset': { borderColor: '#E3E3E7' },
+            },
+          }}
+        />
+      </Box>
+
+      <Box sx={{ mb: 3, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+        {statusCounts.map((filter) => (
+          <Chip
+            key={filter.value}
+            label={`${filter.label} ${filter.count}`}
+            onClick={() => setStatusFilter(filter.value)}
+            sx={{
+              bgcolor: statusFilter === filter.value ? '#5B21D6' : '#FFFFFF',
+              color: statusFilter === filter.value ? '#FFFFFF' : '#27272A',
+              border: '1px solid',
+              borderColor: statusFilter === filter.value ? '#5B21D6' : '#E3E3E7',
+              fontWeight: 700,
+            }}
+          />
+        ))}
+      </Box>
+
+      {loading ? (
+        <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}>
+          <CircularProgress />
+        </Box>
+      ) : filteredOrders.length === 0 ? (
+        <Alert severity="info" sx={{ borderRadius: '12px' }}>
+          No generated PDFs match the current filters yet.
+        </Alert>
+      ) : (
+        <>
+          <Box sx={{ bgcolor: '#FFFFFF', border: '1px solid #E5E7EB', borderRadius: '12px', overflow: 'hidden' }}>
+            <Etsy2GeneratedOrdersTable
+              orders={paginatedOrders}
+              onPreview={openGeneratedDetail}
+              onEditCanvas={handleEditCanvas}
+              onSendToLulu={handleSendToLulu}
+              canManage={canManage}
+              selectedOrderIds={selectedOrderIds}
+              onToggleOrder={handleToggleOrder}
+              onToggleVisible={handleToggleVisible}
+              allVisibleSelected={paginatedOrders.length > 0 && selectedVisibleCount === paginatedOrders.length}
+              partiallyVisibleSelected={selectedVisibleCount > 0 && selectedVisibleCount < paginatedOrders.length}
+              sendingOrderIds={sendingOrderIds}
+            />
+          </Box>
+
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 3, gap: 2, flexWrap: 'wrap' }}>
+            <Typography variant="body2" sx={{ color: '#71717A' }}>
+              Showing {(page - 1) * ITEMS_PER_PAGE + 1} to {Math.min(page * ITEMS_PER_PAGE, filteredOrders.length)} of {filteredOrders.length} generated orders
+            </Typography>
+            {totalPages > 1 && (
+              <Pagination count={totalPages} page={page} onChange={(_, value) => setPage(value)} color="primary" />
+            )}
+          </Box>
+        </>
+      )}
+
+      <Snackbar
+        open={snack.open}
+        autoHideDuration={4000}
+        onClose={() => setSnack((current) => ({ ...current, open: false }))}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+      >
+        <Alert
+          onClose={() => setSnack((current) => ({ ...current, open: false }))}
+          severity={snack.severity}
+          variant="filled"
+          sx={{ width: '100%' }}
+        >
+          {snack.message}
+        </Alert>
+      </Snackbar>
+    </Box>
+  )
+}

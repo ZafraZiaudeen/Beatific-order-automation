@@ -8,6 +8,8 @@ export const STATUS_PRIORITY = [
   'completed',
 ]
 
+const NON_REVIEW_AI_FLAGS = new Set(['Missing Product Mapping', 'Lulu Rejected'])
+
 export const getPresetDateRange = (preset) => {
   if (!preset || preset === 'all') return {}
 
@@ -84,7 +86,7 @@ export const buildOrderGroups = (orders) => {
     .map((items) => {
       const first = firstGroupOrder(items)
       const aiFlags = [...new Set(items.flatMap((item) => item.aiFlags || []))]
-      const reviewFlags = aiFlags.filter((flag) => flag !== 'Missing Product Mapping')
+      const reviewFlags = aiFlags.filter((flag) => !NON_REVIEW_AI_FLAGS.has(flag))
       return {
         etsyOrderId: first.etsyOrderId,
         orderIds: items.map((item) => item._id),
@@ -111,14 +113,18 @@ export const buildOrderGroups = (orders) => {
     .sort((a, b) => new Date(b.orderedAt || b.updatedAt || 0).getTime() - new Date(a.orderedAt || a.updatedAt || 0).getTime())
 }
 
-export const reviewFlagsFor = (item) => (item.aiFlags || []).filter((flag) => flag !== 'Missing Product Mapping')
+export const reviewFlagsFor = (item) => (item.aiFlags || []).filter((flag) => !NON_REVIEW_AI_FLAGS.has(flag))
 
 export const getItemStatus = (item) => {
   const hasBothGeneratedPdfs = Boolean(item.coverImageUrl && item.interiorPdfUrl)
+  const hasGeneratedTemplate = hasBothGeneratedPdfs && item.templateFinalizedAt && !item.requiresTemplateFinalization
+
+  if (item.luluStatus === 'failed' && hasGeneratedTemplate) return ITEM_STATUSES.FAILED
   if (reviewFlagsFor(item).length > 0) return ITEM_STATUSES.AI_FLAGGED
   if (!item.isProductMapped) return ITEM_STATUSES.UNMAPPED
   if (item.hasCustomArtwork || item.etsyStatus === 'custom_orders') return ITEM_STATUSES.CUSTOM
-  if (hasBothGeneratedPdfs && item.templateFinalizedAt && !item.requiresTemplateFinalization) {
+  if (item.luluStatus === 'shipped' || item.etsyStatus === 'completed') return ITEM_STATUSES.SHIPPED
+  if (hasGeneratedTemplate) {
     return ITEM_STATUSES.GENERATED
   }
   return ITEM_STATUSES.MAPPED
@@ -163,8 +169,8 @@ export const toEtsy2Order = (group) => ({
 
 export const toEtsy2GroupOrder = (group) => toEtsy2Order({
   ...group,
-  reviewFlags: (group.aiFlags || []).filter((flag) => flag !== 'Missing Product Mapping'),
-  hasAiFlags: (group.aiFlags || []).some((flag) => flag !== 'Missing Product Mapping'),
+  reviewFlags: (group.aiFlags || []).filter((flag) => !NON_REVIEW_AI_FLAGS.has(flag)),
+  hasAiFlags: (group.aiFlags || []).some((flag) => !NON_REVIEW_AI_FLAGS.has(flag)),
 })
 
 export const addressLines = (address = {}) => [

@@ -668,6 +668,9 @@ export default function Etsy2CanvasEditorPage() {
       group.items[0]
   }, [group, searchParams])
   const selected = layers.find((layer) => layer.id === selectedId) || null
+  const backToGeneratedPath = searchParams.get('source') === 'generated'
+    ? `/orders/generated/${encodeURIComponent(orderId)}`
+    : `/orders/etsy2/${encodeURIComponent(orderId)}?view=generated`
 
   useEffect(() => {
     if (!orderItem || !order) return
@@ -882,7 +885,7 @@ export default function Etsy2CanvasEditorPage() {
   if (!order || !orderItem) {
     return (
       <Box sx={{ p: 3 }}>
-        <Button startIcon={<ArrowBackIcon />} onClick={() => navigate(`/orders/etsy2/${orderId}?view=generated`)}>Back to Generated Orders</Button>
+        <Button startIcon={<ArrowBackIcon />} onClick={() => navigate(backToGeneratedPath)}>Back to Generated Orders</Button>
         <Alert severity="error" sx={{ mt: 2 }}>Order item not found.</Alert>
       </Box>
     )
@@ -892,7 +895,7 @@ export default function Etsy2CanvasEditorPage() {
     <Box sx={{ height: '100vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: 1.5, p: { xs: 1.25, md: 2 }, bgcolor: '#FFFFFF' }}>
       <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 2, flexWrap: 'wrap' }}>
         <Box>
-          <Button startIcon={<ArrowBackIcon />} onClick={() => navigate(`/orders/etsy2/${orderId}?view=generated`)} sx={{ color: '#5B21D6', fontWeight: 800, textTransform: 'none', mb: 1 }}>
+          <Button startIcon={<ArrowBackIcon />} onClick={() => navigate(backToGeneratedPath)} sx={{ color: '#5B21D6', fontWeight: 800, textTransform: 'none', mb: 1 }}>
             Back to Generated Orders
           </Button>
           <Typography variant="h4" sx={{ color: '#0F172A', fontWeight: 900, fontSize: { xs: '1.7rem', md: '2.25rem' } }}>
@@ -905,7 +908,7 @@ export default function Etsy2CanvasEditorPage() {
         <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
           <Tooltip title="Undo"><span><IconButton disabled={!history.length} onClick={undo}><UndoIcon /></IconButton></span></Tooltip>
           <Tooltip title="Redo"><span><IconButton disabled={!future.length} onClick={redo}><RedoIcon /></IconButton></span></Tooltip>
-          <Button variant="outlined" onClick={() => navigate(`/orders/etsy2/${orderId}?view=generated`)} sx={{ minWidth: 126, borderColor: '#E5E7EB', color: '#111827', borderRadius: '6px', fontWeight: 800 }}>Cancel</Button>
+          <Button variant="outlined" onClick={() => navigate(backToGeneratedPath)} sx={{ minWidth: 126, borderColor: '#E5E7EB', color: '#111827', borderRadius: '6px', fontWeight: 800 }}>Cancel</Button>
           <Button variant="contained" startIcon={saving ? <CircularProgress size={16} color="inherit" /> : <SaveIcon />} onClick={saveCanvas} disabled={saving} sx={{ minWidth: 160, bgcolor: '#5B21D6', borderRadius: '6px', fontWeight: 800, '&:hover': { bgcolor: '#4C1D95' } }}>
             {saving ? 'Saving...' : 'Save Changes'}
           </Button>

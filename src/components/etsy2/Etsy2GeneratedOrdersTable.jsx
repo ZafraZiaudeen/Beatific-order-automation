@@ -20,7 +20,6 @@ import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined'
 import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined'
 import ArticleOutlinedIcon from '@mui/icons-material/ArticleOutlined'
 import Etsy2StatusBadge from './Etsy2StatusBadge'
-import { ITEM_STATUSES } from '../../lib/etsy2Constants'
 import { buildAssetThumbnailUrl } from '../../lib/assets'
 import { getGeneratedOrderItem } from '../../lib/generatedOrders'
 import { formatDate, optionText } from '../../lib/etsy2Orders'
@@ -105,6 +104,7 @@ export default function Etsy2GeneratedOrdersTable({
             const generatedAt = source.templateFinalizedAt || source.updatedAt || order.sourceGroup?.updatedAt || order.date
             const templateName = source.matchedVariantName || source.projectName || 'Print Template'
             const sending = Boolean(sendingOrderIds[order.orderId])
+            const orderStatus = item?.status || order?.status
 
             return (
               <TableRow key={order.orderId} hover sx={{ '& td': { borderColor: '#EEF2F7', py: 2 } }}>
@@ -152,7 +152,7 @@ export default function Etsy2GeneratedOrdersTable({
                   </Typography>
                 </TableCell>
                 <TableCell>
-                  <Etsy2StatusBadge status={ITEM_STATUSES.GENERATED} showIcon={false} />
+                  <Etsy2StatusBadge status={orderStatus} showIcon={false} />
                 </TableCell>
                 <TableCell align="right">
                   <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1, flexWrap: 'wrap' }}>
@@ -165,7 +165,7 @@ export default function Etsy2GeneratedOrdersTable({
                     >
                       Preview
                     </Button>
-                    {canManage && (
+                    {canManage && onDeleteOrder && (
                       <Button
                         size="small"
                         variant="outlined"
@@ -185,7 +185,7 @@ export default function Etsy2GeneratedOrdersTable({
                         onClick={() => onSendToLulu?.(order)}
                         sx={{ borderColor: '#E5E7EB', color: '#111827', fontWeight: 700, borderRadius: '6px' }}
                       >
-                        Send to Lulu
+                        {orderStatus === 'failed' ? 'Resend to Lulu' : 'Send to Lulu'}
                       </Button>
                     )}
                     {canManage && (
