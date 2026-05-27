@@ -36,6 +36,7 @@ import { v4 as uuidv4 } from 'uuid'
 import api from '../../lib/api'
 import { FONT_OPTIONS, getFontOption, normalizeFontStyle } from '../../lib/fonts'
 import { FIXED_PERSONALIZATION_FIELDS, getFixedPersonalizationField } from '../../lib/fixedPersonalizationFields'
+import { getFieldMaxLines, getFittedTextProps } from '../../lib/textFitting'
 
 const DEFAULT_TEMPLATE_KEY = 'default'
 const DEFAULT_TEMPLATE_POLICY = { cover: 'inherit', interior: 'inherit', fields: 'inherit' }
@@ -90,6 +91,14 @@ const uniqueKey = (base, fields) => {
     i += 1
   }
   return key
+}
+
+const draftMaxLines = (draft) => {
+  if (draft.maxLines) return draft.maxLines
+  const fontSize = Number(draft.fontSize) || 24
+  const lineHeight = Number(draft.lineHeight) || 1.2
+  const height = Number(draft.height) || fontSize * lineHeight
+  return Math.max(1, Math.min(12, Math.floor(height / (fontSize * lineHeight)) || 1))
 }
 
 const variantId = (variant) => String(variant?._id || variant?.id || '')
@@ -373,6 +382,8 @@ function TemplateStage({
                 const maskOriginal = previewMode === 'sample' && field.replacementBox
                 const useReplacementBox = Boolean(field.replacementBox && !(field.rotation || 0))
                 const box = useReplacementBox ? field.replacementBox : field
+                const sampleText = field.sampleValue || field.label
+                const fittedSample = getFittedTextProps(field, sampleText, { paddingX: 6, paddingY: 4 })
                 return (
                   <React.Fragment key={field.id}>
                     {maskOriginal && (
@@ -430,15 +441,16 @@ function TemplateStage({
                         x={field.x + 3}
                         y={field.y + 2}
                         width={Math.max(4, field.width - 6)}
-                        height={field.height}
+                        height={Math.max(4, fittedSample.height)}
                         listening={false}
-                        text={field.sampleValue || field.label}
-                        fontSize={field.fontSize}
+                        text={sampleText}
+                        fontSize={fittedSample.fontSize}
                         fontFamily={field.fontFamily}
                         fontStyle={normalizeFontStyle(field.fontStyle)}
                         fill={field.fill}
                         align={field.align}
                         lineHeight={field.lineHeight}
+                        wrap={fittedSample.wrap}
                         rotation={field.rotation || 0}
                         opacity={0.96}
                       />
@@ -556,6 +568,23 @@ function FieldPanel({
   const selectedFixedField = getFixedPersonalizationField(selected.key)
   const selectedLocked = Boolean(selected?.locked)
   const oneLineHeight = Math.max(1, Math.round((Number(selected.fontSize) || 12) * (Number(selected.lineHeight) || 1.2) * 100) / 100)
+  const selectedMaxLines = getFieldMaxLines(selected)
+  const keepSizeOnWrap = Boolean(selected.preserveFontSizeOnWrap)
+  const updateMaxLines = (value) => {
+    const maxLines = Math.max(1, Math.min(12, Number(value) || 1))
+    updateField(selected.id, {
+      maxLines,
+      ...(keepSizeOnWrap && maxLines > 1 ? { height: Math.max(selected.height, oneLineHeight * maxLines) } : {}),
+    })
+  }
+  const toggleKeepSizeOnWrap = (checked) => {
+    const maxLines = checked ? Math.max(2, selectedMaxLines) : selectedMaxLines
+    updateField(selected.id, {
+      preserveFontSizeOnWrap: checked,
+      maxLines,
+      ...(checked ? { height: Math.max(selected.height, oneLineHeight * maxLines) } : {}),
+    })
+  }
 
   return (
     <Box sx={{ width: { xs: 320, md: 372 }, borderLeft: '1px solid', borderColor: 'divider', bgcolor: 'background.paper', display: 'flex', flexDirection: 'column', transition: 'width 180ms ease', overflow: 'hidden' }}>
@@ -685,7 +714,22 @@ function FieldPanel({
 
           <Divider />
 
-          <TextField disabled={!fieldsEditable} label="Font size" size="small" type="number" value={selected.fontSize} onChange={(e) => updateField(selected.id, { fontSize: Number(e.target.value) })} />
+          <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1 }}>
+            <TextField disabled={!fieldsEditable} label="Font size" size="small" type="number" value={selected.fontSize} onChange={(e) => updateField(selected.id, { fontSize: Number(e.target.value) })} />
+            <TextField
+              disabled={!fieldsEditable}
+              label="Max lines"
+              size="small"
+              type="number"
+              value={selectedMaxLines}
+              onChange={(e) => updateMaxLines(e.target.value)}
+              inputProps={{ step: 1, min: 1, max: 12 }}
+            />
+          </Box>
+          <FormControlLabel
+            control={<Switch disabled={!fieldsEditable} checked={keepSizeOnWrap} onChange={(e) => toggleKeepSizeOnWrap(e.target.checked)} />}
+            label="Keep font size when wrapped"
+          />
           <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1 }}>
             <TextField
               disabled={!fieldsEditable}
@@ -700,7 +744,7 @@ function FieldPanel({
             <Button
               disabled={!fieldsEditable}
               variant="outlined"
-              onClick={() => updateField(selected.id, { height: oneLineHeight })}
+              onClick={() => updateField(selected.id, { height: oneLineHeight, maxLines: 1, preserveFontSizeOnWrap: false })}
               sx={{ minHeight: 40, textTransform: 'none' }}
             >
               Set 1-line height
@@ -892,6 +936,8 @@ export default function ProductTemplateEditor({ product, onBack, onSaved, librar
         fill: draft.fill || '#000000',
         align: draft.align || 'left',
         lineHeight: draft.lineHeight || 1.2,
+        maxLines: draftMaxLines(draft),
+        preserveFontSizeOnWrap: Boolean(draft.preserveFontSizeOnWrap),
         rotation: nextRotation,
         required: true,
         replacementTextId: draft.replacementTextId || null,
@@ -962,6 +1008,8 @@ export default function ProductTemplateEditor({ product, onBack, onSaved, librar
       y: top,
       width: Math.max(right - left + 8, 120),
       height: Math.max(bottom - top + 6, avgFontSize * (sorted.length + 0.35)),
+      maxLines: Math.max(1, Math.min(12, combinedText.split(/\r?\n/).length || sorted.length)),
+      preserveFontSizeOnWrap: true,
       fontSize: avgFontSize,
       fontFamily: sampleFont.fontFamily,
       fontStyle: sampleFont.fontStyle,
@@ -977,7 +1025,7 @@ export default function ProductTemplateEditor({ product, onBack, onSaved, librar
   }
 
   const createBlank = ({ x, y }) => {
-    addField({ label: 'Personalized text', x, y, width: 220, height: 42, fontSize: 28, fontFamily: 'Canela Regular', fontFile: 'Canela-Regular-Trial.otf' })
+    addField({ label: 'Personalized text', x, y, width: 220, height: 42, fontSize: 28, maxLines: 1, preserveFontSizeOnWrap: false, fontFamily: 'Canela Regular', fontFile: 'Canela-Regular-Trial.otf' })
   }
 
   const addCenteredBlankField = () => {
