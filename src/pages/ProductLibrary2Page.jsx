@@ -119,6 +119,16 @@ const CATEGORY_CONFIG = {
 
 const CATEGORIES = [CATEGORY_CONFIG.cover, CATEGORY_CONFIG['inside-page'], CATEGORY_CONFIG.product]
 
+const EMPTY_LULU_OPTIONS = {
+  trims: [],
+  bindings: [],
+  interiorColors: [],
+  printQualities: [],
+  papers: [],
+  coverFinishes: [],
+  packages: [],
+}
+
 const formatLibraryId = (category, index) => `${category.idPrefix}-${String(index + 1).padStart(2, '0')}`
 
 const pageSizeInches = (item) => {
@@ -627,14 +637,17 @@ function LibraryItemDialog({ open, category, item, activeStore, categoryOptions,
     coverColor: '',
     coverType: '',
     coverSize: '',
+    interiorColor: '',
     paperType: '',
     insideSize: '',
+    pageCount: '',
     imageUrl: '',
     tags: '',
     status: 'active',
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [luluOptions, setLuluOptions] = useState(EMPTY_LULU_OPTIONS)
 
   useEffect(() => {
     if (!open) return
@@ -647,8 +660,10 @@ function LibraryItemDialog({ open, category, item, activeStore, categoryOptions,
       coverColor: item?.coverColor || '',
       coverType: item?.coverType || '',
       coverSize: item?.coverSize || '',
+      interiorColor: item?.interiorColor || '',
       paperType: item?.paperType || '',
       insideSize: item?.insideSize || '',
+      pageCount: item?.pageCount ? String(item.pageCount) : '',
       imageUrl: item?.imageUrl || '',
       tags: item?.tags?.join(', ') || '',
       status: item?.status || 'active',
@@ -656,7 +671,42 @@ function LibraryItemDialog({ open, category, item, activeStore, categoryOptions,
     setError('')
   }, [activeStore, category, item, open])
 
+  useEffect(() => {
+    if (!open) return
+    api.get('/product-library-v2/lulu-options')
+      .then(({ data }) => setLuluOptions({ ...EMPTY_LULU_OPTIONS, ...(data || {}) }))
+      .catch(() => setLuluOptions(EMPTY_LULU_OPTIONS))
+  }, [open])
+
   const set = (key) => (event) => setForm((current) => ({ ...current, [key]: event.target.value }))
+
+  const luluPackages = luluOptions.packages || []
+  const pageCount = Number(form.pageCount || item?.pageCount || 0)
+  const packageMatches = (pkg, values = {}) => (
+    (!values.trim || pkg.trim === values.trim) &&
+    (!values.binding || pkg.binding === values.binding) &&
+    (!values.interiorColor || pkg.interiorColor === values.interiorColor) &&
+    (!values.paper || pkg.paper === values.paper) &&
+    (!pageCount || (pageCount >= pkg.minPage && pageCount <= pkg.maxPage))
+  )
+  const filterOptions = (options, field, values) => {
+    const allowed = new Set(luluPackages.filter((pkg) => packageMatches(pkg, values)).map((pkg) => pkg[field]))
+    return options.filter((option) => allowed.has(option.value))
+  }
+  const legacyOption = (value, options) => (
+    value && !options.some((option) => option.value === value)
+      ? <MenuItem value={value}>Legacy: {value}</MenuItem>
+      : null
+  )
+  const coverBindingOptions = filterOptions(luluOptions.bindings, 'binding', { trim: form.coverSize })
+  const insideColorOptions = filterOptions(luluOptions.interiorColors, 'interiorColor', {
+    trim: form.insideSize,
+    paper: form.paperType,
+  })
+  const paperOptions = filterOptions(luluOptions.papers, 'paper', {
+    trim: form.insideSize,
+    interiorColor: form.interiorColor,
+  })
 
   const handleSave = async () => {
     if (!form.title.trim()) {
@@ -679,8 +729,10 @@ function LibraryItemDialog({ open, category, item, activeStore, categoryOptions,
         : {}),
       ...(isInsideCategory
         ? {
+            interiorColor: form.interiorColor.trim() || null,
             paperType: form.paperType.trim() || null,
             insideSize: form.insideSize.trim() || null,
+            pageCount: Number(form.pageCount || 0),
           }
         : {}),
       imageUrl: form.imageUrl.trim() || null,
@@ -722,35 +774,81 @@ function LibraryItemDialog({ open, category, item, activeStore, categoryOptions,
         {isCoverCategory && (
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
             <TextField
-              label="Cover type"
+              select
+              label="Binding type"
               value={form.coverType}
               onChange={set('coverType')}
-              placeholder="e.g. Linen wrap"
               fullWidth
-            />
+            >
+              <MenuItem value="">Select binding type</MenuItem>
+              {legacyOption(form.coverType, coverBindingOptions)}
+              {coverBindingOptions.map((option) => (
+                <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
+              ))}
+            </TextField>
             <TextField
+              select
               label="Cover size"
               value={form.coverSize}
               onChange={set('coverSize')}
-              placeholder="e.g. 8.5 x 11 in"
               fullWidth
-            />
+            >
+              <MenuItem value="">Select cover size</MenuItem>
+              {legacyOption(form.coverSize, luluOptions.trims)}
+              {luluOptions.trims.map((option) => (
+                <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
+              ))}
+            </TextField>
           </Stack>
         )}
         {isInsideCategory && (
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
             <TextField
-              label="Paper type"
-              value={form.paperType}
-              onChange={set('paperType')}
-              placeholder="e.g. 80# coated"
-              fullWidth
-            />
-            <TextField
+              select
               label="Size"
               value={form.insideSize}
               onChange={set('insideSize')}
-              placeholder="e.g. 8.5 x 11 in"
+              fullWidth
+            >
+              <MenuItem value="">Select inside-page size</MenuItem>
+              {legacyOption(form.insideSize, luluOptions.trims)}
+              {luluOptions.trims.map((option) => (
+                <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
+              ))}
+            </TextField>
+            <TextField
+              select
+              label="Interior color"
+              value={form.interiorColor}
+              onChange={set('interiorColor')}
+              fullWidth
+            >
+              <MenuItem value="">Select interior color</MenuItem>
+              {legacyOption(form.interiorColor, insideColorOptions)}
+              {insideColorOptions.map((option) => (
+                <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
+              ))}
+            </TextField>
+            <TextField
+              select
+              label="Paper type"
+              value={form.paperType}
+              onChange={set('paperType')}
+              fullWidth
+            >
+              <MenuItem value="">Select paper type</MenuItem>
+              {legacyOption(form.paperType, paperOptions)}
+              {paperOptions.map((option) => (
+                <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
+              ))}
+            </TextField>
+            <TextField
+              label="Page count"
+              type="number"
+              value={form.pageCount}
+              onChange={set('pageCount')}
+              inputProps={{ min: 0, step: 1 }}
+              helperText="Used for Lulu spine width."
               fullWidth
             />
           </Stack>
@@ -888,10 +986,16 @@ function AssetGrid({ items, category, canManage, isProductCategory, onDetail, on
               {isInsideCategory && (
                 <Stack spacing={0.25}>
                   <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 600 }}>
+                    Interior color: {item.interiorColor || 'Not set'}
+                  </Typography>
+                  <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 600 }}>
                     Paper type: {item.paperType || 'Not set'}
                   </Typography>
                   <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 600 }}>
                     Size: {item.insideSize || pageSizeInches(item)}
+                  </Typography>
+                  <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 600 }}>
+                    Pages: {item.pageCount || 'Not set'}
                   </Typography>
                 </Stack>
               )}
@@ -945,8 +1049,10 @@ function AssetList({ items, category, canManage, isProductCategory, onDetail, on
                 <>
                   {isCoverCategory && <SoftTableCell>Cover Type</SoftTableCell>}
                   {isCoverCategory && <SoftTableCell>Cover Size</SoftTableCell>}
+                  {isInsideCategory && <SoftTableCell>Interior Color</SoftTableCell>}
                   {isInsideCategory && <SoftTableCell>Paper Type</SoftTableCell>}
                   {isInsideCategory && <SoftTableCell>Size</SoftTableCell>}
+                  {isInsideCategory && <SoftTableCell>Pages</SoftTableCell>}
                 </>
               )}
               <SoftTableCell align="left">Actions</SoftTableCell>
@@ -976,8 +1082,10 @@ function AssetList({ items, category, canManage, isProductCategory, onDetail, on
                   <>
                     {isCoverCategory && <SoftTableCell>{item.coverType || '-'}</SoftTableCell>}
                     {isCoverCategory && <SoftTableCell>{item.coverSize || pageSizeInches(item)}</SoftTableCell>}
+                    {isInsideCategory && <SoftTableCell>{item.interiorColor || '-'}</SoftTableCell>}
                     {isInsideCategory && <SoftTableCell>{item.paperType || '-'}</SoftTableCell>}
                     {isInsideCategory && <SoftTableCell>{item.insideSize || pageSizeInches(item)}</SoftTableCell>}
+                    {isInsideCategory && <SoftTableCell>{item.pageCount || '-'}</SoftTableCell>}
                   </>
                 )}
                 <SoftTableCell align="left">
