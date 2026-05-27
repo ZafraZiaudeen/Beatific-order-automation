@@ -3,6 +3,7 @@ import { Link as RouterLink, useNavigate, useParams } from 'react-router-dom'
 import Alert from '@mui/material/Alert'
 import Autocomplete from '@mui/material/Autocomplete'
 import Box from '@mui/material/Box'
+import Checkbox from '@mui/material/Checkbox'
 import Chip from '@mui/material/Chip'
 import CircularProgress from '@mui/material/CircularProgress'
 import Dialog from '@mui/material/Dialog'
@@ -11,7 +12,9 @@ import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
 import Divider from '@mui/material/Divider'
 import Grid from '@mui/material/Grid'
+import FormControlLabel from '@mui/material/FormControlLabel'
 import IconButton from '@mui/material/IconButton'
+import MenuItem from '@mui/material/MenuItem'
 import Stack from '@mui/material/Stack'
 import TableContainer from '@mui/material/TableContainer'
 import TextField from '@mui/material/TextField'
@@ -46,6 +49,28 @@ import {
 
 const productInitials = (title = '') =>
   title.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join('') || 'P'
+
+const EMPTY_LULU_OPTIONS = { packages: [] }
+const FINISH_OPTIONS = [
+  { value: 'MATTE', label: 'Matte' },
+  { value: 'GLOSSY', label: 'Glossy' },
+]
+const DEFAULT_LULU_PRINT_SPEC = {
+  trimSizeKey: '',
+  bindingType: '',
+  interiorColor: '',
+  paperType: '',
+  printQuality: 'STD',
+  coverFinish: 'MATTE',
+  pageCount: '',
+  podPackageId: '',
+}
+
+const normalizeLuluPrintSpec = (spec = {}) => ({
+  ...DEFAULT_LULU_PRINT_SPEC,
+  ...spec,
+  pageCount: spec?.pageCount ? String(spec.pageCount) : '',
+})
 
 function AssetOptionCard(props) {
   const { option, icon } = props
@@ -198,6 +223,7 @@ export default function ProductLibrary2ProductsPage({ mode = 'list' }) {
   const [product, setProduct] = useState(null)
   const [coverAssets, setCoverAssets] = useState([])
   const [insideAssets, setInsideAssets] = useState([])
+  const [luluOptions, setLuluOptions] = useState(EMPTY_LULU_OPTIONS)
   const [loading, setLoading] = useState(mode === 'list')
   const [saving, setSaving] = useState(false)
   const [search, setSearch] = useState('')
@@ -209,6 +235,8 @@ export default function ProductLibrary2ProductsPage({ mode = 'list' }) {
     title: '',
     coverAssetId: null,
     insidePageAssetId: null,
+    luluPrintSpec: DEFAULT_LULU_PRINT_SPEC,
+    allowedCoverFinishes: ['MATTE', 'GLOSSY'],
   })
 
   const isListMode = mode === 'list'
@@ -242,6 +270,8 @@ export default function ProductLibrary2ProductsPage({ mode = 'list' }) {
         title: data.title || '',
         coverAssetId: data.coverAssetId || null,
         insidePageAssetId: data.insidePageAssetId || null,
+        luluPrintSpec: normalizeLuluPrintSpec(data.luluPrintSpec),
+        allowedCoverFinishes: data.allowedCoverFinishes?.length ? data.allowedCoverFinishes : ['MATTE', 'GLOSSY'],
       })
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to load product')
@@ -254,12 +284,14 @@ export default function ProductLibrary2ProductsPage({ mode = 'list' }) {
     setError('')
     try {
       const params = activeStore ? { storeId: activeStore._id } : {}
-      const [coverRes, insideRes] = await Promise.all([
+      const [coverRes, insideRes, luluRes] = await Promise.all([
         api.get('/product-library-v2/categories/cover', { params }),
         api.get('/product-library-v2/categories/inside-page', { params }),
+        api.get('/product-library-v2/lulu-options'),
       ])
       setCoverAssets(coverRes.data?.items || [])
       setInsideAssets(insideRes.data?.items || [])
+      setLuluOptions({ ...EMPTY_LULU_OPTIONS, ...(luluRes.data || {}) })
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to load product assets')
     }
@@ -296,6 +328,120 @@ export default function ProductLibrary2ProductsPage({ mode = 'list' }) {
     () => insideAssets.find((item) => item._id === form.insidePageAssetId) || product?.insidePageAsset || null,
     [insideAssets, form.insidePageAssetId, product]
   )
+  const effectiveLuluPrintSpec = useMemo(() => ({
+    ...form.luluPrintSpec,
+    trimSizeKey: form.luluPrintSpec.trimSizeKey || selectedInside?.insideSize || selectedCover?.coverSize || '',
+    bindingType: form.luluPrintSpec.bindingType || selectedCover?.coverType || '',
+    interiorColor: form.luluPrintSpec.interiorColor || selectedInside?.interiorColor || '',
+    paperType: form.luluPrintSpec.paperType || selectedInside?.paperType || '',
+    pageCount: form.luluPrintSpec.pageCount || (selectedInside?.pageCount ? String(selectedInside.pageCount) : ''),
+    printQuality: form.luluPrintSpec.printQuality || 'STD',
+    coverFinish: form.luluPrintSpec.coverFinish || 'MATTE',
+  }), [form.luluPrintSpec, selectedCover, selectedInside])
+
+  const compatibleCoverAssets = useMemo(() => {
+    const packages = luluOptions.packages || []
+    if (!selectedInside?.insideSize || !selectedInside?.pageCount || !packages.length) return coverAssets
+    return coverAssets.filter((cover) => {
+      if (!cover.coverSize || !cover.coverType) return false
+      return packages.some((pkg) =>
+        pkg.trim === cover.coverSize &&
+        pkg.trim === selectedInside.insideSize &&
+        pkg.binding === cover.coverType &&
+        (!selectedInside.interiorColor || pkg.interiorColor === selectedInside.interiorColor) &&
+        (!selectedInside.paperType || pkg.paper === selectedInside.paperType) &&
+        selectedInside.pageCount >= pkg.minPage &&
+        selectedInside.pageCount <= pkg.maxPage
+      )
+    })
+  }, [coverAssets, luluOptions.packages, selectedInside])
+
+  const compatibility = useMemo(() => {
+    const warnings = []
+    const packages = luluOptions.packages || []
+    const spec = effectiveLuluPrintSpec
+    if (!selectedCover || !selectedInside) {
+      return { isValid: false, warnings: ['Choose a cover asset and inside-page asset.'], podPackageIds: {} }
+    }
+    if (!spec.trimSizeKey) warnings.push('Choose a Lulu trim size.')
+    if (selectedCover.coverSize && selectedInside.insideSize && selectedCover.coverSize !== selectedInside.insideSize) {
+      warnings.push('Cover size and inside-page size must match.')
+    }
+    if (!spec.bindingType) warnings.push('Choose a Lulu binding type.')
+    if (!spec.interiorColor) warnings.push('Choose a Lulu interior color.')
+    if (!spec.paperType) warnings.push('Choose a Lulu paper type.')
+    if (!spec.printQuality) warnings.push('Choose a Lulu print quality.')
+    if (!spec.coverFinish) warnings.push('Choose a Lulu cover finish.')
+    if (!Number(spec.pageCount || 0)) warnings.push('Enter the inside-page count.')
+
+    const podPackageIds = {}
+    if (warnings.length === 0) {
+      const pageCount = Number(spec.pageCount || 0)
+      const match = packages.find((pkg) =>
+        pkg.trim === spec.trimSizeKey &&
+        pkg.binding === spec.bindingType &&
+        pkg.interiorColor === spec.interiorColor &&
+        pkg.printQuality === spec.printQuality &&
+        pkg.paper === spec.paperType &&
+        pkg.finish === spec.coverFinish &&
+        (!pageCount || (pageCount >= pkg.minPage && pageCount <= pkg.maxPage))
+      )
+      if (match) podPackageIds[spec.coverFinish] = match.id
+      if (Object.keys(podPackageIds).length === 0) {
+        warnings.push('This selected cover and inside-page combination is not available in Lulu.')
+      }
+    }
+    return { isValid: Object.keys(podPackageIds).length > 0, warnings, podPackageIds }
+  }, [effectiveLuluPrintSpec, luluOptions.packages, selectedCover, selectedInside])
+
+  const toggleFinish = (finish) => (event) => {
+    setForm((current) => {
+      const next = event.target.checked
+        ? [...new Set([...current.allowedCoverFinishes, finish])]
+        : current.allowedCoverFinishes.filter((value) => value !== finish)
+      if (finish === current.luluPrintSpec.coverFinish && !event.target.checked) return current
+      return { ...current, allowedCoverFinishes: next.length ? next : current.allowedCoverFinishes }
+    })
+  }
+
+  const updateLuluSpec = (changes) => {
+    setForm((current) => ({
+      ...current,
+      allowedCoverFinishes: changes.coverFinish
+        ? [...new Set([...current.allowedCoverFinishes, changes.coverFinish])]
+        : current.allowedCoverFinishes,
+      luluPrintSpec: {
+        ...current.luluPrintSpec,
+        ...changes,
+      },
+    }))
+  }
+
+  const selectCoverAsset = (value) => {
+    setForm((current) => ({
+      ...current,
+      coverAssetId: value?._id || null,
+      luluPrintSpec: {
+        ...current.luluPrintSpec,
+        trimSizeKey: value?.coverSize || current.luluPrintSpec.trimSizeKey,
+        bindingType: value?.coverType || current.luluPrintSpec.bindingType,
+      },
+    }))
+  }
+
+  const selectInsideAsset = (value) => {
+    setForm((current) => ({
+      ...current,
+      insidePageAssetId: value?._id || null,
+      luluPrintSpec: {
+        ...current.luluPrintSpec,
+        trimSizeKey: current.luluPrintSpec.trimSizeKey || value?.insideSize || '',
+        interiorColor: value?.interiorColor || current.luluPrintSpec.interiorColor,
+        paperType: value?.paperType || current.luluPrintSpec.paperType,
+        pageCount: value?.pageCount ? String(value.pageCount) : current.luluPrintSpec.pageCount,
+      },
+    }))
+  }
 
   const openAssetEditor = (asset, slot) => {
     if (!asset) return
@@ -335,15 +481,27 @@ export default function ProductLibrary2ProductsPage({ mode = 'list' }) {
       setError('Product title, cover asset, and inside pages are required')
       return
     }
+    if (!compatibility.isValid) {
+      setError(compatibility.warnings.join(' '))
+      return
+    }
 
     setSaving(true)
     setError('')
+    const luluPrintSpec = {
+      ...effectiveLuluPrintSpec,
+      pageCount: Number(effectiveLuluPrintSpec.pageCount || 0),
+      podPackageId: compatibility.podPackageIds[effectiveLuluPrintSpec.coverFinish] || '',
+    }
     try {
       if (isEditMode && product?._id) {
         const { data } = await api.patch(`/products/${product._id}`, {
           title: form.title.trim(),
           coverAssetId: form.coverAssetId,
           insidePageAssetId: form.insidePageAssetId,
+          luluPrintSpec,
+          podPackageId: luluPrintSpec.podPackageId,
+          allowedCoverFinishes: form.allowedCoverFinishes,
         })
         navigate(`/product-library-2/product/${data._id}/designer`)
         return
@@ -355,6 +513,9 @@ export default function ProductLibrary2ProductsPage({ mode = 'list' }) {
         title: form.title.trim(),
         coverAssetId: form.coverAssetId,
         insidePageAssetId: form.insidePageAssetId,
+        luluPrintSpec,
+        podPackageId: luluPrintSpec.podPackageId,
+        allowedCoverFinishes: form.allowedCoverFinishes,
       }
       const { data } = await api.post('/products', payload)
       navigate(`/product-library-2/product/${data._id}/designer`)
@@ -379,6 +540,7 @@ export default function ProductLibrary2ProductsPage({ mode = 'list' }) {
   if (editorState?.asset) {
     return (
       <ProductTemplateEditor
+        product={product}
         libraryItem={editorState.asset}
         onBack={() => setEditorState(null)}
         onSaved={handleAssetSaved}
@@ -692,7 +854,7 @@ export default function ProductLibrary2ProductsPage({ mode = 'list' }) {
               Cancel
             </SoftButton>
             {canManage && (
-              <SoftButton variant="contained" onClick={handleSaveProduct} disabled={saving}>
+              <SoftButton variant="contained" onClick={handleSaveProduct} disabled={saving || !compatibility.isValid}>
                 {saving ? <CircularProgress size={18} /> : 'Save Product'}
               </SoftButton>
             )}
@@ -732,9 +894,9 @@ export default function ProductLibrary2ProductsPage({ mode = 'list' }) {
                 />
 
                 <Autocomplete
-                  options={coverAssets}
+                  options={compatibleCoverAssets}
                   value={coverAssets.find((item) => item._id === form.coverAssetId) || null}
-                  onChange={(_, value) => setForm((current) => ({ ...current, coverAssetId: value?._id || null }))}
+                  onChange={(_, value) => selectCoverAsset(value)}
                   getOptionLabel={(option) => option.title || ''}
                   isOptionEqualToValue={(option, value) => option._id === value._id}
                   renderOption={(props, option) => {
@@ -760,7 +922,7 @@ export default function ProductLibrary2ProductsPage({ mode = 'list' }) {
                 <Autocomplete
                   options={insideAssets}
                   value={insideAssets.find((item) => item._id === form.insidePageAssetId) || null}
-                  onChange={(_, value) => setForm((current) => ({ ...current, insidePageAssetId: value?._id || null }))}
+                  onChange={(_, value) => selectInsideAsset(value)}
                   getOptionLabel={(option) => option.title || ''}
                   isOptionEqualToValue={(option, value) => option._id === value._id}
                   renderOption={(props, option) => {
@@ -782,6 +944,128 @@ export default function ProductLibrary2ProductsPage({ mode = 'list' }) {
                     />
                   )}
                 />
+
+                <Box sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1.5, p: 1.5 }}>
+                  <Typography sx={{ fontWeight: 800, mb: 1.5 }}>Lulu Print Spec</Typography>
+                  <Grid container spacing={1.5}>
+                    <Grid size={{ xs: 12, sm: 6 }}>
+                      <TextField
+                        select
+                        label="Trim size"
+                        value={effectiveLuluPrintSpec.trimSizeKey}
+                        onChange={(event) => updateLuluSpec({ trimSizeKey: event.target.value })}
+                        fullWidth
+                      >
+                        <MenuItem value="">Select trim size</MenuItem>
+                        {(luluOptions.trims || []).map((option) => (
+                          <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
+                        ))}
+                      </TextField>
+                    </Grid>
+                    <Grid size={{ xs: 12, sm: 6 }}>
+                      <TextField
+                        select
+                        label="Binding"
+                        value={effectiveLuluPrintSpec.bindingType}
+                        onChange={(event) => updateLuluSpec({ bindingType: event.target.value })}
+                        fullWidth
+                      >
+                        <MenuItem value="">Select binding</MenuItem>
+                        {(luluOptions.bindings || []).map((option) => (
+                          <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
+                        ))}
+                      </TextField>
+                    </Grid>
+                    <Grid size={{ xs: 12, sm: 6 }}>
+                      <TextField
+                        select
+                        label="Interior color"
+                        value={effectiveLuluPrintSpec.interiorColor}
+                        onChange={(event) => updateLuluSpec({ interiorColor: event.target.value })}
+                        fullWidth
+                      >
+                        <MenuItem value="">Select color</MenuItem>
+                        {(luluOptions.interiorColors || []).map((option) => (
+                          <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
+                        ))}
+                      </TextField>
+                    </Grid>
+                    <Grid size={{ xs: 12, sm: 6 }}>
+                      <TextField
+                        select
+                        label="Paper"
+                        value={effectiveLuluPrintSpec.paperType}
+                        onChange={(event) => updateLuluSpec({ paperType: event.target.value })}
+                        fullWidth
+                      >
+                        <MenuItem value="">Select paper</MenuItem>
+                        {(luluOptions.papers || []).map((option) => (
+                          <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
+                        ))}
+                      </TextField>
+                    </Grid>
+                    <Grid size={{ xs: 12, sm: 4 }}>
+                      <TextField
+                        select
+                        label="Print quality"
+                        value={effectiveLuluPrintSpec.printQuality}
+                        onChange={(event) => updateLuluSpec({ printQuality: event.target.value })}
+                        fullWidth
+                      >
+                        {(luluOptions.printQualities || [{ value: 'STD', label: 'Standard' }, { value: 'PRE', label: 'Premium' }]).map((option) => (
+                          <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
+                        ))}
+                      </TextField>
+                    </Grid>
+                    <Grid size={{ xs: 12, sm: 4 }}>
+                      <TextField
+                        select
+                        label="Cover finish"
+                        value={effectiveLuluPrintSpec.coverFinish}
+                        onChange={(event) => updateLuluSpec({ coverFinish: event.target.value })}
+                        fullWidth
+                      >
+                        {FINISH_OPTIONS.map((option) => (
+                          <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
+                        ))}
+                      </TextField>
+                    </Grid>
+                    <Grid size={{ xs: 12, sm: 4 }}>
+                      <TextField
+                        label="Page count"
+                        type="number"
+                        value={effectiveLuluPrintSpec.pageCount}
+                        onChange={(event) => updateLuluSpec({ pageCount: event.target.value })}
+                        inputProps={{ min: 1, step: 1 }}
+                        fullWidth
+                      />
+                    </Grid>
+                  </Grid>
+                </Box>
+
+                <Box sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1.5, p: 1.5 }}>
+                  <Typography sx={{ fontWeight: 800, mb: 0.5 }}>Allowed Cover Finishes</Typography>
+                  <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                    {FINISH_OPTIONS.map((option) => (
+                      <FormControlLabel
+                        key={option.value}
+                        control={(
+                          <Checkbox
+                            checked={form.allowedCoverFinishes.includes(option.value)}
+                            onChange={toggleFinish(option.value)}
+                          />
+                        )}
+                        label={option.label}
+                      />
+                    ))}
+                  </Stack>
+                </Box>
+
+                <Alert severity={compatibility.isValid ? 'success' : 'warning'}>
+                  {compatibility.isValid
+                    ? `Valid Lulu package for ${Object.keys(compatibility.podPackageIds).join(' and ')} finish.`
+                    : compatibility.warnings[0]}
+                </Alert>
               </Stack>
             </Box>
           </SoftCard>
@@ -814,7 +1098,9 @@ export default function ProductLibrary2ProductsPage({ mode = 'list' }) {
             <Divider sx={{ my: 2.5 }} />
 
             <Typography variant="body2" sx={{ color: '#64748b' }}>
-              Saving creates a product record that points to the selected cover and inside-page assets. The product designer then lets you open either canvas and keep editing from there.
+              {compatibility.isValid
+                ? Object.entries(compatibility.podPackageIds).map(([finish, id]) => `${finish}: ${id}`).join(' · ')
+                : compatibility.warnings.join(' ')}
             </Typography>
           </SoftCard>
         </Grid>

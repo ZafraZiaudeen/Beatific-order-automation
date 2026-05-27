@@ -14,6 +14,7 @@ import TextField from '@mui/material/TextField'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import Switch from '@mui/material/Switch'
+import Slider from '@mui/material/Slider'
 import FormControlLabel from '@mui/material/FormControlLabel'
 import ToggleButton from '@mui/material/ToggleButton'
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
@@ -31,12 +32,17 @@ import ZoomOutIcon from '@mui/icons-material/ZoomOutOutlined'
 import FitScreenIcon from '@mui/icons-material/FitScreenOutlined'
 import TextFieldsIcon from '@mui/icons-material/TextFieldsOutlined'
 import LayersIcon from '@mui/icons-material/LayersOutlined'
+import StraightenIcon from '@mui/icons-material/StraightenOutlined'
+import GridOnIcon from '@mui/icons-material/GridOnOutlined'
+import OpacityIcon from '@mui/icons-material/OpacityOutlined'
 import { Stage, Layer, Image as KonvaImage, Rect, Text, Transformer } from 'react-konva'
 import { v4 as uuidv4 } from 'uuid'
 import api from '../../lib/api'
 import { FONT_OPTIONS, getFontOption, normalizeFontStyle } from '../../lib/fonts'
 import { FIXED_PERSONALIZATION_FIELDS, getFixedPersonalizationField } from '../../lib/fixedPersonalizationFields'
 import { getFieldMaxLines, getFittedTextProps } from '../../lib/textFitting'
+import LuluGeometryOverlay from './LuluGeometryOverlay'
+import { getLuluGeometryBox } from './luluGeometryUtils'
 
 const DEFAULT_TEMPLATE_KEY = 'default'
 const DEFAULT_TEMPLATE_POLICY = { cover: 'inherit', interior: 'inherit', fields: 'inherit' }
@@ -188,8 +194,17 @@ function TemplateStage({
   onChange,
   zoom,
   viewportRef,
+  geometry,
+  showGuides,
+  showRulers,
+  measurementUnit,
+  alignmentImageUrl,
+  showAlignment,
+  alignmentOpacity = 0.62,
+  backgroundOpacity = 1,
 }) {
   const image = useLoadedImage(page?.previewImageUrl)
+  const alignmentImage = useLoadedImage(alignmentImageUrl)
   const stageRef = useRef(null)
   const transformerRef = useRef(null)
   const selectionStartRef = useRef(null)
@@ -330,10 +345,12 @@ function TemplateStage({
             style={{ display: 'block' }}
           >
             <Layer>
-              {image ? (
-                <KonvaImage image={image} x={0} y={0} width={pageWidth} height={pageHeight} listening={false} />
-              ) : (
-                <Rect x={0} y={0} width={pageWidth} height={pageHeight} fill="#ffffff" listening={false} />
+              <Rect x={0} y={0} width={pageWidth} height={pageHeight} fill="#ffffff" listening={false} />
+              {showAlignment && alignmentImage && (
+                <KonvaImage image={alignmentImage} x={0} y={0} width={pageWidth} height={pageHeight} opacity={alignmentOpacity} listening={false} />
+              )}
+              {image && (
+                <KonvaImage image={image} x={0} y={0} width={pageWidth} height={pageHeight} opacity={backgroundOpacity} listening={false} />
               )}
 
               {(page?.extractedText || []).map((text) => (
@@ -373,6 +390,15 @@ function TemplateStage({
                   listening={false}
                 />
               ))}
+
+              <LuluGeometryOverlay
+                geometry={geometry}
+                page={{ pageWidth, pageHeight }}
+                selectedBox={selectedField}
+                showGuides={showGuides && target === 'cover'}
+                showRulers={showRulers && target === 'cover'}
+                unit={measurementUnit}
+              />
 
               {activeFields.map((field) => {
                 const selected = selectedId === field.id
@@ -542,6 +568,8 @@ function FieldPanel({
   updateField,
   deleteSelected,
   sampleOutputs,
+  centerSelected,
+  coverGeometryAvailable,
 }) {
   const targetFields = fields.filter((field) => field.target === target)
 
@@ -711,6 +739,24 @@ function FieldPanel({
             <TextField disabled={!fieldsEditable} label="Height" size="small" type="number" value={Math.round(selected.height * 100) / 100} onChange={(e) => updateField(selected.id, { height: Number(e.target.value) })} />
             <TextField disabled={!fieldsEditable} label="Rotation (deg)" size="small" type="number" value={Math.round((selected.rotation || 0) * 100) / 100} onChange={(e) => updateField(selected.id, { rotation: Number(e.target.value) })} />
           </Box>
+          <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: 'wrap' }}>
+            <Button size="small" variant="outlined" disabled={!fieldsEditable} onClick={() => centerSelected?.('document')}>
+              Center page
+            </Button>
+            {target === 'cover' && (
+              <>
+                <Button size="small" variant="outlined" disabled={!fieldsEditable || !coverGeometryAvailable} onClick={() => centerSelected?.('front')}>
+                  Center front
+                </Button>
+                <Button size="small" variant="outlined" disabled={!fieldsEditable || !coverGeometryAvailable} onClick={() => centerSelected?.('back')}>
+                  Center back
+                </Button>
+                <Button size="small" variant="outlined" disabled={!fieldsEditable || !coverGeometryAvailable} onClick={() => centerSelected?.('spine')}>
+                  Center spine
+                </Button>
+              </>
+            )}
+          </Stack>
 
           <Divider />
 
@@ -818,6 +864,13 @@ export default function ProductTemplateEditor({ product, onBack, onSaved, librar
   const [selectedId, setSelectedId] = useState(null)
   const [previewModes, setPreviewModes] = useState({})
   const [zoom, setZoom] = useState(1)
+  const [showGuides, setShowGuides] = useState(true)
+  const [showRulers, setShowRulers] = useState(true)
+  const [showAlignment, setShowAlignment] = useState(true)
+  const [measurementUnit, setMeasurementUnit] = useState('in')
+  const [alignmentOpacity, setAlignmentOpacity] = useState(0.62)
+  const [backgroundOpacity, setBackgroundOpacity] = useState(1)
+  const [geometryState, setGeometryState] = useState({ loading: false, geometry: null, svgDataUrl: null, pageWidth: 0, pageHeight: 0, warnings: [] })
   const [autoFit, setAutoFit] = useState(true)
   const [uploading, setUploading] = useState('')
   const [saving, setSaving] = useState(false)
@@ -833,6 +886,21 @@ export default function ProductTemplateEditor({ product, onBack, onSaved, librar
   const selectedPolicy = normalizePolicy(selectedVariant?.templatePolicy)
   const effective = useMemo(() => resolveEffectiveTemplate(localProduct, templateKey), [localProduct, templateKey])
   const page = effective.template[TARGETS[target].productKey]
+  const canvasPage = useMemo(() => {
+    if (page) return page
+    if (target === 'cover' && geometryState.svgDataUrl && geometryState.pageWidth && geometryState.pageHeight) {
+      return {
+        sourcePdfUrl: null,
+        previewImageUrl: null,
+        pageWidth: geometryState.pageWidth,
+        pageHeight: geometryState.pageHeight,
+        pageCount: 1,
+        extractedText: [],
+        extractedImages: [],
+      }
+    }
+    return null
+  }, [geometryState.pageHeight, geometryState.pageWidth, geometryState.svgDataUrl, page, target])
   const selected = fields.find((field) => field.id === selectedId) || null
   const sampleOutputs = effective.template.sampleOutputs
   const fieldsEditable = libraryMode || !selectedVariant || selectedPolicy.fields === 'override'
@@ -853,22 +921,68 @@ export default function ProductTemplateEditor({ product, onBack, onSaved, librar
     setSelectedId(null)
   }, [localProduct, templateKey])
 
+  useEffect(() => {
+    const productId = libraryMode ? product?._id : localProduct?._id
+    if (target !== 'cover' || !productId) {
+      setGeometryState({
+        loading: false,
+        geometry: null,
+        svgDataUrl: null,
+        pageWidth: 0,
+        pageHeight: 0,
+        warnings: target === 'cover' && libraryMode && !product?._id
+          ? ['Open this cover from a product to load exact Lulu spine alignment.']
+          : [],
+      })
+      return undefined
+    }
+
+    let cancelled = false
+    setGeometryState((current) => ({ ...current, loading: true }))
+    api.get(`/products/${productId}/template/cover-alignment`, { params: selectedVariantId ? { variantId: selectedVariantId } : {} })
+      .then(({ data }) => {
+        if (cancelled) return
+        setGeometryState({
+          loading: false,
+          geometry: data?.geometry || null,
+          svgDataUrl: data?.svgDataUrl || null,
+          pageWidth: data?.pageWidth || data?.geometry?.points?.document?.width || 0,
+          pageHeight: data?.pageHeight || data?.geometry?.points?.document?.height || 0,
+          warnings: data?.warnings || [],
+        })
+      })
+      .catch((err) => {
+        if (cancelled) return
+        setGeometryState({
+          loading: false,
+          geometry: null,
+          svgDataUrl: null,
+          pageWidth: 0,
+          pageHeight: 0,
+          warnings: [err.response?.data?.message || 'Could not load Lulu cover geometry.'],
+        })
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [libraryMode, localProduct?._id, product?._id, selectedVariantId, target])
+
   const stats = useMemo(() => ({
     cover: fields.filter((field) => field.target === 'cover').length,
     interior: fields.filter((field) => field.target === 'interiorFirstPage').length,
   }), [fields])
 
   const fitToView = useCallback(() => {
-    if (!page?.pageWidth || !page?.pageHeight || !viewportRef.current) return
+    if (!canvasPage?.pageWidth || !canvasPage?.pageHeight || !viewportRef.current) return
     const rect = viewportRef.current.getBoundingClientRect()
     const availableWidth = Math.max(160, rect.width - 96)
     const availableHeight = Math.max(160, rect.height - 96)
-    const nextZoom = Math.min(2, Math.max(0.08, Math.min(availableWidth / page.pageWidth, availableHeight / page.pageHeight)))
+    const nextZoom = Math.min(2, Math.max(0.08, Math.min(availableWidth / canvasPage.pageWidth, availableHeight / canvasPage.pageHeight)))
     setZoom(Number(nextZoom.toFixed(3)))
-  }, [page?.pageHeight, page?.pageWidth])
+  }, [canvasPage?.pageHeight, canvasPage?.pageWidth])
 
   useEffect(() => {
-    if (!autoFit || !page?.previewImageUrl) return
+    if (!autoFit || !canvasPage) return
     const raf = window.requestAnimationFrame(fitToView)
     const viewport = viewportRef.current
     const ResizeObserverCtor = window.ResizeObserver
@@ -878,12 +992,25 @@ export default function ProductTemplateEditor({ product, onBack, onSaved, librar
       window.cancelAnimationFrame(raf)
       observer?.disconnect()
     }
-  }, [autoFit, fitToView, page?.previewImageUrl])
+  }, [autoFit, canvasPage, fitToView])
 
-  const updateField = (id, changes) => {
+  const updateField = useCallback((id, changes) => {
     if (!fieldsEditable) return
     setFields((current) => current.map((field) => (field.id === id ? { ...field, ...changes } : field)))
-  }
+  }, [fieldsEditable])
+
+  const centerSelected = useCallback((area) => {
+    if (!selected || !fieldsEditable || !canvasPage) return
+    const pageBox = { x: 0, y: 0, width: canvasPage.pageWidth || 612, height: canvasPage.pageHeight || 792 }
+    const targetBox = area === 'document'
+      ? pageBox
+      : getLuluGeometryBox(geometryState.geometry, canvasPage, area)
+    if (!targetBox) return
+    updateField(selected.id, {
+      x: Math.max(0, targetBox.x + (targetBox.width - selected.width) / 2),
+      y: Math.max(0, targetBox.y + (targetBox.height - selected.height) / 2),
+    })
+  }, [canvasPage, fieldsEditable, geometryState.geometry, selected, updateField])
 
   const updateVariantLocal = (variantIdToUpdate, updater) => {
     setLocalProduct((current) => ({
@@ -1029,8 +1156,8 @@ export default function ProductTemplateEditor({ product, onBack, onSaved, librar
   }
 
   const addCenteredBlankField = () => {
-    const pageWidth = page?.pageWidth || 612
-    const pageHeight = page?.pageHeight || 792
+    const pageWidth = canvasPage?.pageWidth || 612
+    const pageHeight = canvasPage?.pageHeight || 792
     createBlank({ x: Math.max(0, pageWidth / 2 - 110), y: Math.max(0, pageHeight / 2 - 21) })
   }
 
@@ -1051,6 +1178,7 @@ export default function ProductTemplateEditor({ product, onBack, onSaved, librar
             return
           }
           form.append('coverColor', color.trim())
+          if (product?._id) form.append('productId', product._id)
         }
         url = `/product-library-v2/items/${libraryItem._id}/pdf/import`
       } else {
@@ -1197,6 +1325,67 @@ export default function ProductTemplateEditor({ product, onBack, onSaved, librar
         <Box sx={{ flex: 1 }} />
 
         <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
+          {target === 'cover' && (
+            <>
+              <Tooltip title={showAlignment ? 'Hide Lulu alignment backlayer' : 'Show Lulu alignment backlayer'}>
+                <IconButton size="small" color={showAlignment ? 'primary' : 'default'} onClick={() => setShowAlignment((value) => !value)} disabled={!geometryState.svgDataUrl}>
+                  <LayersIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+              <Tooltip title={showGuides ? 'Hide Lulu cover guides' : 'Show Lulu cover guides'}>
+                <IconButton size="small" color={showGuides ? 'primary' : 'default'} onClick={() => setShowGuides((value) => !value)}>
+                  <StraightenIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+              <Tooltip title={showRulers ? 'Hide rulers' : 'Show rulers'}>
+                <IconButton size="small" color={showRulers ? 'primary' : 'default'} onClick={() => setShowRulers((value) => !value)}>
+                  <GridOnIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+              <TextField
+                select
+                size="small"
+                value={measurementUnit}
+                onChange={(event) => setMeasurementUnit(event.target.value)}
+                sx={{ width: 72 }}
+              >
+                <MenuItem value="in">in</MenuItem>
+                <MenuItem value="pt">pt</MenuItem>
+              </TextField>
+              <Tooltip title="Lulu alignment opacity">
+                <Stack direction="row" spacing={0.75} sx={{ width: 112, alignItems: 'center', display: { xs: 'none', lg: 'flex' } }}>
+                  <LayersIcon fontSize="small" color="action" />
+                  <Slider
+                    size="small"
+                    value={Math.round(alignmentOpacity * 100)}
+                    min={15}
+                    max={100}
+                    disabled={!geometryState.svgDataUrl}
+                    onChange={(_, value) => setAlignmentOpacity(Number(value) / 100)}
+                  />
+                </Stack>
+              </Tooltip>
+              <Tooltip title="Imported PDF opacity">
+                <Stack direction="row" spacing={0.75} sx={{ width: 120, alignItems: 'center', display: { xs: 'none', md: 'flex' } }}>
+                  <OpacityIcon fontSize="small" color="action" />
+                  <Slider
+                    size="small"
+                    value={Math.round(backgroundOpacity * 100)}
+                    min={20}
+                    max={100}
+                    disabled={!canvasPage?.previewImageUrl}
+                    onChange={(_, value) => setBackgroundOpacity(Number(value) / 100)}
+                  />
+                </Stack>
+              </Tooltip>
+              {geometryState.loading && <Chip size="small" label="Guides" variant="outlined" />}
+              {!geometryState.loading && geometryState.warnings?.length > 0 && (
+                <Tooltip title={geometryState.warnings.join(' ')}>
+                  <Chip size="small" label="Guides unavailable" color="warning" variant="outlined" />
+                </Tooltip>
+              )}
+            </>
+          )}
           <Tooltip title="Zoom out"><IconButton size="small" onClick={() => updateZoom(zoom - 0.08)}><ZoomOutIcon fontSize="small" /></IconButton></Tooltip>
           <Typography variant="caption" sx={{ width: 44, textAlign: 'center', fontFamily: 'monospace', color: 'text.secondary' }}>{Math.round(zoom * 100)}%</Typography>
           <Tooltip title="Zoom in"><IconButton size="small" onClick={() => updateZoom(zoom + 0.08)}><ZoomInIcon fontSize="small" /></IconButton></Tooltip>
@@ -1264,7 +1453,7 @@ export default function ProductTemplateEditor({ product, onBack, onSaved, librar
           </Tooltip>
           <Tooltip title={fieldsEditable ? 'Add manual text field' : 'Customize fields to add a manual field'} placement="right">
             <span>
-              <IconButton sx={buttonRailSx(false)} onClick={addCenteredBlankField} disabled={!page?.previewImageUrl || !fieldsEditable}>
+              <IconButton sx={buttonRailSx(false)} onClick={addCenteredBlankField} disabled={!canvasPage || !fieldsEditable}>
                 <TextFieldsIcon />
               </IconButton>
             </span>
@@ -1289,9 +1478,9 @@ export default function ProductTemplateEditor({ product, onBack, onSaved, librar
         </Box>
 
         <Box sx={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-          {page?.previewImageUrl ? (
+          {canvasPage ? (
             <TemplateStage
-              page={page}
+              page={canvasPage}
               target={target}
               fields={fields}
               selectedId={selectedId}
@@ -1304,6 +1493,14 @@ export default function ProductTemplateEditor({ product, onBack, onSaved, librar
               onChange={updateField}
               zoom={zoom}
               viewportRef={viewportRef}
+              geometry={geometryState.geometry}
+              showGuides={showGuides}
+              showRulers={showRulers}
+              measurementUnit={measurementUnit}
+              alignmentImageUrl={geometryState.svgDataUrl}
+              showAlignment={showAlignment}
+              alignmentOpacity={alignmentOpacity}
+              backgroundOpacity={backgroundOpacity}
             />
           ) : (
             <EmptyCanvas target={target} inherited={pageInherited} onImport={() => fileInputRef.current?.click()} />
@@ -1323,6 +1520,8 @@ export default function ProductTemplateEditor({ product, onBack, onSaved, librar
           updateField={updateField}
           deleteSelected={deleteSelected}
           sampleOutputs={sampleOutputs}
+          centerSelected={centerSelected}
+          coverGeometryAvailable={Boolean(getLuluGeometryBox(geometryState.geometry, canvasPage, 'front'))}
         />
       </Box>
 

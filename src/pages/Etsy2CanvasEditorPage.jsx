@@ -37,6 +37,10 @@ import VisibilityIcon from '@mui/icons-material/VisibilityOutlined'
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOffOutlined'
 import ZoomInIcon from '@mui/icons-material/ZoomInOutlined'
 import ZoomOutIcon from '@mui/icons-material/ZoomOutOutlined'
+import StraightenIcon from '@mui/icons-material/StraightenOutlined'
+import GridOnIcon from '@mui/icons-material/GridOnOutlined'
+import OpacityIcon from '@mui/icons-material/OpacityOutlined'
+import LayersIcon from '@mui/icons-material/LayersOutlined'
 import { Stage, Layer, Image as KonvaImage, Rect, Text, Transformer, Group } from 'react-konva'
 import { v4 as uuidv4 } from 'uuid'
 import api from '../lib/api'
@@ -44,6 +48,7 @@ import { buildAssetThumbnailUrl } from '../lib/assets'
 import { toEtsy2GroupOrder } from '../lib/etsy2Orders'
 import { FONT_OPTIONS, ensureFontFaces, normalizeFontStyle } from '../lib/fonts'
 import { getFittedTextProps } from '../lib/textFitting'
+import LuluGeometryOverlay from '../components/products/LuluGeometryOverlay'
 
 const CANVAS_STATE_KEY = '_canvasEditorState'
 const CANVAS_PDF_KEY = '_canvasPdfDataUrl'
@@ -357,9 +362,27 @@ function ImageCanvasNode({ layer, setSelectedId, updateLayer }) {
   )
 }
 
-function CanvasStage({ layers, selectedId, setSelectedId, updateLayer, zoom, stageRef, page }) {
+function CanvasStage({
+  layers,
+  selectedId,
+  setSelectedId,
+  updateLayer,
+  zoom,
+  stageRef,
+  page,
+  geometry,
+  alignmentImageUrl,
+  showAlignment,
+  showGuides,
+  showRulers,
+  measurementUnit,
+  alignmentOpacity = 0.62,
+  backgroundOpacity = 1,
+}) {
   const background = layers.find((layer) => layer.type === 'background')
   const backgroundImage = useLoadedImage(background?.visible ? background.url : '')
+  const alignmentImage = useLoadedImage(alignmentImageUrl)
+  const selectedLayer = layers.find((layer) => layer.id === selectedId) || null
   const transformerRef = useRef(null)
 
   useEffect(() => {
@@ -391,12 +414,24 @@ function CanvasStage({ layers, selectedId, setSelectedId, updateLayer, zoom, sta
           >
             <Layer>
               <Rect x={0} y={0} width={page.width} height={page.height} fill="#FBF7EF" />
+              {showAlignment && alignmentImage && (
+                <KonvaImage name="lulu-alignment-backlayer" image={alignmentImage} x={0} y={0} width={page.width} height={page.height} opacity={alignmentOpacity} listening={false} />
+              )}
               {background?.visible && backgroundImage && (
-                <KonvaImage image={backgroundImage} x={0} y={0} width={page.width} height={page.height} opacity={background.opacity} listening={false} />
+                <KonvaImage image={backgroundImage} x={0} y={0} width={page.width} height={page.height} opacity={(background.opacity ?? 1) * backgroundOpacity} listening={false} />
               )}
               {background?.visible && !backgroundImage && (
                 <Rect x={50} y={50} width={page.width - 100} height={page.height - 100} fill="rgba(255,255,255,0.52)" listening={false} />
               )}
+
+              <LuluGeometryOverlay
+                geometry={geometry}
+                page={page}
+                selectedBox={selectedLayer}
+                showGuides={showGuides}
+                showRulers={showRulers}
+                unit={measurementUnit}
+              />
 
               {layers.filter((layer) => layer.type !== 'background' && (layer.visible || (layer.maskOriginal && layer.dirty))).map((layer) => (
                 layer.type === 'image' ? (
@@ -645,6 +680,13 @@ export default function Etsy2CanvasEditorPage() {
   const [history, setHistory] = useState([])
   const [future, setFuture] = useState([])
   const [zoom, setZoom] = useState(1)
+  const [pageGeometry, setPageGeometry] = useState(null)
+  const [showAlignment, setShowAlignment] = useState(true)
+  const [showGuides, setShowGuides] = useState(true)
+  const [showRulers, setShowRulers] = useState(true)
+  const [measurementUnit, setMeasurementUnit] = useState('in')
+  const [alignmentOpacity, setAlignmentOpacity] = useState(0.62)
+  const [backgroundOpacity, setBackgroundOpacity] = useState(1)
   const [snack, setSnack] = useState({ open: false, message: '', severity: 'success' })
 
   const fetchGroup = useCallback(async () => {
@@ -684,6 +726,13 @@ export default function Etsy2CanvasEditorPage() {
     if (saved && savedHasBackground) {
       setPageSize(saved.page || DEFAULT_PAGE)
       setLayers(saved.layers)
+      setPageGeometry(saved.geometry || null)
+      setShowAlignment(saved.settings?.showAlignment ?? true)
+      setShowGuides(saved.settings?.showGuides ?? true)
+      setShowRulers(saved.settings?.showRulers ?? true)
+      setMeasurementUnit(saved.settings?.measurementUnit || 'in')
+      setAlignmentOpacity(saved.settings?.alignmentOpacity ?? 0.62)
+      setBackgroundOpacity(saved.settings?.backgroundOpacity ?? 1)
       setSelectedId((saved.layers || []).find((layer) => layer.type === 'text')?.id || '')
       setHistory([])
       setFuture([])
@@ -701,6 +750,7 @@ export default function Etsy2CanvasEditorPage() {
           ? { width: page.pageWidth, height: page.pageHeight }
           : DEFAULT_PAGE
         setPageSize(nextPage)
+        setPageGeometry(kind === 'cover' ? data.alignment || data.geometry || null : null)
         const nextLayers = defaultLayers(orderItem, order, nextPage, page)
         setLayers(nextLayers)
         setSelectedId(nextLayers.find((layer) => layer.type === 'text')?.id || '')
@@ -708,6 +758,7 @@ export default function Etsy2CanvasEditorPage() {
       .catch((err) => {
         if (cancelled) return
         setPageSize(DEFAULT_PAGE)
+        setPageGeometry(null)
         const nextLayers = defaultLayers(orderItem, order, DEFAULT_PAGE)
         setLayers(nextLayers)
         setSelectedId(nextLayers.find((layer) => layer.type === 'text')?.id || '')
@@ -837,7 +888,15 @@ export default function Etsy2CanvasEditorPage() {
   const exportPdfDataUrl = async () => {
     const stage = stageRef.current
     if (!stage) return ''
+    const overlayNodes = [
+      ...stage.find('.lulu-geometry-overlay'),
+      ...stage.find('.lulu-alignment-backlayer'),
+    ]
+    overlayNodes.forEach((node) => node.hide())
+    stage.batchDraw()
     const jpeg = stage.toDataURL({ mimeType: 'image/jpeg', quality: 0.94, pixelRatio: 2 / zoom })
+    overlayNodes.forEach((node) => node.show())
+    stage.batchDraw()
     return imagePdfDataUrl(jpeg, Math.round(pageSize.width), Math.round(pageSize.height))
   }
 
@@ -853,6 +912,8 @@ export default function Etsy2CanvasEditorPage() {
         orderId,
         itemId: String(orderItem._id),
         layers,
+        geometry: pageGeometry,
+        settings: { showAlignment, showGuides, showRulers, measurementUnit, alignmentOpacity, backgroundOpacity },
       }
       const templateFieldValues = {
         ...(orderItem.templateFieldValues || {}),
@@ -994,19 +1055,41 @@ export default function Etsy2CanvasEditorPage() {
             zoom={zoom}
             stageRef={stageRef}
             page={pageSize}
+            geometry={pageGeometry?.geometry || pageGeometry}
+            alignmentImageUrl={pageGeometry?.svgDataUrl || ''}
+            showAlignment={showAlignment}
+            showGuides={showGuides}
+            showRulers={showRulers}
+            measurementUnit={measurementUnit}
+            alignmentOpacity={alignmentOpacity}
+            backgroundOpacity={backgroundOpacity}
           />
 
           <Box sx={{ p: 1.25, display: 'flex', justifyContent: 'center' }}>
-            <ButtonGroup variant="outlined" sx={{ bgcolor: '#FFFFFF', boxShadow: '0 8px 24px rgba(15,23,42,0.10)', borderRadius: '8px' }}>
-              <Button disabled>{1}</Button>
-              <Button disabled>/ 1</Button>
-              <Button onClick={() => setZoom((value) => Math.max(0.35, Number((value - 0.1).toFixed(2))))}><ZoomOutIcon /></Button>
-              <Button disabled>{Math.round(zoom * 100)}%</Button>
-              <Button onClick={() => setZoom((value) => Math.min(2.2, Number((value + 0.1).toFixed(2))))}><ZoomInIcon /></Button>
-              <Button onClick={() => setZoom(1)}><FitScreenIcon /></Button>
-              <Button onClick={downloadPdf}><DownloadIcon /></Button>
-              <Button onClick={() => window.print()}><PrintIcon /></Button>
-            </ButtonGroup>
+            <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center' }}>
+              <ButtonGroup variant="outlined" sx={{ bgcolor: '#FFFFFF', boxShadow: '0 8px 24px rgba(15,23,42,0.10)', borderRadius: '8px' }}>
+                <Button disabled>{1}</Button>
+                <Button disabled>/ 1</Button>
+                <Button color={showAlignment ? 'primary' : 'inherit'} disabled={!pageGeometry?.svgDataUrl} onClick={() => setShowAlignment((value) => !value)} title={showAlignment ? 'Hide Lulu alignment backlayer' : 'Show Lulu alignment backlayer'}><LayersIcon /></Button>
+                <Button color={showGuides ? 'primary' : 'inherit'} onClick={() => setShowGuides((value) => !value)} title={showGuides ? 'Hide Lulu cover guides' : 'Show Lulu cover guides'}><StraightenIcon /></Button>
+                <Button color={showRulers ? 'primary' : 'inherit'} onClick={() => setShowRulers((value) => !value)} title={showRulers ? 'Hide rulers' : 'Show rulers'}><GridOnIcon /></Button>
+                <Button onClick={() => setMeasurementUnit((value) => (value === 'in' ? 'pt' : 'in'))}>{measurementUnit}</Button>
+                <Button onClick={() => setZoom((value) => Math.max(0.35, Number((value - 0.1).toFixed(2))))}><ZoomOutIcon /></Button>
+                <Button disabled>{Math.round(zoom * 100)}%</Button>
+                <Button onClick={() => setZoom((value) => Math.min(2.2, Number((value + 0.1).toFixed(2))))}><ZoomInIcon /></Button>
+                <Button onClick={() => setZoom(1)}><FitScreenIcon /></Button>
+                <Button onClick={downloadPdf}><DownloadIcon /></Button>
+                <Button onClick={() => window.print()}><PrintIcon /></Button>
+              </ButtonGroup>
+              <Paper sx={{ width: 128, px: 1.25, py: 0.6, borderRadius: '8px', display: { xs: 'none', sm: 'flex' }, alignItems: 'center', gap: 1, boxShadow: '0 8px 24px rgba(15,23,42,0.10)' }}>
+                <LayersIcon fontSize="small" color="action" />
+                <Slider size="small" value={Math.round(alignmentOpacity * 100)} min={15} max={100} disabled={!pageGeometry?.svgDataUrl} onChange={(_, value) => setAlignmentOpacity(Number(value) / 100)} />
+              </Paper>
+              <Paper sx={{ width: 128, px: 1.25, py: 0.6, borderRadius: '8px', display: { xs: 'none', sm: 'flex' }, alignItems: 'center', gap: 1, boxShadow: '0 8px 24px rgba(15,23,42,0.10)' }}>
+                <OpacityIcon fontSize="small" color="action" />
+                <Slider size="small" value={Math.round(backgroundOpacity * 100)} min={20} max={100} onChange={(_, value) => setBackgroundOpacity(Number(value) / 100)} />
+              </Paper>
+            </Box>
           </Box>
         </Paper>
 
