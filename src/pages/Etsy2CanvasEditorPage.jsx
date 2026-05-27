@@ -43,6 +43,7 @@ import api from '../lib/api'
 import { buildAssetThumbnailUrl } from '../lib/assets'
 import { toEtsy2GroupOrder } from '../lib/etsy2Orders'
 import { FONT_OPTIONS, ensureFontFaces, normalizeFontStyle } from '../lib/fonts'
+import { getFittedTextProps } from '../lib/textFitting'
 
 const CANVAS_STATE_KEY = '_canvasEditorState'
 const CANVAS_PDF_KEY = '_canvasPdfDataUrl'
@@ -415,49 +416,53 @@ function CanvasStage({ layers, selectedId, setSelectedId, updateLayer, zoom, sta
                         listening={false}
                       />
                     )}
-                    {layer.dirty && layer.visible ? (
-                      <Text
-                        id={layer.id}
-                        x={layer.x}
-                        y={layer.y}
-                        width={layer.width}
-                        height={layer.height}
-                        text={layer.text}
-                        fontSize={layer.fontSize}
-                        fontFamily={layer.fontFamily}
-                        fontStyle={normalizeFontStyle(layer.fontStyle)}
-                        fill={layer.fill}
-                        align={layer.align}
-                        lineHeight={layer.lineHeight}
-                        rotation={layer.rotation}
-                        opacity={layer.opacity}
-                        draggable={!layer.locked}
-                        onClick={(event) => {
-                          event.cancelBubble = true
-                          setSelectedId(layer.id)
-                        }}
-                        onTap={(event) => {
-                          event.cancelBubble = true
-                          setSelectedId(layer.id)
-                        }}
-                        onDragEnd={(event) => updateLayer(layer.id, { x: event.target.x(), y: event.target.y() })}
-                        onTransformEnd={(event) => {
-                          const node = event.target
-                          const scaleX = node.scaleX()
-                          const scaleY = node.scaleY()
-                          node.scaleX(1)
-                          node.scaleY(1)
-                          updateLayer(layer.id, {
-                            x: node.x(),
-                            y: node.y(),
-                            width: Math.max(12, layer.width * scaleX),
-                            height: Math.max(12, layer.height * scaleY),
-                            rotation: node.rotation(),
-                            fontSize: Math.max(6, layer.fontSize * scaleY),
-                          })
-                        }}
-                      />
-                    ) : (
+                    {layer.dirty && layer.visible ? (() => {
+                      const fittedText = getFittedTextProps(layer, layer.text)
+                      return (
+                        <Text
+                          id={layer.id}
+                          x={layer.x}
+                          y={layer.y}
+                          width={layer.width}
+                          height={fittedText.height}
+                          text={layer.text}
+                          fontSize={fittedText.fontSize}
+                          fontFamily={layer.fontFamily}
+                          fontStyle={normalizeFontStyle(layer.fontStyle)}
+                          fill={layer.fill}
+                          align={layer.align}
+                          lineHeight={layer.lineHeight}
+                          wrap={fittedText.wrap}
+                          rotation={layer.rotation}
+                          opacity={layer.opacity}
+                          draggable={!layer.locked}
+                          onClick={(event) => {
+                            event.cancelBubble = true
+                            setSelectedId(layer.id)
+                          }}
+                          onTap={(event) => {
+                            event.cancelBubble = true
+                            setSelectedId(layer.id)
+                          }}
+                          onDragEnd={(event) => updateLayer(layer.id, { x: event.target.x(), y: event.target.y() })}
+                          onTransformEnd={(event) => {
+                            const node = event.target
+                            const scaleX = node.scaleX()
+                            const scaleY = node.scaleY()
+                            node.scaleX(1)
+                            node.scaleY(1)
+                            updateLayer(layer.id, {
+                              x: node.x(),
+                              y: node.y(),
+                              width: Math.max(12, layer.width * scaleX),
+                              height: Math.max(12, layer.height * scaleY),
+                              rotation: node.rotation(),
+                              fontSize: Math.max(6, layer.fontSize * scaleY),
+                            })
+                          }}
+                        />
+                      )
+                    })() : (
                       <Rect
                         id={layer.id}
                         x={layer.x}
