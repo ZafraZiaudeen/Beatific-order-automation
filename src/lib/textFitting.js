@@ -95,7 +95,7 @@ const getRenderedLineCount = ({ text, width, fontSize, fontFamily, fontStyle, fo
 
 export const getFieldMaxLines = (field = {}) => {
   const explicit = Number(field.maxLines)
-  if (Number.isFinite(explicit) && explicit >= 1) {
+  if (Number.isFinite(explicit) && explicit > 1) {
     return Math.min(MAX_CONFIGURED_LINES, Math.floor(explicit))
   }
 
