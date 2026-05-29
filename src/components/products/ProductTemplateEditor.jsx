@@ -108,7 +108,7 @@ const uniqueKey = (base, fields) => {
 }
 
 const draftMaxLines = (draft) => {
-  if (draft.maxLines) return draft.maxLines
+  if (Number(draft.maxLines) > 1) return draft.maxLines
   const fontSize = Number(draft.fontSize) || 24
   const lineHeight = Number(draft.lineHeight) || 1.2
   const height = Number(draft.height) || fontSize * lineHeight
@@ -575,11 +575,13 @@ function TemplateStage({
                         const scaleY = node.scaleY()
                         node.scaleX(1)
                         node.scaleY(1)
+                        const nextHeight = Math.max(8, field.height * scaleY)
                         onChange(field.id, {
                           x: node.x(),
                           y: node.y(),
                           width: Math.max(8, field.width * scaleX),
-                          height: Math.max(8, field.height * scaleY),
+                          height: nextHeight,
+                          maxLines: draftMaxLines({ ...field, height: nextHeight }),
                         })
                       }}
                     />
@@ -857,7 +859,17 @@ function FieldPanel({
             <TextField disabled={!fieldsEditable} label="X" size="small" type="number" value={Math.round(selected.x * 100) / 100} onChange={(e) => updateField(selected.id, { x: Number(e.target.value) })} />
             <TextField disabled={!fieldsEditable} label="Y" size="small" type="number" value={Math.round(selected.y * 100) / 100} onChange={(e) => updateField(selected.id, { y: Number(e.target.value) })} />
             <TextField disabled={!fieldsEditable} label="Width" size="small" type="number" value={Math.round(selected.width * 100) / 100} onChange={(e) => updateField(selected.id, { width: Number(e.target.value) })} />
-            <TextField disabled={!fieldsEditable} label="Height" size="small" type="number" value={Math.round(selected.height * 100) / 100} onChange={(e) => updateField(selected.id, { height: Number(e.target.value) })} />
+            <TextField
+              disabled={!fieldsEditable}
+              label="Height"
+              size="small"
+              type="number"
+              value={Math.round(selected.height * 100) / 100}
+              onChange={(e) => {
+                const height = Number(e.target.value)
+                updateField(selected.id, { height, maxLines: draftMaxLines({ ...selected, height }) })
+              }}
+            />
             <TextField disabled={!fieldsEditable} label="Rotation (deg)" size="small" type="number" value={Math.round((selected.rotation || 0) * 100) / 100} onChange={(e) => updateField(selected.id, { rotation: Number(e.target.value) })} />
           </Box>
           <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: 'wrap' }}>
@@ -1303,13 +1315,13 @@ export default function ProductTemplateEditor({ product, onBack, onSaved, librar
   }
 
   const createBlank = ({ x, y }) => {
-    addField({ label: 'Personalized text', x, y, width: 220, height: 42, fontSize: 28, maxLines: 1, preserveFontSizeOnWrap: false, fontFamily: 'Canela Regular', fontFile: 'Canela-Regular-Trial.otf' })
+    addField({ label: 'Personalized text', x, y, width: 220, height: 70, fontSize: 28, maxLines: 2, preserveFontSizeOnWrap: false, fontFamily: 'Canela Regular', fontFile: 'Canela-Regular-Trial.otf' })
   }
 
   const addCenteredBlankField = () => {
     const pageWidth = canvasPage?.pageWidth || 612
     const pageHeight = canvasPage?.pageHeight || 792
-    createBlank({ x: Math.max(0, pageWidth / 2 - 110), y: Math.max(0, pageHeight / 2 - 21) })
+    createBlank({ x: Math.max(0, pageWidth / 2 - 110), y: Math.max(0, pageHeight / 2 - 35) })
   }
 
   const importPdf = async (file) => {

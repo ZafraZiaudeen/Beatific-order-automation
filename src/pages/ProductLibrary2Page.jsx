@@ -129,6 +129,18 @@ const EMPTY_LULU_OPTIONS = {
   packages: [],
 }
 
+const luluOptionCode = (value, options = []) => {
+  const text = String(value || '').trim()
+  if (!text) return ''
+  return options.find((option) => option.value === text || option.label === text)?.value || text
+}
+
+const luluOptionLabel = (value, options = []) => {
+  const text = String(value || '').trim()
+  if (!text) return ''
+  return options.find((option) => option.value === text || option.label === text)?.label || text
+}
+
 const formatLibraryId = (category, index) => `${category.idPrefix}-${String(index + 1).padStart(2, '0')}`
 
 const pageSizeInches = (item) => {
@@ -694,17 +706,19 @@ function LibraryItemDialog({ open, category, item, activeStore, categoryOptions,
     return options.filter((option) => allowed.has(option.value))
   }
   const legacyOption = (value, options) => (
-    value && !options.some((option) => option.value === value)
+    value && !options.some((option) => option.value === value || option.label === value)
       ? <MenuItem value={value}>Legacy: {value}</MenuItem>
       : null
   )
-  const coverBindingOptions = filterOptions(luluOptions.bindings, 'binding', { trim: form.coverSize })
+  const coverBindingOptions = filterOptions(luluOptions.bindings, 'binding', {
+    trim: luluOptionCode(form.coverSize, luluOptions.trims),
+  })
   const insideColorOptions = filterOptions(luluOptions.interiorColors, 'interiorColor', {
-    trim: form.insideSize,
-    paper: form.paperType,
+    trim: luluOptionCode(form.insideSize, luluOptions.trims),
+    paper: luluOptionCode(form.paperType, luluOptions.papers),
   })
   const paperOptions = filterOptions(luluOptions.papers, 'paper', {
-    trim: form.insideSize,
+    trim: luluOptionCode(form.insideSize, luluOptions.trims),
     interiorColor: form.interiorColor,
   })
 
@@ -723,15 +737,15 @@ function LibraryItemDialog({ open, category, item, activeStore, categoryOptions,
       ...(isCoverCategory ? { coverColor: form.coverColor.trim() || null } : {}),
       ...(isCoverCategory
         ? {
-            coverType: form.coverType.trim() || null,
-            coverSize: form.coverSize.trim() || null,
+            coverType: luluOptionLabel(form.coverType, luluOptions.bindings) || null,
+            coverSize: luluOptionLabel(form.coverSize, luluOptions.trims) || null,
           }
         : {}),
       ...(isInsideCategory
         ? {
             interiorColor: form.interiorColor.trim() || null,
-            paperType: form.paperType.trim() || null,
-            insideSize: form.insideSize.trim() || null,
+            paperType: luluOptionLabel(form.paperType, luluOptions.papers) || null,
+            insideSize: luluOptionLabel(form.insideSize, luluOptions.trims) || null,
             pageCount: Number(form.pageCount || 0),
           }
         : {}),
@@ -783,7 +797,7 @@ function LibraryItemDialog({ open, category, item, activeStore, categoryOptions,
               <MenuItem value="">Select binding type</MenuItem>
               {legacyOption(form.coverType, coverBindingOptions)}
               {coverBindingOptions.map((option) => (
-                <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
+                <MenuItem key={option.value} value={option.label}>{option.label}</MenuItem>
               ))}
             </TextField>
             <TextField
@@ -796,7 +810,7 @@ function LibraryItemDialog({ open, category, item, activeStore, categoryOptions,
               <MenuItem value="">Select cover size</MenuItem>
               {legacyOption(form.coverSize, luluOptions.trims)}
               {luluOptions.trims.map((option) => (
-                <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
+                <MenuItem key={option.value} value={option.label}>{option.label}</MenuItem>
               ))}
             </TextField>
           </Stack>
@@ -813,7 +827,7 @@ function LibraryItemDialog({ open, category, item, activeStore, categoryOptions,
               <MenuItem value="">Select inside-page size</MenuItem>
               {legacyOption(form.insideSize, luluOptions.trims)}
               {luluOptions.trims.map((option) => (
-                <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
+                <MenuItem key={option.value} value={option.label}>{option.label}</MenuItem>
               ))}
             </TextField>
             <TextField
@@ -839,7 +853,7 @@ function LibraryItemDialog({ open, category, item, activeStore, categoryOptions,
               <MenuItem value="">Select paper type</MenuItem>
               {legacyOption(form.paperType, paperOptions)}
               {paperOptions.map((option) => (
-                <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
+                <MenuItem key={option.value} value={option.label}>{option.label}</MenuItem>
               ))}
             </TextField>
             <TextField

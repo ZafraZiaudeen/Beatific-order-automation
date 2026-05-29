@@ -55,6 +55,13 @@ const FINISH_OPTIONS = [
   { value: 'MATTE', label: 'Matte' },
   { value: 'GLOSSY', label: 'Glossy' },
 ]
+
+const luluOptionCode = (value, options = []) => {
+  const text = String(value || '').trim()
+  if (!text) return ''
+  return options.find((option) => option.value === text || option.label === text)?.value || text
+}
+
 const DEFAULT_LULU_PRINT_SPEC = {
   trimSizeKey: '',
   bindingType: '',
@@ -330,31 +337,37 @@ export default function ProductLibrary2ProductsPage({ mode = 'list' }) {
   )
   const effectiveLuluPrintSpec = useMemo(() => ({
     ...form.luluPrintSpec,
-    trimSizeKey: form.luluPrintSpec.trimSizeKey || selectedInside?.insideSize || selectedCover?.coverSize || '',
-    bindingType: form.luluPrintSpec.bindingType || selectedCover?.coverType || '',
+    trimSizeKey:
+      form.luluPrintSpec.trimSizeKey ||
+      luluOptionCode(selectedInside?.insideSize, luluOptions.trims) ||
+      luluOptionCode(selectedCover?.coverSize, luluOptions.trims),
+    bindingType: form.luluPrintSpec.bindingType || luluOptionCode(selectedCover?.coverType, luluOptions.bindings),
     interiorColor: form.luluPrintSpec.interiorColor || selectedInside?.interiorColor || '',
-    paperType: form.luluPrintSpec.paperType || selectedInside?.paperType || '',
+    paperType: form.luluPrintSpec.paperType || luluOptionCode(selectedInside?.paperType, luluOptions.papers),
     pageCount: form.luluPrintSpec.pageCount || (selectedInside?.pageCount ? String(selectedInside.pageCount) : ''),
     printQuality: form.luluPrintSpec.printQuality || 'STD',
     coverFinish: form.luluPrintSpec.coverFinish || 'MATTE',
-  }), [form.luluPrintSpec, selectedCover, selectedInside])
+  }), [form.luluPrintSpec, luluOptions.bindings, luluOptions.papers, luluOptions.trims, selectedCover, selectedInside])
 
   const compatibleCoverAssets = useMemo(() => {
     const packages = luluOptions.packages || []
     if (!selectedInside?.insideSize || !selectedInside?.pageCount || !packages.length) return coverAssets
     return coverAssets.filter((cover) => {
       if (!cover.coverSize || !cover.coverType) return false
+      const coverTrim = luluOptionCode(cover.coverSize, luluOptions.trims)
+      const insideTrim = luluOptionCode(selectedInside.insideSize, luluOptions.trims)
+      const coverBinding = luluOptionCode(cover.coverType, luluOptions.bindings)
       return packages.some((pkg) =>
-        pkg.trim === cover.coverSize &&
-        pkg.trim === selectedInside.insideSize &&
-        pkg.binding === cover.coverType &&
+        pkg.trim === coverTrim &&
+        pkg.trim === insideTrim &&
+        pkg.binding === coverBinding &&
         (!selectedInside.interiorColor || pkg.interiorColor === selectedInside.interiorColor) &&
-        (!selectedInside.paperType || pkg.paper === selectedInside.paperType) &&
+        (!selectedInside.paperType || pkg.paper === luluOptionCode(selectedInside.paperType, luluOptions.papers)) &&
         selectedInside.pageCount >= pkg.minPage &&
         selectedInside.pageCount <= pkg.maxPage
       )
     })
-  }, [coverAssets, luluOptions.packages, selectedInside])
+  }, [coverAssets, luluOptions.bindings, luluOptions.packages, luluOptions.papers, luluOptions.trims, selectedInside])
 
   const compatibility = useMemo(() => {
     const warnings = []
@@ -364,7 +377,9 @@ export default function ProductLibrary2ProductsPage({ mode = 'list' }) {
       return { isValid: false, warnings: ['Choose a cover asset and inside-page asset.'], podPackageIds: {} }
     }
     if (!spec.trimSizeKey) warnings.push('Choose a Lulu trim size.')
-    if (selectedCover.coverSize && selectedInside.insideSize && selectedCover.coverSize !== selectedInside.insideSize) {
+    const coverTrim = luluOptionCode(selectedCover.coverSize, luluOptions.trims)
+    const insideTrim = luluOptionCode(selectedInside.insideSize, luluOptions.trims)
+    if (coverTrim && insideTrim && coverTrim !== insideTrim) {
       warnings.push('Cover size and inside-page size must match.')
     }
     if (!spec.bindingType) warnings.push('Choose a Lulu binding type.')
@@ -392,7 +407,7 @@ export default function ProductLibrary2ProductsPage({ mode = 'list' }) {
       }
     }
     return { isValid: Object.keys(podPackageIds).length > 0, warnings, podPackageIds }
-  }, [effectiveLuluPrintSpec, luluOptions.packages, selectedCover, selectedInside])
+  }, [effectiveLuluPrintSpec, luluOptions.packages, luluOptions.trims, selectedCover, selectedInside])
 
   const toggleFinish = (finish) => (event) => {
     setForm((current) => {
@@ -423,8 +438,8 @@ export default function ProductLibrary2ProductsPage({ mode = 'list' }) {
       coverAssetId: value?._id || null,
       luluPrintSpec: {
         ...current.luluPrintSpec,
-        trimSizeKey: value?.coverSize || current.luluPrintSpec.trimSizeKey,
-        bindingType: value?.coverType || current.luluPrintSpec.bindingType,
+        trimSizeKey: luluOptionCode(value?.coverSize, luluOptions.trims) || current.luluPrintSpec.trimSizeKey,
+        bindingType: luluOptionCode(value?.coverType, luluOptions.bindings) || current.luluPrintSpec.bindingType,
       },
     }))
   }
@@ -435,9 +450,9 @@ export default function ProductLibrary2ProductsPage({ mode = 'list' }) {
       insidePageAssetId: value?._id || null,
       luluPrintSpec: {
         ...current.luluPrintSpec,
-        trimSizeKey: current.luluPrintSpec.trimSizeKey || value?.insideSize || '',
+        trimSizeKey: current.luluPrintSpec.trimSizeKey || luluOptionCode(value?.insideSize, luluOptions.trims),
         interiorColor: value?.interiorColor || current.luluPrintSpec.interiorColor,
-        paperType: value?.paperType || current.luluPrintSpec.paperType,
+        paperType: luluOptionCode(value?.paperType, luluOptions.papers) || current.luluPrintSpec.paperType,
         pageCount: value?.pageCount ? String(value.pageCount) : current.luluPrintSpec.pageCount,
       },
     }))
