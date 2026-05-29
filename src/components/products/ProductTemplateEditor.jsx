@@ -22,6 +22,7 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import UploadFileIcon from '@mui/icons-material/CloudUploadOutlined'
 import SaveIcon from '@mui/icons-material/SaveOutlined'
 import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdfOutlined'
+import DownloadIcon from '@mui/icons-material/FileDownloadOutlined'
 import AddIcon from '@mui/icons-material/Add'
 import DeleteIcon from '@mui/icons-material/DeleteOutlined'
 import LockOutlinedIcon from '@mui/icons-material/LockOutlined'
@@ -42,10 +43,17 @@ import { FONT_OPTIONS, getFontOption, normalizeFontStyle } from '../../lib/fonts
 import { FIXED_PERSONALIZATION_FIELDS, getFixedPersonalizationField } from '../../lib/fixedPersonalizationFields'
 import { getFieldMaxLines, getFittedTextProps } from '../../lib/textFitting'
 import LuluGeometryOverlay from './LuluGeometryOverlay'
-import { getLuluGeometryBox } from './luluGeometryUtils'
+import {
+  formatDimensions,
+  formatDualDimensions,
+  getGeometryMismatch,
+  getGeometryPanelSummaries,
+  getLuluGeometryBox,
+} from './luluGeometryUtils'
 
 const DEFAULT_TEMPLATE_KEY = 'default'
 const DEFAULT_TEMPLATE_POLICY = { cover: 'inherit', interior: 'inherit', fields: 'inherit' }
+const CANVAS_GUTTER = 72
 
 const TARGETS = {
   cover: { label: 'Cover', productKey: 'cover', policyKey: 'cover' },
@@ -154,6 +162,123 @@ const buttonRailSx = (active = false) => ({
   },
 })
 
+const safeFileName = (value = 'sample-pdf') => String(value || 'sample-pdf')
+  .trim()
+  .replace(/[\\/:*?"<>|]+/g, '-')
+  .replace(/\s+/g, '-')
+  .replace(/-+/g, '-')
+  .replace(/^-|-$/g, '')
+  .toLowerCase() || 'sample-pdf'
+
+function downloadUrl(url, filename) {
+  if (!url) return
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  link.rel = 'noopener'
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+}
+
+function imagePdfDataUrl(jpegDataUrl, pageWidth, pageHeight) {
+  const jpegBinary = atob(jpegDataUrl.split(',')[1] || '')
+  const jpegBytes = new Uint8Array(jpegBinary.length)
+  for (let i = 0; i < jpegBinary.length; i += 1) jpegBytes[i] = jpegBinary.charCodeAt(i)
+
+  const mediaWidth = Number(Number(pageWidth || 0).toFixed(2))
+  const mediaHeight = Number(Number(pageHeight || 0).toFixed(2))
+  const imageWidth = Math.max(1, Math.round(mediaWidth * 2))
+  const imageHeight = Math.max(1, Math.round(mediaHeight * 2))
+  const content = `q\n${mediaWidth} 0 0 ${mediaHeight} 0 0 cm\n/Im0 Do\nQ\n`
+  const enc = new TextEncoder()
+  const parts = []
+  const offsets = [0]
+  let offset = 0
+  const pushBytes = (bytes) => {
+    parts.push(bytes)
+    offset += bytes.length
+  }
+  const pushText = (text) => pushBytes(enc.encode(text))
+  const mark = () => offsets.push(offset)
+
+  pushText('%PDF-1.3\n')
+  mark(); pushText('1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n')
+  mark(); pushText('2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n')
+  mark(); pushText(`3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${mediaWidth} ${mediaHeight}] /Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>\nendobj\n`)
+  mark(); pushText(`4 0 obj\n<< /Type /XObject /Subtype /Image /Width ${imageWidth} /Height ${imageHeight} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpegBytes.length} >>\nstream\n`)
+  pushBytes(jpegBytes)
+  pushText('\nendstream\nendobj\n')
+  mark(); pushText(`5 0 obj\n<< /Length ${enc.encode(content).length} >>\nstream\n${content}endstream\nendobj\n`)
+  const xref = offset
+  pushText(`xref\n0 6\n0000000000 65535 f \n${offsets.slice(1).map((item) => `${String(item).padStart(10, '0')} 00000 n `).join('\n')}\n`)
+  pushText(`trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`)
+  return new Blob(parts, { type: 'application/pdf' })
+}
+
+function downloadBlob(blob, filename) {
+  const blobUrl = URL.createObjectURL(blob)
+  downloadUrl(blobUrl, filename)
+  window.setTimeout(() => URL.revokeObjectURL(blobUrl), 0)
+}
+
+function MeasurementStatusStrip({ page, geometry, zoom, unit = 'in', target = 'cover', mismatch = null }) {
+  if (!page) return null
+  const width = page.pageWidth || page.width || 0
+  const height = page.pageHeight || page.height || 0
+  const panels = target === 'cover' ? getGeometryPanelSummaries(geometry) : []
+
+  return (
+    <Box sx={{ flexShrink: 0, px: 1.5, py: 0.85, bgcolor: 'background.paper', borderBottom: '1px dashed', borderColor: 'divider', display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+      <Chip size="small" label={`MediaBox ${formatDualDimensions(width, height)}`} sx={{ fontFamily: 'monospace', fontWeight: 700 }} />
+      <Chip size="small" variant="outlined" label={`Preview zoom ${Math.round(zoom * 100)}%`} />
+      {panels.map(([label, box]) => (
+        <Chip key={label} size="small" variant="outlined" label={`${label} ${formatDimensions(box.width, box.height, unit)}`} />
+      ))}
+      {mismatch && (
+        <Alert severity="warning" sx={{ py: 0, minHeight: 30, alignItems: 'center' }}>
+          PDF page is {formatDimensions(mismatch.page.width, mismatch.page.height, 'pt')}; Lulu expects {formatDimensions(mismatch.expected.width, mismatch.expected.height, 'pt')}.
+        </Alert>
+      )}
+    </Box>
+  )
+}
+
+function SamplePdfDownloads({ assets, compact = false }) {
+  if (!assets.length) return null
+
+  if (compact) {
+    return (
+      <>
+        {assets.map((asset) => (
+          <Tooltip key={asset.key} title={`Download ${asset.label}`} placement="right">
+            <IconButton sx={buttonRailSx(false)} onClick={() => downloadUrl(asset.url, asset.fileName)}>
+              <DownloadIcon />
+            </IconButton>
+          </Tooltip>
+        ))}
+      </>
+    )
+  }
+
+  return (
+    <Stack direction="row" spacing={1} useFlexGap sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
+      {assets.map((asset) => (
+        <Button
+          key={asset.key}
+          size="small"
+          variant="outlined"
+          startIcon={<DownloadIcon />}
+          onClick={() => downloadUrl(asset.url, asset.fileName)}
+          sx={{ textTransform: 'none', fontWeight: 800 }}
+        >
+          {asset.label}
+        </Button>
+      ))}
+    </Stack>
+  )
+}
+
 function useLoadedImage(src) {
   const [image, setImage] = useState(null)
 
@@ -202,10 +327,12 @@ function TemplateStage({
   showAlignment,
   alignmentOpacity = 0.62,
   backgroundOpacity = 1,
+  stageRef: externalStageRef = null,
 }) {
   const image = useLoadedImage(page?.previewImageUrl)
   const alignmentImage = useLoadedImage(alignmentImageUrl)
-  const stageRef = useRef(null)
+  const localStageRef = useRef(null)
+  const stageRef = externalStageRef || localStageRef
   const transformerRef = useRef(null)
   const selectionStartRef = useRef(null)
   const selectionRectRef = useRef(null)
@@ -223,7 +350,7 @@ function TemplateStage({
     const node = selectedId && fieldsEditable && !selectedLocked ? stage.findOne(`#${selectedId}`) : null
     transformer.nodes(node ? [node] : [])
     transformer.getLayer()?.batchDraw()
-  }, [selectedId, fields, target, fieldsEditable, selectedLocked])
+  }, [selectedId, fields, target, fieldsEditable, selectedLocked, stageRef])
 
   const pointer = () => {
     const stage = stageRef.current
@@ -312,14 +439,23 @@ function TemplateStage({
         backgroundSize: '20px 20px',
       }}
     >
-      <Box sx={{ minWidth: '100%', minHeight: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', p: { xs: 2, md: 5 } }}>
+      <Box
+        sx={{
+          minWidth: `max(100%, ${pageWidth * zoom + CANVAS_GUTTER * 2}px)`,
+          minHeight: `max(100%, ${pageHeight * zoom + CANVAS_GUTTER * 2}px)`,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          p: `${CANVAS_GUTTER}px`,
+        }}
+      >
         <Box
           sx={{
             width: pageWidth * zoom,
             height: pageHeight * zoom,
             bgcolor: 'common.white',
-            boxShadow: '0 0 2px 0 rgba(145,158,171,0.20), 0 12px 24px -4px rgba(145,158,171,0.12)',
-            outline: '1px solid rgba(145, 158, 171, 0.28)',
+            boxShadow: 'none',
+            outline: 'none',
             overflow: 'hidden',
             flexShrink: 0,
           }}
@@ -836,10 +972,16 @@ function FieldPanel({
               <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>Latest Sample</Typography>
               <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap' }}>
                 {sampleOutputs.coverPdfUrl && (
-                  <Button size="small" variant="outlined" endIcon={<OpenInNewIcon />} onClick={() => window.open(sampleOutputs.coverPdfUrl, '_blank')}>Cover PDF</Button>
+                  <Button size="small" variant="outlined" startIcon={<DownloadIcon />} onClick={() => downloadUrl(sampleOutputs.coverPdfUrl, 'cover-sample.pdf')}>Download cover PDF</Button>
                 )}
                 {sampleOutputs.interiorPdfUrl && (
-                  <Button size="small" variant="outlined" endIcon={<OpenInNewIcon />} onClick={() => window.open(sampleOutputs.interiorPdfUrl, '_blank')}>Inside PDF</Button>
+                  <Button size="small" variant="outlined" startIcon={<DownloadIcon />} onClick={() => downloadUrl(sampleOutputs.interiorPdfUrl, 'inside-sample.pdf')}>Download inside PDF</Button>
+                )}
+                {sampleOutputs.coverPdfUrl && (
+                  <Button size="small" variant="text" endIcon={<OpenInNewIcon />} onClick={() => window.open(sampleOutputs.coverPdfUrl, '_blank')}>Open cover</Button>
+                )}
+                {sampleOutputs.interiorPdfUrl && (
+                  <Button size="small" variant="text" endIcon={<OpenInNewIcon />} onClick={() => window.open(sampleOutputs.interiorPdfUrl, '_blank')}>Open inside</Button>
                 )}
               </Stack>
               {sampleOutputs.warnings?.length > 0 && (
@@ -879,6 +1021,7 @@ export default function ProductTemplateEditor({ product, onBack, onSaved, librar
   const [message, setMessage] = useState('')
   const fileInputRef = useRef(null)
   const viewportRef = useRef(null)
+  const stageRef = useRef(null)
 
   const variants = libraryMode ? [] : localProduct?.variants || []
   const selectedVariant = getVariant(localProduct, templateKey)
@@ -903,6 +1046,29 @@ export default function ProductTemplateEditor({ product, onBack, onSaved, librar
   }, [geometryState.pageHeight, geometryState.pageWidth, geometryState.svgDataUrl, page, target])
   const selected = fields.find((field) => field.id === selectedId) || null
   const sampleOutputs = effective.template.sampleOutputs
+  const samplePdfAssets = useMemo(() => {
+    const baseName = safeFileName(`${localProduct?.title || 'product'}-${selectedVariant?.name || 'default'}`)
+    return [
+      sampleOutputs?.coverPdfUrl && {
+        key: 'cover',
+        label: 'Download cover PDF',
+        shortLabel: 'Cover PDF',
+        url: sampleOutputs.coverPdfUrl,
+        fileName: `${baseName}-cover-sample.pdf`,
+      },
+      sampleOutputs?.interiorPdfUrl && {
+        key: 'interior',
+        label: 'Download inside PDF',
+        shortLabel: 'Inside PDF',
+        url: sampleOutputs.interiorPdfUrl,
+        fileName: `${baseName}-inside-sample.pdf`,
+      },
+    ].filter(Boolean)
+  }, [localProduct?.title, sampleOutputs?.coverPdfUrl, sampleOutputs?.interiorPdfUrl, selectedVariant?.name])
+  const currentPrintPdfUrl = target === 'cover'
+    ? sampleOutputs?.coverPdfUrl || canvasPage?.sourcePdfUrl
+    : sampleOutputs?.interiorPdfUrl || canvasPage?.sourcePdfUrl
+  const currentDownloadBaseName = safeFileName(`${localProduct?.title || 'product'}-${selectedVariant?.name || 'default'}-${TARGETS[target].label}`)
   const fieldsEditable = libraryMode || !selectedVariant || selectedPolicy.fields === 'override'
   const pageInherited = !libraryMode && Boolean(selectedVariant && selectedPolicy[TARGETS[target].policyKey] !== 'override')
   const selectedPreviewMode = selected ? previewModes[selected.id] || 'sample' : 'sample'
@@ -1254,6 +1420,38 @@ export default function ProductTemplateEditor({ product, onBack, onSaved, librar
     }
   }
 
+  const downloadPrintPdf = () => {
+    if (!currentPrintPdfUrl) {
+      setError('Import a PDF or generate sample PDFs before downloading the print PDF.')
+      return
+    }
+    downloadUrl(currentPrintPdfUrl, `${currentDownloadBaseName}-print.pdf`)
+  }
+
+  const downloadProofPdf = () => {
+    const stage = stageRef.current
+    if (!stage || !canvasPage) {
+      setError('Canvas is not ready for proof export yet.')
+      return
+    }
+    try {
+      const jpeg = stage.toDataURL({
+        x: 0,
+        y: 0,
+        width: (canvasPage.pageWidth || 612) * zoom,
+        height: (canvasPage.pageHeight || 792) * zoom,
+        mimeType: 'image/jpeg',
+        quality: 0.94,
+        pixelRatio: 2 / zoom,
+      })
+      const pdfBlob = imagePdfDataUrl(jpeg, canvasPage.pageWidth || 612, canvasPage.pageHeight || 792)
+      downloadBlob(pdfBlob, `${currentDownloadBaseName}-proof.pdf`)
+      setMessage('Proof PDF download started')
+    } catch (err) {
+      setError(err?.message || 'Failed to download proof PDF')
+    }
+  }
+
   const deleteSelected = () => {
     if (!selectedId || !fieldsEditable) return
     setFields((current) => current.filter((field) => field.id !== selectedId))
@@ -1275,6 +1473,9 @@ export default function ProductTemplateEditor({ product, onBack, onSaved, librar
     currentOverridePage?.pageWidth &&
     (currentDefaultPage.pageWidth !== currentOverridePage.pageWidth || currentDefaultPage.pageHeight !== currentOverridePage.pageHeight)
   )
+  const luluPageMismatch = target === 'cover' && canvasPage
+    ? getGeometryMismatch(geometryState.geometry, canvasPage)
+    : null
 
   return (
     <Box sx={{ position: 'fixed', inset: 0, zIndex: (theme) => theme.zIndex.modal - 1, display: 'flex', flexDirection: 'column', bgcolor: 'background.default' }}>
@@ -1399,10 +1600,21 @@ export default function ProductTemplateEditor({ product, onBack, onSaved, librar
         <Divider orientation="vertical" flexItem />
 
         <Button variant="outlined" startIcon={<SaveIcon />} onClick={() => saveFields()} disabled={saving}>{saving ? 'Saving' : 'Save'}</Button>
+      
         {!libraryMode && (
           <Button variant="contained" startIcon={<PictureAsPdfIcon />} onClick={generateSample} disabled={generating || !fields.length}>{generating ? 'Generating' : 'Sample PDFs'}</Button>
         )}
+        {!libraryMode && <SamplePdfDownloads assets={samplePdfAssets} />}
       </Box>
+
+      <MeasurementStatusStrip
+        page={canvasPage}
+        geometry={geometryState.geometry}
+        zoom={zoom}
+        unit={measurementUnit}
+        target={target}
+        mismatch={luluPageMismatch}
+      />
 
       {!libraryMode && selectedVariant && (
         <Box sx={{ flexShrink: 0, px: 1.5, py: 1, bgcolor: 'background.paper', borderBottom: '1px dashed', borderColor: 'divider', display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
@@ -1471,6 +1683,26 @@ export default function ProductTemplateEditor({ product, onBack, onSaved, librar
               </IconButton>
             </span>
           </Tooltip>
+          <Tooltip title="Download print PDF" placement="right">
+            <span>
+              <IconButton sx={buttonRailSx(false)} onClick={downloadPrintPdf} disabled={!currentPrintPdfUrl}>
+                <DownloadIcon />
+              </IconButton>
+            </span>
+          </Tooltip>
+          <Tooltip title="Download proof PDF" placement="right">
+            <span>
+              <IconButton sx={buttonRailSx(false)} onClick={downloadProofPdf} disabled={!canvasPage}>
+                <PictureAsPdfIcon />
+              </IconButton>
+            </span>
+          </Tooltip>
+          {!libraryMode && samplePdfAssets.length > 0 && (
+            <>
+              <Divider flexItem sx={{ my: 0.5 }} />
+              <SamplePdfDownloads assets={samplePdfAssets} compact />
+            </>
+          )}
           <Box sx={{ flex: 1 }} />
           <Tooltip title="Click existing text to replace it, or double-click blank space to add a field." placement="right">
             <IconButton sx={buttonRailSx(false)}><AddIcon /></IconButton>
@@ -1501,6 +1733,7 @@ export default function ProductTemplateEditor({ product, onBack, onSaved, librar
               showAlignment={showAlignment}
               alignmentOpacity={alignmentOpacity}
               backgroundOpacity={backgroundOpacity}
+              stageRef={stageRef}
             />
           ) : (
             <EmptyCanvas target={target} inherited={pageInherited} onImport={() => fileInputRef.current?.click()} />

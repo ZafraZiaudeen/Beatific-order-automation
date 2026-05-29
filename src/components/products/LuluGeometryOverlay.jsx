@@ -1,18 +1,6 @@
 import React from 'react'
 import { Group, Line, Rect, Text } from 'react-konva'
-import { getLuluGeometryPoints } from './luluGeometryUtils'
-
-const POINTS_PER_INCH = 72
-
-const num = (value, fallback = 0) => {
-  const next = Number(value)
-  return Number.isFinite(next) ? next : fallback
-}
-
-const formatDistance = (points, unit) => {
-  if (unit === 'pt') return `${Math.round(points)} pt`
-  return `${(points / POINTS_PER_INCH).toFixed(2)} in`
-}
+import { POINTS_PER_INCH, formatDimensions, formatMeasurement, getLuluGeometryPoints, num } from './luluGeometryUtils'
 
 const centerOf = (box) => ({
   x: num(box?.x) + num(box?.width) / 2,
@@ -33,6 +21,8 @@ function LuluGeometryOverlay({
   showGuides = true,
   showRulers = true,
   unit = 'in',
+  showProofMetadata = false,
+  proofLabel = '',
 }) {
   const points = getLuluGeometryPoints(geometry)
   if (!points) return null
@@ -76,7 +66,7 @@ function LuluGeometryOverlay({
 
   const drawDistance = (key, x1, y1, x2, y2, value, horizontal = true) => {
     if (!selected || value < 4) return null
-    const label = formatDistance(value / (horizontal ? sx : sy), unit)
+    const label = formatMeasurement(value / (horizontal ? sx : sy), unit)
     const midX = (x1 + x2) / 2
     const midY = (y1 + y2) / 2
     return (
@@ -98,24 +88,29 @@ function LuluGeometryOverlay({
 
   const rulerTicks = []
   if (showRulers) {
-    for (let x = 0; x <= documentWidth + 0.1; x += POINTS_PER_INCH) {
+    const formatRulerLabel = (value) => unit === 'pt' ? `${Math.round(value)} pt` : `${Number((value / POINTS_PER_INCH).toFixed(2))} in`
+    const addXRuler = (x, key = `rx-${x}`) => {
       const px = x * sx
       rulerTicks.push(
-        <Group key={`rx-${x}`} listening={false}>
-          <Line points={[px, 0, px, 10]} stroke="#475569" strokeWidth={0.6} />
-          {x > 0 && <Text x={px + 2} y={2} text={`${Math.round(x / POINTS_PER_INCH)}`} fontSize={7} fill="#475569" />}
+        <Group key={key} listening={false}>
+          <Line points={[px, 0, px, 14]} stroke="#475569" strokeWidth={0.6} />
+          {x > 0 && <Text x={Math.min(px + 2, pageWidth - 45)} y={2} text={formatRulerLabel(x)} fontSize={7} fill="#475569" width={48} />}
         </Group>
       )
     }
-    for (let y = 0; y <= documentHeight + 0.1; y += POINTS_PER_INCH) {
+    const addYRuler = (y, key = `ry-${y}`) => {
       const py = y * sy
       rulerTicks.push(
-        <Group key={`ry-${y}`} listening={false}>
-          <Line points={[0, py, 10, py]} stroke="#475569" strokeWidth={0.6} />
-          {y > 0 && <Text x={2} y={py + 2} text={`${Math.round(y / POINTS_PER_INCH)}`} fontSize={7} fill="#475569" />}
+        <Group key={key} listening={false}>
+          <Line points={[0, py, 14, py]} stroke="#475569" strokeWidth={0.6} />
+          {y > 0 && <Text x={2} y={Math.min(py + 2, pageHeight - 18)} text={formatRulerLabel(y)} fontSize={7} fill="#475569" width={48} />}
         </Group>
       )
     }
+    for (let x = 0; x <= documentWidth + 0.1; x += POINTS_PER_INCH) addXRuler(x)
+    if (documentWidth % POINTS_PER_INCH > 0.1) addXRuler(documentWidth, 'rx-edge')
+    for (let y = 0; y <= documentHeight + 0.1; y += POINTS_PER_INCH) addYRuler(y)
+    if (documentHeight % POINTS_PER_INCH > 0.1) addYRuler(documentHeight, 'ry-edge')
   }
 
   return (
@@ -143,6 +138,15 @@ function LuluGeometryOverlay({
               <Text x={box.x + 5} y={box.y + 18} text={label} fontSize={8} fill={color} />
             </Group>
           ))}
+        </Group>
+      )}
+
+      {showProofMetadata && (
+        <Group listening={false}>
+          <Rect x={18} y={18} width={Math.min(360, pageWidth - 36)} height={58} fill="rgba(255,255,255,0.86)" stroke="#0F172A" strokeWidth={0.8} />
+          <Text x={28} y={28} text={proofLabel || 'Proof PDF'} fontSize={10} fill="#0F172A" fontStyle="bold" width={Math.min(340, pageWidth - 56)} />
+          <Text x={28} y={45} text={`MediaBox: ${formatDimensions(documentWidth, documentHeight, 'in')}`} fontSize={8} fill="#0F172A" width={Math.min(340, pageWidth - 56)} />
+          <Text x={28} y={59} text={`Points: ${formatDimensions(documentWidth, documentHeight, 'pt')}`} fontSize={8} fill="#0F172A" width={Math.min(340, pageWidth - 56)} />
         </Group>
       )}
 
