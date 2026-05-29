@@ -5,6 +5,7 @@ import {
   Box,
   Button,
   ButtonGroup,
+  Chip,
   CircularProgress,
   Divider,
   IconButton,
@@ -48,16 +49,27 @@ import { buildAssetThumbnailUrl } from '../lib/assets'
 import { toEtsy2GroupOrder } from '../lib/etsy2Orders'
 import { FONT_OPTIONS, ensureFontFaces, normalizeFontStyle } from '../lib/fonts'
 import { getFittedTextProps } from '../lib/textFitting'
+import { FIXED_PERSONALIZATION_FIELDS } from '../lib/fixedPersonalizationFields'
 import LuluGeometryOverlay from '../components/products/LuluGeometryOverlay'
+import {
+  formatDimensions,
+  formatDualDimensions,
+  getGeometryMismatch,
+  getGeometryPanelSummaries,
+} from '../components/products/luluGeometryUtils'
 
 const CANVAS_STATE_KEY = '_canvasEditorState'
 const CANVAS_PDF_KEY = '_canvasPdfDataUrl'
 const DEFAULT_PAGE = { width: 612, height: 792 }
+const COVER_VALUE_KEYS = ['front_cover_name', 'spine_text', 'back_cover_text']
+const DUMMY_TEXT_VALUES = new Set(['customer name', 'new text', 'bloom where you are planted'])
 
 const isImageUrl = (value = '') => /\.(png|jpe?g|webp|gif|svg)(\?.*)?$/i.test(value)
 const clamp = (value, min, max) => Math.min(max, Math.max(min, Number(value) || 0))
-const inches = (points) => Number((Number(points || 0) / 72).toFixed(2))
+const inches = (value) => Number((Number(value || 0) / 72).toFixed(2))
 const points = (value) => Number(value || 0) * 72
+const valueForUnit = (value, unit) => unit === 'pt' ? Number((Number(value || 0)).toFixed(2)) : inches(value)
+const pointsFromUnit = (value, unit) => unit === 'pt' ? Number(value || 0) : points(value)
 const fontOptionsFor = (value) => (
   value && !FONT_OPTIONS.some((font) => font.value === value)
     ? [{ label: value, value, weight: 400, style: 'normal' }, ...FONT_OPTIONS]
@@ -201,12 +213,137 @@ function defaultLayers(orderItem, order, page = DEFAULT_PAGE, decomposedPage = n
   ]
 }
 
+const fixedCoverFields = FIXED_PERSONALIZATION_FIELDS.filter((field) => COVER_VALUE_KEYS.includes(field.key))
+
+const resolveCoverValue = (orderItem, key) => String(
+  orderItem?.templateFieldValues?.[key] ??
+  orderItem?.templateAiSuggestions?.[key] ??
+  orderItem?.personalization?.[key] ??
+  ''
+).trim()
+
+const coverValueStatusesFor = (orderItem) => fixedCoverFields.map((field) => ({
+  ...field,
+  value: resolveCoverValue(orderItem, field.key),
+}))
+
+const dummyTextWarningsFor = (layers) => layers
+  .filter((layer) => layer.type === 'text' && layer.visible !== false)
+  .map((layer) => String(layer.text || '').trim())
+  .filter((text) => DUMMY_TEXT_VALUES.has(text.toLowerCase()))
+
+const waitForCanvasPaint = () => new Promise((resolve) => {
+  window.requestAnimationFrame(() => window.requestAnimationFrame(resolve))
+})
+
+function MeasurementStatusStrip({ page, geometry, zoom, unit = 'in', mismatch = null }) {
+  const width = page?.width || page?.pageWidth || 0
+  const height = page?.height || page?.pageHeight || 0
+  const panels = getGeometryPanelSummaries(geometry)
+
+  return (
+    <Box sx={{ px: 1.25, py: 0.85, borderBottom: '1px solid #E5E7EB', bgcolor: '#FFFFFF', display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+      <Chip size="small" label={`MediaBox ${formatDualDimensions(width, height)}`} sx={{ fontFamily: 'monospace', fontWeight: 800 }} />
+      <Chip size="small" variant="outlined" label={`Preview zoom ${Math.round(zoom * 100)}%`} />
+      {panels.map(([label, box]) => (
+        <Chip key={label} size="small" variant="outlined" label={`${label} ${formatDimensions(box.width, box.height, unit)}`} />
+      ))}
+      {mismatch && (
+        <Alert severity="warning" sx={{ py: 0, minHeight: 30, alignItems: 'center' }}>
+          PDF page is {formatDimensions(mismatch.page.width, mismatch.page.height, 'pt')}; Lulu expects {formatDimensions(mismatch.expected.width, mismatch.expected.height, 'pt')}.
+        </Alert>
+      )}
+    </Box>
+  )
+}
+
+function RealDataStatus({ statuses, dummyWarnings }) {
+  return (
+    <Box sx={{ px: 1.25, py: 0.85, borderBottom: '1px solid #E5E7EB', bgcolor: '#F8FAFC', display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+      {statuses.map((field) => (
+        <Chip
+          key={field.key}
+          size="small"
+          color={field.value ? 'success' : 'warning'}
+          variant={field.value ? 'outlined' : 'filled'}
+          label={`${field.label}: ${field.value || 'Missing real order value'}`}
+          sx={{ maxWidth: 340, '& .MuiChip-label': { overflow: 'hidden', textOverflow: 'ellipsis' } }}
+        />
+      ))}
+      {dummyWarnings.map((text) => (
+        <Chip key={text} size="small" color="error" label={`Dummy text visible: ${text}`} />
+      ))}
+    </Box>
+  )
+}
+
+function CanvasExportStrip({ onDownloadPrint, onDownloadProof, exportingPdf, saving, onSave }) {
+  const exportingPrint = exportingPdf === 'print'
+  const exportingProof = exportingPdf === 'proof'
+
+  return (
+    <Box
+      sx={{
+        px: 1.25,
+        py: 0.85,
+        borderBottom: '1px solid #E5E7EB',
+        bgcolor: '#FFFFFF',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        gap: 1,
+        flexWrap: 'wrap',
+      }}
+    >
+      <Typography variant="subtitle2" sx={{ fontWeight: 900, color: '#0F172A' }}>
+        Canvas exports
+      </Typography>
+      <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
+        <Button
+          variant="contained"
+          size="small"
+          startIcon={exportingPrint ? <CircularProgress size={15} color="inherit" /> : <DownloadIcon />}
+          onClick={onDownloadPrint}
+          disabled={Boolean(exportingPdf)}
+          sx={{ bgcolor: '#111827', borderRadius: '6px', fontWeight: 900, textTransform: 'none', '&:hover': { bgcolor: '#020617' } }}
+        >
+          {exportingPrint ? 'Preparing print' : 'Print PDF'}
+        </Button>
+        <Button
+          variant="outlined"
+          size="small"
+          startIcon={exportingProof ? <CircularProgress size={15} /> : <StraightenIcon />}
+          onClick={onDownloadProof}
+          disabled={Boolean(exportingPdf)}
+          sx={{ borderColor: '#C4B5FD', color: '#4C1D95', borderRadius: '6px', fontWeight: 900, textTransform: 'none' }}
+        >
+          {exportingProof ? 'Preparing proof' : 'Proof PDF'}
+        </Button>
+        <Button
+          variant="outlined"
+          size="small"
+          startIcon={saving ? <CircularProgress size={15} /> : <SaveIcon />}
+          onClick={onSave}
+          disabled={saving || Boolean(exportingPdf)}
+          sx={{ borderColor: '#E5E7EB', color: '#111827', borderRadius: '6px', fontWeight: 900, textTransform: 'none' }}
+        >
+          {saving ? 'Saving' : 'Save'}
+        </Button>
+      </Box>
+    </Box>
+  )
+}
+
 function imagePdfDataUrl(jpegDataUrl, pageWidth, pageHeight) {
   const jpegBinary = atob(jpegDataUrl.split(',')[1] || '')
   const jpegBytes = new Uint8Array(jpegBinary.length)
   for (let i = 0; i < jpegBinary.length; i += 1) jpegBytes[i] = jpegBinary.charCodeAt(i)
 
-  const content = `q\n${pageWidth} 0 0 ${pageHeight} 0 0 cm\n/Im0 Do\nQ\n`
+  const mediaWidth = Number(Number(pageWidth || 0).toFixed(2))
+  const mediaHeight = Number(Number(pageHeight || 0).toFixed(2))
+  const imageWidth = Math.max(1, Math.round(mediaWidth * 2))
+  const imageHeight = Math.max(1, Math.round(mediaHeight * 2))
+  const content = `q\n${mediaWidth} 0 0 ${mediaHeight} 0 0 cm\n/Im0 Do\nQ\n`
   const enc = new TextEncoder()
   const parts = []
   const offsets = [0]
@@ -226,8 +363,8 @@ function imagePdfDataUrl(jpegDataUrl, pageWidth, pageHeight) {
   pushText('%PDF-1.3\n')
   mark(); pushText('1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n')
   mark(); pushText('2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n')
-  mark(); pushText(`3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth} ${pageHeight}] /Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>\nendobj\n`)
-  mark(); pushText(`4 0 obj\n<< /Type /XObject /Subtype /Image /Width ${pageWidth * 2} /Height ${pageHeight * 2} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpegBytes.length} >>\nstream\n`)
+  mark(); pushText(`3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${mediaWidth} ${mediaHeight}] /Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>\nendobj\n`)
+  mark(); pushText(`4 0 obj\n<< /Type /XObject /Subtype /Image /Width ${imageWidth} /Height ${imageHeight} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpegBytes.length} >>\nstream\n`)
   pushBytes(jpegBytes)
   pushText('\nendstream\nendobj\n')
   mark(); pushText(`5 0 obj\n<< /Length ${enc.encode(content).length} >>\nstream\n${content}endstream\nendobj\n`)
@@ -240,6 +377,26 @@ function imagePdfDataUrl(jpegDataUrl, pageWidth, pageHeight) {
     reader.onload = () => resolve(reader.result)
     reader.readAsDataURL(blob)
   })
+}
+
+function dataUrlToBlob(dataUrl) {
+  const [header = '', payload = ''] = String(dataUrl || '').split(',')
+  const mime = header.match(/data:([^;]+)/)?.[1] || 'application/octet-stream'
+  const binary = atob(payload)
+  const bytes = new Uint8Array(binary.length)
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index)
+  return new Blob([bytes], { type: mime })
+}
+
+function downloadDataUrl(dataUrl, filename) {
+  const blobUrl = URL.createObjectURL(dataUrlToBlob(dataUrl))
+  const link = document.createElement('a')
+  link.href = blobUrl
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  window.setTimeout(() => URL.revokeObjectURL(blobUrl), 0)
 }
 
 function LayerRow({ layer, active, onSelect, onToggleVisibility }) {
@@ -378,6 +535,7 @@ function CanvasStage({
   measurementUnit,
   alignmentOpacity = 0.62,
   backgroundOpacity = 1,
+  proofMode = false,
 }) {
   const background = layers.find((layer) => layer.type === 'background')
   const backgroundImage = useLoadedImage(background?.visible ? background.url : '')
@@ -396,9 +554,9 @@ function CanvasStage({
   }, [layers, selectedId, stageRef])
 
   return (
-    <Box sx={{ flex: 1, minWidth: 0, bgcolor: '#F8FAFC', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'auto', p: 3 }}>
-      <Box sx={{ bgcolor: '#374151', px: 8, py: 3, minHeight: page.height * zoom + 48 }}>
-        <Paper sx={{ width: page.width * zoom, height: page.height * zoom, borderRadius: 0, overflow: 'hidden', boxShadow: '0 24px 55px rgba(15, 23, 42, 0.24)' }}>
+    <Box sx={{ flex: 1, minWidth: 0, bgcolor: '#F8FAFC', overflow: 'auto' }}>
+      <Box sx={{ width: page.width * zoom, height: page.height * zoom, flexShrink: 0 }}>
+        <Paper sx={{ width: page.width * zoom, height: page.height * zoom, borderRadius: 0, overflow: 'hidden', boxShadow: 'none' }}>
           <Stage
             ref={stageRef}
             width={page.width * zoom}
@@ -414,7 +572,7 @@ function CanvasStage({
           >
             <Layer>
               <Rect x={0} y={0} width={page.width} height={page.height} fill="#FBF7EF" />
-              {showAlignment && alignmentImage && (
+              {(showAlignment || proofMode) && alignmentImage && (
                 <KonvaImage name="lulu-alignment-backlayer" image={alignmentImage} x={0} y={0} width={page.width} height={page.height} opacity={alignmentOpacity} listening={false} />
               )}
               {background?.visible && backgroundImage && (
@@ -428,9 +586,11 @@ function CanvasStage({
                 geometry={geometry}
                 page={page}
                 selectedBox={selectedLayer}
-                showGuides={showGuides}
-                showRulers={showRulers}
+                showGuides={showGuides || proofMode}
+                showRulers={showRulers || proofMode}
                 unit={measurementUnit}
+                showProofMetadata={proofMode}
+                proofLabel="Customer order proof"
               />
 
               {layers.filter((layer) => layer.type !== 'background' && (layer.visible || (layer.maskOriginal && layer.dirty))).map((layer) => (
@@ -558,7 +718,7 @@ function CanvasStage({
   )
 }
 
-function PropertiesPanel({ selected, updateLayer }) {
+function PropertiesPanel({ selected, updateLayer, measurementUnit = 'in' }) {
   if (!selected) {
     return (
       <Box sx={{ p: 3 }}>
@@ -644,10 +804,10 @@ function PropertiesPanel({ selected, updateLayer }) {
 
       <Typography variant="subtitle2" sx={{ fontWeight: 800, color: '#0F172A', mb: 1 }}>Transform</Typography>
       <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1.25, mb: 1.5 }}>
-        <TextField label="X" value={inches(selected.x)} disabled={disabled} onChange={(event) => updateLayer(selected.id, { x: points(event.target.value) })} slotProps={{ input: { endAdornment: <Typography variant="caption">in</Typography> } }} />
-        <TextField label="Y" value={inches(selected.y)} disabled={disabled} onChange={(event) => updateLayer(selected.id, { y: points(event.target.value) })} slotProps={{ input: { endAdornment: <Typography variant="caption">in</Typography> } }} />
-        <TextField label="Width" value={inches(selected.width)} disabled={disabled} onChange={(event) => updateLayer(selected.id, { width: Math.max(8, points(event.target.value)) })} slotProps={{ input: { endAdornment: <Typography variant="caption">in</Typography> } }} />
-        <TextField label="Height" value={inches(selected.height)} disabled={disabled} onChange={(event) => updateLayer(selected.id, { height: Math.max(8, points(event.target.value)) })} slotProps={{ input: { endAdornment: <Typography variant="caption">in</Typography> } }} />
+        <TextField label="X" value={valueForUnit(selected.x, measurementUnit)} disabled={disabled} onChange={(event) => updateLayer(selected.id, { x: pointsFromUnit(event.target.value, measurementUnit) })} slotProps={{ input: { endAdornment: <Typography variant="caption">{measurementUnit}</Typography> } }} />
+        <TextField label="Y" value={valueForUnit(selected.y, measurementUnit)} disabled={disabled} onChange={(event) => updateLayer(selected.id, { y: pointsFromUnit(event.target.value, measurementUnit) })} slotProps={{ input: { endAdornment: <Typography variant="caption">{measurementUnit}</Typography> } }} />
+        <TextField label="Width" value={valueForUnit(selected.width, measurementUnit)} disabled={disabled} onChange={(event) => updateLayer(selected.id, { width: Math.max(8, pointsFromUnit(event.target.value, measurementUnit)) })} slotProps={{ input: { endAdornment: <Typography variant="caption">{measurementUnit}</Typography> } }} />
+        <TextField label="Height" value={valueForUnit(selected.height, measurementUnit)} disabled={disabled} onChange={(event) => updateLayer(selected.id, { height: Math.max(8, pointsFromUnit(event.target.value, measurementUnit)) })} slotProps={{ input: { endAdornment: <Typography variant="caption">{measurementUnit}</Typography> } }} />
       </Box>
       <Box sx={{ display: 'grid', gridTemplateColumns: '82px 1fr', gap: 1.5, alignItems: 'center', mb: 2.5 }}>
         <TextField label="Rotation" value={Math.round(selected.rotation || 0)} disabled={disabled} onChange={(event) => updateLayer(selected.id, { rotation: Number(event.target.value) || 0 })} />
@@ -687,6 +847,8 @@ export default function Etsy2CanvasEditorPage() {
   const [measurementUnit, setMeasurementUnit] = useState('in')
   const [alignmentOpacity, setAlignmentOpacity] = useState(0.62)
   const [backgroundOpacity, setBackgroundOpacity] = useState(1)
+  const [exportProofMode, setExportProofMode] = useState(false)
+  const [exportingPdf, setExportingPdf] = useState('')
   const [snack, setSnack] = useState({ open: false, message: '', severity: 'success' })
 
   const fetchGroup = useCallback(async () => {
@@ -715,6 +877,11 @@ export default function Etsy2CanvasEditorPage() {
       group.items[0]
   }, [group, searchParams])
   const selected = layers.find((layer) => layer.id === selectedId) || null
+  const normalizedGeometry = pageGeometry?.geometry || pageGeometry
+  const realCoverStatuses = useMemo(() => coverValueStatusesFor(orderItem), [orderItem])
+  const dummyTextWarnings = useMemo(() => dummyTextWarningsFor(layers), [layers])
+  const missingCoverStatuses = realCoverStatuses.filter((field) => !field.value)
+  const geometryMismatch = normalizedGeometry ? getGeometryMismatch(normalizedGeometry, pageSize) : null
   const backToGeneratedPath = searchParams.get('source') === 'generated'
     ? `/orders/generated/${encodeURIComponent(orderId)}`
     : `/orders/etsy2/${encodeURIComponent(orderId)}?view=generated`
@@ -885,26 +1052,64 @@ export default function Etsy2CanvasEditorPage() {
     setLayers(next)
   }
 
-  const exportPdfDataUrl = async () => {
+  const realDataIssueMessage = () => {
+    if (!normalizedGeometry) return ''
+    if (!missingCoverStatuses.length && !dummyTextWarnings.length) return ''
+    const missing = missingCoverStatuses.map((field) => field.label).join(', ')
+    const dummy = dummyTextWarnings.length ? ` Dummy text visible: ${dummyTextWarnings.join(', ')}.` : ''
+    return `${missing ? `Missing real order values: ${missing}.` : ''}${dummy}`.trim()
+  }
+
+  const validateRealDataForExport = ({ block = true } = {}) => {
+    const issue = realDataIssueMessage()
+    if (!issue) return true
+    setSnack({
+      open: true,
+      message: block ? `${issue} Fix the order values before saving the final canvas PDF.` : `${issue} Downloading anyway for review.`,
+      severity: block ? 'error' : 'warning',
+    })
+    return !block
+  }
+
+  const exportPdfDataUrl = async ({ proof = false } = {}) => {
     const stage = stageRef.current
     if (!stage) return ''
-    const overlayNodes = [
-      ...stage.find('.lulu-geometry-overlay'),
-      ...stage.find('.lulu-alignment-backlayer'),
-    ]
-    overlayNodes.forEach((node) => node.hide())
-    stage.batchDraw()
-    const jpeg = stage.toDataURL({ mimeType: 'image/jpeg', quality: 0.94, pixelRatio: 2 / zoom })
-    overlayNodes.forEach((node) => node.show())
-    stage.batchDraw()
-    return imagePdfDataUrl(jpeg, Math.round(pageSize.width), Math.round(pageSize.height))
+    if (proof) {
+      setExportProofMode(true)
+      await waitForCanvasPaint()
+    }
+    const overlayNodes = proof
+      ? []
+      : [
+          ...stage.find('.lulu-geometry-overlay'),
+          ...stage.find('.lulu-alignment-backlayer'),
+        ]
+    try {
+      overlayNodes.forEach((node) => node.hide())
+      stage.batchDraw()
+      const jpeg = stage.toDataURL({
+        x: 0,
+        y: 0,
+        width: pageSize.width * zoom,
+        height: pageSize.height * zoom,
+        mimeType: 'image/jpeg',
+        quality: 0.94,
+        pixelRatio: 2 / zoom,
+      })
+      return imagePdfDataUrl(jpeg, pageSize.width, pageSize.height)
+    } finally {
+      overlayNodes.forEach((node) => node.show())
+      if (proof) setExportProofMode(false)
+      stage.batchDraw()
+    }
   }
 
   const saveCanvas = async () => {
     if (!orderItem?._id) return
+    if (!validateRealDataForExport({ block: true })) return
     setSaving(true)
     try {
-      const pdfDataUrl = await exportPdfDataUrl()
+      const pdfDataUrl = await exportPdfDataUrl({ proof: false })
       const state = {
         version: 1,
         page: pageSize,
@@ -929,15 +1134,25 @@ export default function Etsy2CanvasEditorPage() {
     }
   }
 
-  const downloadPdf = async () => {
-    const pdfDataUrl = await exportPdfDataUrl()
-    if (!pdfDataUrl) return
-    const link = document.createElement('a')
-    link.href = pdfDataUrl
-    link.download = `order-${orderId}-canvas.pdf`
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
+  const downloadPdf = async ({ proof = false } = {}) => {
+    if (!validateRealDataForExport({ block: false })) return
+    setExportingPdf(proof ? 'proof' : 'print')
+    try {
+      const pdfDataUrl = await exportPdfDataUrl({ proof })
+      if (!pdfDataUrl) throw new Error('Canvas is not ready yet')
+      downloadDataUrl(pdfDataUrl, `order-${orderId}-canvas-${proof ? 'proof' : 'print'}.pdf`)
+      setSnack({ open: true, message: `${proof ? 'Proof' : 'Print'} PDF download started.`, severity: 'success' })
+    } catch (err) {
+      setSnack({
+        open: true,
+        message: err?.message?.includes('Tainted')
+          ? 'Could not export because one canvas image is blocked by browser CORS. Re-import the PDF or image through the app, then try again.'
+          : err?.message || `Failed to download ${proof ? 'proof' : 'print'} PDF`,
+        severity: 'error',
+      })
+    } finally {
+      setExportingPdf('')
+    }
   }
 
   if (loading) {
@@ -974,6 +1189,24 @@ export default function Etsy2CanvasEditorPage() {
         <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
           <Tooltip title="Undo"><span><IconButton disabled={!history.length} onClick={undo}><UndoIcon /></IconButton></span></Tooltip>
           <Tooltip title="Redo"><span><IconButton disabled={!future.length} onClick={redo}><RedoIcon /></IconButton></span></Tooltip>
+          <Button
+            variant="outlined"
+            startIcon={exportingPdf === 'print' ? <CircularProgress size={16} /> : <DownloadIcon />}
+            onClick={() => downloadPdf({ proof: false })}
+            disabled={Boolean(exportingPdf)}
+            sx={{ minWidth: 178, borderColor: '#E5E7EB', color: '#111827', borderRadius: '6px', fontWeight: 800, textTransform: 'none' }}
+          >
+            {exportingPdf === 'print' ? 'Preparing print PDF' : 'Download print PDF'}
+          </Button>
+          <Button
+            variant="outlined"
+            startIcon={exportingPdf === 'proof' ? <CircularProgress size={16} /> : <StraightenIcon />}
+            onClick={() => downloadPdf({ proof: true })}
+            disabled={Boolean(exportingPdf)}
+            sx={{ minWidth: 178, borderColor: '#C4B5FD', color: '#4C1D95', borderRadius: '6px', fontWeight: 800, textTransform: 'none' }}
+          >
+            {exportingPdf === 'proof' ? 'Preparing proof PDF' : 'Download proof PDF'}
+          </Button>
           <Button variant="outlined" onClick={() => navigate(backToGeneratedPath)} sx={{ minWidth: 126, borderColor: '#E5E7EB', color: '#111827', borderRadius: '6px', fontWeight: 800 }}>Cancel</Button>
           <Button variant="contained" startIcon={saving ? <CircularProgress size={16} color="inherit" /> : <SaveIcon />} onClick={saveCanvas} disabled={saving} sx={{ minWidth: 160, bgcolor: '#5B21D6', borderRadius: '6px', fontWeight: 800, '&:hover': { bgcolor: '#4C1D95' } }}>
             {saving ? 'Saving...' : 'Save Changes'}
@@ -1047,6 +1280,24 @@ export default function Etsy2CanvasEditorPage() {
             </Paper>
           )}
 
+          <MeasurementStatusStrip
+            page={pageSize}
+            geometry={normalizedGeometry}
+            zoom={zoom}
+            unit={measurementUnit}
+            mismatch={geometryMismatch}
+          />
+          <CanvasExportStrip
+            onDownloadPrint={() => downloadPdf({ proof: false })}
+            onDownloadProof={() => downloadPdf({ proof: true })}
+            exportingPdf={exportingPdf}
+            saving={saving}
+            onSave={saveCanvas}
+          />
+          {normalizedGeometry && (
+            <RealDataStatus statuses={realCoverStatuses} dummyWarnings={dummyTextWarnings} />
+          )}
+
           <CanvasStage
             layers={layers}
             selectedId={selectedId}
@@ -1055,7 +1306,7 @@ export default function Etsy2CanvasEditorPage() {
             zoom={zoom}
             stageRef={stageRef}
             page={pageSize}
-            geometry={pageGeometry?.geometry || pageGeometry}
+            geometry={normalizedGeometry}
             alignmentImageUrl={pageGeometry?.svgDataUrl || ''}
             showAlignment={showAlignment}
             showGuides={showGuides}
@@ -1063,6 +1314,7 @@ export default function Etsy2CanvasEditorPage() {
             measurementUnit={measurementUnit}
             alignmentOpacity={alignmentOpacity}
             backgroundOpacity={backgroundOpacity}
+            proofMode={exportProofMode}
           />
 
           <Box sx={{ p: 1.25, display: 'flex', justifyContent: 'center' }}>
@@ -1078,7 +1330,8 @@ export default function Etsy2CanvasEditorPage() {
                 <Button disabled>{Math.round(zoom * 100)}%</Button>
                 <Button onClick={() => setZoom((value) => Math.min(2.2, Number((value + 0.1).toFixed(2))))}><ZoomInIcon /></Button>
                 <Button onClick={() => setZoom(1)}><FitScreenIcon /></Button>
-                <Button onClick={downloadPdf}><DownloadIcon /></Button>
+                <Button disabled={Boolean(exportingPdf)} onClick={() => downloadPdf({ proof: false })} title="Download clean print PDF"><DownloadIcon /></Button>
+                <Button disabled={Boolean(exportingPdf)} onClick={() => downloadPdf({ proof: true })} title="Download proof PDF with rulers">Proof PDF</Button>
                 <Button onClick={() => window.print()}><PrintIcon /></Button>
               </ButtonGroup>
               <Paper sx={{ width: 128, px: 1.25, py: 0.6, borderRadius: '8px', display: { xs: 'none', sm: 'flex' }, alignItems: 'center', gap: 1, boxShadow: '0 8px 24px rgba(15,23,42,0.10)' }}>
@@ -1094,7 +1347,7 @@ export default function Etsy2CanvasEditorPage() {
         </Paper>
 
         <Paper sx={{ borderRadius: '10px', border: '1px solid #E5E7EB', boxShadow: 'none', overflow: 'hidden' }}>
-          <PropertiesPanel selected={selected} updateLayer={updateLayer} />
+          <PropertiesPanel selected={selected} updateLayer={updateLayer} measurementUnit={measurementUnit} />
         </Paper>
       </Box>
 
