@@ -1,4 +1,5 @@
 import api from './api'
+import { getStoredToken } from './authSession'
 
 export const MAX_ASSET_FILE_SIZE = 50 * 1024 * 1024
 
@@ -48,18 +49,9 @@ export const validateAssetFile = (
 }
 
 export const uploadAssetFile = async ({ file, folder, onProgress }) => {
-  const resourceType = file.type === 'application/pdf' ? 'raw' : 'auto'
-  const { data: presign } = await api.post('/upload/presign', { folder, resourceType })
-
-  if (!presign.configured) {
-    return URL.createObjectURL(file)
-  }
-
   const formData = new FormData()
   formData.append('file', file)
-  Object.entries(presign.fields || {}).forEach(([key, value]) => {
-    formData.append(key, value)
-  })
+  formData.append('folder', folder)
 
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
@@ -70,7 +62,9 @@ export const uploadAssetFile = async ({ file, folder, onProgress }) => {
       }
     }
 
-    xhr.open('POST', presign.url)
+    xhr.open('POST', `${api.defaults.baseURL || ''}/upload/file`)
+    const token = getStoredToken()
+    if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`)
     xhr.onload = () => {
       if (xhr.status !== 200 && xhr.status !== 201) {
         reject(new Error('Upload failed'))

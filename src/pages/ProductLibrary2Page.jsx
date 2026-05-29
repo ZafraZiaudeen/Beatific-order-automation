@@ -1014,7 +1014,7 @@ function AssetGrid({ items, category, canManage, isProductCategory, onDetail, on
                       <IconButton onClick={() => onEdit(item)}><EditOutlinedIcon fontSize="small" /></IconButton>
                     </Tooltip>
                     <Tooltip title="Delete">
-                      <IconButton color="error" onClick={() => onDelete(item._id)}><DeleteOutlineIcon fontSize="small" /></IconButton>
+                      <IconButton color="error" disabled={!item._id} onClick={() => item._id && onDelete(item._id)}><DeleteOutlineIcon fontSize="small" /></IconButton>
                     </Tooltip>
                   </>
                 )}
@@ -1101,7 +1101,7 @@ function AssetList({ items, category, canManage, isProductCategory, onDetail, on
                       {isProductCategory ? 'Open Products' : 'Preview'}
                     </SoftButton>
                     {canManage && !isProductCategory && (
-                      <IconButton color="error" onClick={() => onDelete(item._id)}><DeleteOutlineIcon fontSize="small" /></IconButton>
+                      <IconButton color="error" disabled={!item._id} onClick={() => item._id && onDelete(item._id)}><DeleteOutlineIcon fontSize="small" /></IconButton>
                     )}
                   </Stack>
                 </SoftTableCell>
@@ -1464,6 +1464,11 @@ function CategoryDetailPage({ sectionKey }) {
   }
 
   const handleDelete = async () => {
+    if (!deleteId || deleteId === 'null' || deleteId === 'undefined') {
+      setError('Could not delete item because its ID is missing.')
+      setDeleteId(null)
+      return
+    }
     try {
       await api.delete(`/product-library-v2/items/${deleteId}`)
       setItems((current) => current.filter((item) => item._id !== deleteId))

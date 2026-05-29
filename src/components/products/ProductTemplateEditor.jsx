@@ -512,21 +512,6 @@ function TemplateStage({
                 />
               ))}
 
-              {(page?.extractedImages || []).map((asset) => (
-                <Rect
-                  key={asset.id}
-                  x={asset.x}
-                  y={asset.y}
-                  width={Math.max(4, asset.width)}
-                  height={Math.max(4, asset.height)}
-                  fill="rgba(34, 197, 94, 0.025)"
-                  stroke="rgba(22, 163, 74, 0.55)"
-                  strokeWidth={0.75}
-                  dash={[6, 4]}
-                  listening={false}
-                />
-              ))}
-
               <LuluGeometryOverlay
                 geometry={geometry}
                 page={{ pageWidth, pageHeight }}

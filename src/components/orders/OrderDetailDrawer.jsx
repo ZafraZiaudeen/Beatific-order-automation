@@ -30,7 +30,7 @@ import PictureAsPdfOutlinedIcon from '@mui/icons-material/PictureAsPdfOutlined'
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutlined'
 import DesignServicesIcon from '@mui/icons-material/DesignServicesOutlined'
 import api from '../../lib/api'
-import { buildAssetThumbnailUrl } from '../../lib/assets'
+import { buildAssetThumbnailUrl, uploadAssetFile } from '../../lib/assets'
 import StatusBadge from './StatusBadge'
 import LuluReviewDialog from './LuluReviewDialog'
 import AssetInputField from '../common/AssetInputField'
@@ -117,37 +117,7 @@ function ArtworkUploadZone({ orderId, currentUrl, onUploaded, label }) {
     setUploading(true); setError(''); setProgress(0)
     try {
       const folder = isCover ? 'covers' : 'interiors'
-      const { data: presign } = await api.post('/upload/presign', { folder })
-
-      if (!presign.configured) {
-        const devUrl = URL.createObjectURL(file)
-        const field = isCover ? 'coverImageUrl' : 'interiorPdfUrl'
-        await api.patch(`/orders/${orderId}`, { [field]: devUrl })
-        onUploaded(devUrl)
-        return
-      }
-
-      const formData = new FormData()
-      formData.append('file', file)
-      Object.entries(presign.fields || {}).forEach(([k, v]) => formData.append(k, v))
-
-      const xhr = new XMLHttpRequest()
-      xhr.upload.onprogress = (e) => {
-        if (e.lengthComputable) setProgress(Math.round((e.loaded / e.total) * 100))
-      }
-
-      const uploadedUrl = await new Promise((resolve, reject) => {
-        xhr.open('POST', presign.url)
-        xhr.onload = () => {
-          if (xhr.status === 200 || xhr.status === 201) {
-            resolve(JSON.parse(xhr.responseText).secure_url || JSON.parse(xhr.responseText).url)
-          } else {
-            reject(new Error('Upload failed'))
-          }
-        }
-        xhr.onerror = () => reject(new Error('Upload failed'))
-        xhr.send(formData)
-      })
+      const uploadedUrl = await uploadAssetFile({ file, folder, onProgress: setProgress })
 
       const field = isCover ? 'coverImageUrl' : 'interiorPdfUrl'
       await api.patch(`/orders/${orderId}`, { [field]: uploadedUrl })
