@@ -374,7 +374,12 @@ export default function Etsy2OrderDetailPage() {
   const generating = isPdfGenerationJobActive(generationJob)
   const batchStatus = order ? deriveBatchStatus(order.items) : null
   const hasAIFlag = order?.items?.some((item) => item.status === 'ai_flagged')
-  const hasMappedItem = order?.items?.some((item) => item.status === ITEM_STATUSES.MAPPED)
+  const canGeneratePdfs = order?.items?.some((item) =>
+    [ITEM_STATUSES.MAPPED, ITEM_STATUSES.FAILED, ITEM_STATUSES.GENERATED].includes(item.status)
+  )
+  const shouldForceGenerate = order?.items?.some((item) =>
+    [ITEM_STATUSES.FAILED, ITEM_STATUSES.GENERATED].includes(item.status)
+  )
   const shippingLines = addressLines(group?.shippingAddress)
   const subtotal = group?.items?.reduce((sum, item) => sum + Number(item.price || 0) * Number(item.quantity || 1), 0) || 0
   const shipping = Number(group?.pricing?.shipping || group?.items?.[0]?.shippingCost || 0)
@@ -401,8 +406,7 @@ export default function Etsy2OrderDetailPage() {
   const activeAsset = previewAssets.find((asset) => asset.kind === activePreviewKind) || previewAssets[0]
   const showGeneratedPreview = generatedItems.length > 0 && (
     searchParams.get('view') === 'generated' ||
-    batchStatus === ITEM_STATUSES.GENERATED ||
-    batchStatus === ITEM_STATUSES.FAILED
+    batchStatus === ITEM_STATUSES.GENERATED
   )
 
   useEffect(() => {
@@ -435,13 +439,13 @@ export default function Etsy2OrderDetailPage() {
 
   const handleGenerate = async () => {
     if (!order?.orderId) return
-    if (!hasMappedItem) {
-      setSnack({ open: true, message: 'Only mapped order items can generate PDFs.', severity: 'warning' })
+    if (!canGeneratePdfs) {
+      setSnack({ open: true, message: 'Only mapped or failed generated order items can generate PDFs.', severity: 'warning' })
       return
     }
 
     try {
-      const job = await startPdfGenerationJob(order.orderId)
+      const job = await startPdfGenerationJob(order.orderId, { force: shouldForceGenerate })
       setGenerationJob(job)
       setSnack({
         open: true,
@@ -796,7 +800,7 @@ export default function Etsy2OrderDetailPage() {
               variant="outlined"
               startIcon={generating ? <CircularProgress size={16} /> : <PrintIcon />}
               onClick={handleGenerate}
-              disabled={generating || !hasMappedItem}
+              disabled={generating || !canGeneratePdfs}
               size="small"
               sx={{
                 borderColor: '#E3E3E7',
@@ -806,7 +810,7 @@ export default function Etsy2OrderDetailPage() {
                 fontSize: '0.8125rem',
               }}
             >
-              {generating ? 'Generating...' : 'Generate PDFs'}
+              {generating ? 'Generating...' : shouldForceGenerate ? 'Regenerate PDFs' : 'Generate PDFs'}
             </Button>
             {generating && (
               <Button

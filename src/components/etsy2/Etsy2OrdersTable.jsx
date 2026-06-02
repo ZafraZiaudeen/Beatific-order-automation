@@ -41,7 +41,12 @@ function OrderRow({
   const [open, setOpen] = useState(false)
   const batchStatus = deriveBatchStatus(order.items)
   const hasAIFlag = order.items?.some((item) => item.status === 'ai_flagged')
-  const hasMappedItem = order.items?.some((item) => item.status === ITEM_STATUSES.MAPPED)
+  const canGeneratePdfs = order.items?.some((item) =>
+    [ITEM_STATUSES.MAPPED, ITEM_STATUSES.FAILED, ITEM_STATUSES.GENERATED].includes(item.status)
+  )
+  const isRegeneration = order.items?.some((item) =>
+    [ITEM_STATUSES.FAILED, ITEM_STATUSES.GENERATED].includes(item.status)
+  )
   const shipByIsLate = order.shipByDate && new Date(order.shipByDate) < new Date() && order.status !== 'completed'
 
   return (
@@ -164,11 +169,11 @@ function OrderRow({
                 <VisibilityOutlinedIcon sx={{ fontSize: '18px' }} />
               </IconButton>
             </Tooltip>
-            <Tooltip title={generating ? 'Generating PDFs' : hasMappedItem ? 'Generate PDFs' : 'Only mapped orders can generate PDFs'}>
+            <Tooltip title={generating ? 'Generating PDFs' : canGeneratePdfs ? (isRegeneration ? 'Regenerate PDFs' : 'Generate PDFs') : 'Only mapped or failed generated orders can generate PDFs'}>
               <span>
                 <IconButton
                   size="small"
-                  disabled={generating || !hasMappedItem}
+                  disabled={generating || !canGeneratePdfs}
                   onClick={(e) => {
                     e.stopPropagation()
                     onGenerateOrder?.(order)

@@ -15,6 +15,7 @@ import Grid from '@mui/material/Grid'
 import FormControlLabel from '@mui/material/FormControlLabel'
 import IconButton from '@mui/material/IconButton'
 import MenuItem from '@mui/material/MenuItem'
+import Snackbar from '@mui/material/Snackbar'
 import Stack from '@mui/material/Stack'
 import TableContainer from '@mui/material/TableContainer'
 import TextField from '@mui/material/TextField'
@@ -235,6 +236,7 @@ export default function ProductLibrary2ProductsPage({ mode = 'list' }) {
   const [saving, setSaving] = useState(false)
   const [search, setSearch] = useState('')
   const [error, setError] = useState('')
+  const [snack, setSnack] = useState({ open: false, message: '', severity: 'success' })
   const [deleteId, setDeleteId] = useState(null)
   const [editorState, setEditorState] = useState(null)
   const [form, setForm] = useState({
@@ -544,9 +546,20 @@ export default function ProductLibrary2ProductsPage({ mode = 'list' }) {
   const handleDeleteProduct = async () => {
     if (!deleteId) return
     try {
-      await api.delete(`/products/${deleteId}`)
+      const { data } = await api.delete(`/products/${deleteId}`)
       setDeleteId(null)
       fetchProducts()
+      const unmapped = Number(data?.unmappedOrders || 0)
+      const frozen = Number(data?.frozenOrders || 0)
+      const details = [
+        unmapped ? `${unmapped} mapped order${unmapped === 1 ? '' : 's'} unmapped` : null,
+        frozen ? `${frozen} generated order${frozen === 1 ? '' : 's'} frozen` : null,
+      ].filter(Boolean)
+      setSnack({
+        open: true,
+        message: details.length ? `Product deleted: ${details.join(', ')}.` : 'Product deleted.',
+        severity: 'success',
+      })
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to delete product')
     }
@@ -734,6 +747,21 @@ export default function ProductLibrary2ProductsPage({ mode = 'list' }) {
             <SoftButton onClick={handleDeleteProduct} color="error" variant="contained">Delete</SoftButton>
           </DialogActions>
         </Dialog>
+        <Snackbar
+          open={snack.open}
+          autoHideDuration={4000}
+          onClose={() => setSnack((current) => ({ ...current, open: false }))}
+          anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+        >
+          <Alert
+            severity={snack.severity}
+            variant="filled"
+            onClose={() => setSnack((current) => ({ ...current, open: false }))}
+            sx={{ width: '100%' }}
+          >
+            {snack.message}
+          </Alert>
+        </Snackbar>
       </Box>
     )
   }

@@ -30,6 +30,7 @@ import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined'
 import api from '../lib/api'
 import useAuthStore from '../stores/authStore'
 import { canManageWorkspace } from '../lib/permissions'
+import { startPdfGenerationJob } from '../lib/pdfGenerationJobs'
 import LuluReviewDialog from '../components/orders/LuluReviewDialog'
 import { LULU_ORDER_STATUSES } from '../lib/constants'
 import {
@@ -91,6 +92,8 @@ function FailureDetailDialog({
   onClose,
   onRetry,
   retrying,
+  onRegenerate,
+  regenerating,
   onExplain,
   explaining,
 }) {
@@ -198,6 +201,15 @@ function FailureDetailDialog({
           {explaining ? 'Explaining...' : 'Explain with OpenRouter'}
         </SoftButton>
         <SoftButton
+          onClick={() => onRegenerate(order)}
+          color="primary"
+          variant="outlined"
+          startIcon={regenerating ? <CircularProgress size={14} /> : <AutoFixHighOutlinedIcon />}
+          disabled={regenerating}
+        >
+          {regenerating ? 'Regenerating...' : 'Regenerate PDFs'}
+        </SoftButton>
+        <SoftButton
           onClick={() => onRetry(order._id)}
           color="warning"
           variant="contained"
@@ -225,13 +237,14 @@ export default function LuluOrdersPage() {
   const [submitting, setSubmitting] = useState(false)
   const [refreshingId, setRefreshingId] = useState(null)
   const [retryingId, setRetryingId] = useState(null)
+  const [regeneratingId, setRegeneratingId] = useState(null)
   const [detailOrder, setDetailOrder] = useState(null)
   const [explainingId, setExplainingId] = useState(null)
   const [dateRange, setDateRange] = useState('all')
   const [snack, setSnack] = useState({ open: false, message: '', severity: 'success' })
 
-  const fetchOrders = useCallback(async () => {
-    setLoading(true)
+  const fetchOrders = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) setLoading(true)
     try {
       const dateParams = getPresetDateRange(dateRange)
       const params = {
@@ -261,11 +274,49 @@ export default function LuluOrdersPage() {
     } catch {
       //
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   }, [activeStore, tab, dateRange])
 
   useEffect(() => { fetchOrders() }, [fetchOrders])
+
+  const refreshActiveStatuses = useCallback(async () => {
+    if (!canManage) return
+
+    const params = {
+      limit: 100,
+      ...(activeStore && { storeId: activeStore._id }),
+    }
+
+    await api.get('/lulu/status/refresh-active', { params })
+    await fetchOrders({ silent: true })
+  }, [activeStore, canManage, fetchOrders])
+
+  useEffect(() => {
+    if (!canManage) return undefined
+
+    let cancelled = false
+    let inFlight = false
+
+    const tick = async () => {
+      if (cancelled || inFlight) return
+      inFlight = true
+      try {
+        await refreshActiveStatuses()
+      } catch {
+        //
+      } finally {
+        inFlight = false
+      }
+    }
+
+    tick()
+    const timer = window.setInterval(tick, 15_000)
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [canManage, refreshActiveStatuses])
 
   const handleBulkSubmit = async () => {
     if (selected.length === 0) return
@@ -306,6 +357,29 @@ export default function LuluOrdersPage() {
       setSnack({ open: true, message: err.response?.data?.message || 'Failed to retry', severity: 'error' })
     } finally {
       setRetryingId(null)
+    }
+  }
+
+  const handleRegenerate = async (order) => {
+    if (!order?.etsyOrderId) return
+    setRegeneratingId(order._id)
+    try {
+      await startPdfGenerationJob(order.etsyOrderId, { force: true })
+      setDetailOrder(null)
+      setSnack({
+        open: true,
+        message: 'PDF regeneration started. When it finishes, this order will move back to Ready to Submit.',
+        severity: 'success',
+      })
+      fetchOrders()
+    } catch (err) {
+      setSnack({
+        open: true,
+        message: err.response?.data?.message || err.response?.data?.error || 'Failed to regenerate PDFs',
+        severity: 'error',
+      })
+    } finally {
+      setRegeneratingId(null)
     }
   }
 
@@ -597,6 +671,7 @@ export default function LuluOrdersPage() {
                       <SoftBadge label={order.luluStatus || 'pending'} color={
                         order.luluStatus === 'shipped' ? 'success' :
                         order.luluStatus === 'failed' ? 'error' :
+                        order.luluStatus === 'unpaid' ? 'warning' :
                         order.luluStatus === 'in_production' ? 'info' :
                         'default'
                       } />
@@ -632,6 +707,20 @@ export default function LuluOrdersPage() {
                               onClick={() => setDetailOrder(order)}
                             >
                               <WarningAmberIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                        )}
+                        {order.luluStatus === 'failed' && (
+                          <Tooltip title="Regenerate PDFs">
+                            <IconButton
+                              size="small"
+                              color="primary"
+                              disabled={regeneratingId === order._id}
+                              onClick={() => handleRegenerate(order)}
+                            >
+                              {regeneratingId === order._id
+                                ? <CircularProgress size={14} />
+                                : <AutoFixHighOutlinedIcon fontSize="small" />}
                             </IconButton>
                           </Tooltip>
                         )}
@@ -676,6 +765,8 @@ export default function LuluOrdersPage() {
           order={detailOrder}
           onRetry={handleRetry}
           retrying={Boolean(detailOrder && retryingId === detailOrder._id)}
+          onRegenerate={handleRegenerate}
+          regenerating={Boolean(detailOrder && regeneratingId === detailOrder._id)}
           onExplain={handleExplainFailure}
           explaining={Boolean(detailOrder && explainingId === detailOrder._id)}
         />

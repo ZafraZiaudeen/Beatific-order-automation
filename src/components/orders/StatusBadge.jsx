@@ -6,6 +6,7 @@ const STATUS_COLORS = {
   in_progress: { color: 'info', label: 'In Progress' },
   completed: { color: 'success', label: 'Completed' },
   pending: { color: 'default', label: 'Pending' },
+  unpaid: { color: 'warning', label: 'Unpaid' },
   submitted: { color: 'info', label: 'Submitted' },
   in_production: { color: 'warning', label: 'In Production' },
   shipped: { color: 'success', label: 'Shipped' },

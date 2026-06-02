@@ -6,8 +6,11 @@ export const TERMINAL_PDF_JOB_STATUSES = new Set(['succeeded', 'failed', 'cancel
 export const isPdfGenerationJobActive = (job) =>
   Boolean(job && ACTIVE_PDF_JOB_STATUSES.has(job.status))
 
-export const startPdfGenerationJob = async (etsyOrderId) => {
-  const { data } = await api.post(`/orders/group/${encodeURIComponent(etsyOrderId)}/generate-pdf-job`)
+export const startPdfGenerationJob = async (etsyOrderId, options = {}) => {
+  const { data } = await api.post(
+    `/orders/group/${encodeURIComponent(etsyOrderId)}/generate-pdf-job`,
+    { force: options.force === true }
+  )
   return data.job
 }
 

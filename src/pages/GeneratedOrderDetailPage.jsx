@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
   Alert,
@@ -6,6 +6,10 @@ import {
   Button,
   Chip,
   CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   Divider,
   Paper,
   Snackbar,
@@ -19,6 +23,7 @@ import LocalShippingOutlinedIcon from '@mui/icons-material/LocalShippingOutlined
 import OpenInNewOutlinedIcon from '@mui/icons-material/OpenInNewOutlined'
 import PersonOutlineOutlinedIcon from '@mui/icons-material/PersonOutlineOutlined'
 import ReceiptLongOutlinedIcon from '@mui/icons-material/ReceiptLongOutlined'
+import SyncIcon from '@mui/icons-material/Sync'
 import WarningAmberOutlinedIcon from '@mui/icons-material/WarningAmberOutlined'
 import api from '../lib/api'
 import OrderFormDialog from '../components/orders/OrderFormDialog'
@@ -28,6 +33,11 @@ import {
   getGeneratedOrderItems,
   getGeneratedOrderSourceIds,
 } from '../lib/generatedOrders'
+import {
+  isPdfGenerationJobActive,
+  listPdfGenerationJobs,
+  startPdfGenerationJob,
+} from '../lib/pdfGenerationJobs'
 import {
   addressLines,
   buildOrderFileUrl,
@@ -166,6 +176,9 @@ export default function GeneratedOrderDetailPage() {
   const [sending, setSending] = useState(false)
   const [activeAssetId, setActiveAssetId] = useState('')
   const [editOpen, setEditOpen] = useState(false)
+  const [regenerateConfirmOpen, setRegenerateConfirmOpen] = useState(false)
+  const [generationJob, setGenerationJob] = useState(null)
+  const completedGenerationJobIdsRef = useRef(new Set())
   const [snack, setSnack] = useState({ open: false, message: '', severity: 'success' })
 
   const fetchGroup = useCallback(async () => {
@@ -184,8 +197,48 @@ export default function GeneratedOrderDetailPage() {
     fetchGroup()
   }, [fetchGroup])
 
+  const refreshGenerationJob = useCallback(async () => {
+    try {
+      const jobs = await listPdfGenerationJobs()
+      const job = generationJob?.id
+        ? jobs.find((item) => item.id === generationJob.id)
+        : jobs.find((item) => item.etsyOrderId === orderId && isPdfGenerationJobActive(item))
+      if (!job) return
+
+      setGenerationJob(job)
+      if (
+        ['succeeded', 'failed', 'cancelled'].includes(job.status) &&
+        !completedGenerationJobIdsRef.current.has(job.id)
+      ) {
+        completedGenerationJobIdsRef.current.add(job.id)
+        await fetchGroup()
+        setSnack({
+          open: true,
+          message: job.status === 'succeeded'
+            ? 'Generated PDFs were regenerated.'
+            : job.error || job.message || 'PDF regeneration did not complete.',
+          severity: job.status === 'succeeded' ? 'success' : 'error',
+        })
+      }
+    } catch {
+      // Keep the generated detail page usable if job polling briefly fails.
+    }
+  }, [fetchGroup, generationJob?.id, orderId])
+
   const order = useMemo(() => (group ? toEtsy2GroupOrder(group) : null), [group])
   const generatedItems = useMemo(() => getGeneratedOrderItems(order), [order])
+  const regenerating = isPdfGenerationJobActive(generationJob)
+  const canRegenerate = canManage && generatedItems.some((item) => item.sourceOrder?.isProductMapped)
+
+  useEffect(() => {
+    refreshGenerationJob()
+  }, [refreshGenerationJob])
+
+  useEffect(() => {
+    if (!regenerating) return undefined
+    const timer = window.setInterval(refreshGenerationJob, 2500)
+    return () => window.clearInterval(timer)
+  }, [regenerating, refreshGenerationJob])
 
   const previewAssets = useMemo(
     () => generatedItems.flatMap((item) => {
@@ -282,6 +335,31 @@ export default function GeneratedOrderDetailPage() {
     })
   }
 
+  const handleRegeneratePdfs = async () => {
+    if (!order?.orderId) return
+    if (!canRegenerate) {
+      setSnack({ open: true, message: 'This generated order must be mapped to a product before regenerating PDFs.', severity: 'warning' })
+      return
+    }
+
+    try {
+      const job = await startPdfGenerationJob(order.orderId, { force: true })
+      setGenerationJob(job)
+      setRegenerateConfirmOpen(false)
+      setSnack({
+        open: true,
+        message: 'PDF regeneration started. You can leave this page and it will keep running.',
+        severity: 'success',
+      })
+    } catch (err) {
+      setSnack({
+        open: true,
+        message: err.response?.data?.error || err.response?.data?.message || err.message || 'Failed to regenerate PDFs',
+        severity: 'error',
+      })
+    }
+  }
+
   if (loading) {
     return (
       <Box sx={{ p: 3, display: 'flex', justifyContent: 'center', py: 10 }}>
@@ -372,6 +450,17 @@ export default function GeneratedOrderDetailPage() {
                 </Button>
               )}
               {canManage && (
+                <Button
+                  variant="outlined"
+                  startIcon={regenerating ? <CircularProgress size={16} /> : <SyncIcon />}
+                  onClick={() => setRegenerateConfirmOpen(true)}
+                  disabled={regenerating || !canRegenerate}
+                  sx={{ borderColor: '#E5E7EB', color: '#111827', borderRadius: '6px', fontWeight: 800 }}
+                >
+                  {regenerating ? 'Regenerating...' : 'Regenerate PDFs'}
+                </Button>
+              )}
+              {canManage && (
                 <Button variant="outlined" startIcon={<DescriptionOutlinedIcon />} onClick={() => setEditOpen(true)} sx={{ borderColor: '#E5E7EB', color: '#111827', borderRadius: '6px', fontWeight: 800 }}>
                   Edit Order Details
                 </Button>
@@ -447,6 +536,29 @@ export default function GeneratedOrderDetailPage() {
           }}
         />
       )}
+
+      <Dialog open={regenerateConfirmOpen} onClose={() => setRegenerateConfirmOpen(false)}>
+        <DialogTitle>Regenerate PDFs</DialogTitle>
+        <DialogContent>
+          <Typography>
+            Existing generated PDFs for this order will be replaced with new files from the currently mapped product.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setRegenerateConfirmOpen(false)} sx={{ color: '#111827', fontWeight: 700 }}>
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            startIcon={regenerating ? <CircularProgress size={16} color="inherit" /> : <SyncIcon />}
+            onClick={handleRegeneratePdfs}
+            disabled={regenerating}
+            sx={{ bgcolor: '#5B21D6', borderRadius: '6px', fontWeight: 800, '&:hover': { bgcolor: '#4C1D95' } }}
+          >
+            {regenerating ? 'Regenerating...' : 'Regenerate'}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Snackbar
         open={snack.open}

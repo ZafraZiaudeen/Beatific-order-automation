@@ -9,6 +9,7 @@ export const ETSY_ORDER_STATUSES = [
 
 export const LULU_ORDER_STATUSES = [
   { value: 'pending', label: 'Pending', color: 'default' },
+  { value: 'unpaid', label: 'Unpaid', color: 'warning' },
   { value: 'submitted', label: 'Submitted', color: 'info' },
   { value: 'in_production', label: 'In Production', color: 'warning' },
   { value: 'shipped', label: 'Shipped', color: 'success' },

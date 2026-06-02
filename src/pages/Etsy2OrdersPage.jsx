@@ -70,6 +70,12 @@ const orderWithOnlyStatusItems = (order, status) => {
   }
 }
 
+const canGenerateItemPdf = (item) =>
+  [ITEM_STATUSES.MAPPED, ITEM_STATUSES.FAILED, ITEM_STATUSES.GENERATED].includes(item.status)
+
+const shouldForceGenerateOrder = (order) =>
+  order.items?.some((item) => [ITEM_STATUSES.FAILED, ITEM_STATUSES.GENERATED].includes(item.status))
+
 export default function Etsy2OrdersPage() {
   const navigate = useNavigate()
   const { activeStore, user } = useAuthStore()
@@ -227,13 +233,13 @@ export default function Etsy2OrdersPage() {
   const handleGenerate = async (order) => {
     const etsyOrderId = order?.orderId || order?.etsyOrderId
     if (!etsyOrderId) return
-    if (!order.items?.some((item) => item.status === ITEM_STATUSES.MAPPED)) {
-      setSnack({ open: true, message: 'Only mapped order items can generate PDFs.', severity: 'warning' })
+    if (!order.items?.some(canGenerateItemPdf)) {
+      setSnack({ open: true, message: 'Only mapped or failed generated order items can generate PDFs.', severity: 'warning' })
       return
     }
 
     try {
-      const job = await startPdfGenerationJob(etsyOrderId)
+      const job = await startPdfGenerationJob(etsyOrderId, { force: shouldForceGenerateOrder(order) })
       setGenerationJobs((current) => ({ ...current, [etsyOrderId]: job }))
       setSnack({
         open: true,
@@ -253,7 +259,7 @@ export default function Etsy2OrdersPage() {
     () => filteredOrders
       .filter((order) =>
         selectedOrderIds.includes(order.orderId) &&
-        order.items?.some((item) => item.status === ITEM_STATUSES.MAPPED)
+        order.items?.some(canGenerateItemPdf)
       )
       .map((order) => order.orderId),
     [filteredOrders, selectedOrderIds]
@@ -267,7 +273,10 @@ export default function Etsy2OrdersPage() {
 
     setBulkGenerating(true)
     try {
-      const jobs = await Promise.all(selectedMappedOrderIds.map((etsyOrderId) => startPdfGenerationJob(etsyOrderId)))
+      const jobs = await Promise.all(selectedMappedOrderIds.map((etsyOrderId) => {
+        const order = filteredOrders.find((item) => item.orderId === etsyOrderId)
+        return startPdfGenerationJob(etsyOrderId, { force: shouldForceGenerateOrder(order || {}) })
+      }))
       setGenerationJobs((current) => {
         const next = { ...current }
         for (const job of jobs) next[job.etsyOrderId] = job
