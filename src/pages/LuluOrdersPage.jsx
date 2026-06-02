@@ -243,8 +243,8 @@ export default function LuluOrdersPage() {
   const [dateRange, setDateRange] = useState('all')
   const [snack, setSnack] = useState({ open: false, message: '', severity: 'success' })
 
-  const fetchOrders = useCallback(async () => {
-    setLoading(true)
+  const fetchOrders = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) setLoading(true)
     try {
       const dateParams = getPresetDateRange(dateRange)
       const params = {
@@ -274,11 +274,49 @@ export default function LuluOrdersPage() {
     } catch {
       //
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   }, [activeStore, tab, dateRange])
 
   useEffect(() => { fetchOrders() }, [fetchOrders])
+
+  const refreshActiveStatuses = useCallback(async () => {
+    if (!canManage) return
+
+    const params = {
+      limit: 100,
+      ...(activeStore && { storeId: activeStore._id }),
+    }
+
+    await api.get('/lulu/status/refresh-active', { params })
+    await fetchOrders({ silent: true })
+  }, [activeStore, canManage, fetchOrders])
+
+  useEffect(() => {
+    if (!canManage) return undefined
+
+    let cancelled = false
+    let inFlight = false
+
+    const tick = async () => {
+      if (cancelled || inFlight) return
+      inFlight = true
+      try {
+        await refreshActiveStatuses()
+      } catch {
+        //
+      } finally {
+        inFlight = false
+      }
+    }
+
+    tick()
+    const timer = window.setInterval(tick, 15_000)
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [canManage, refreshActiveStatuses])
 
   const handleBulkSubmit = async () => {
     if (selected.length === 0) return
@@ -633,6 +671,7 @@ export default function LuluOrdersPage() {
                       <SoftBadge label={order.luluStatus || 'pending'} color={
                         order.luluStatus === 'shipped' ? 'success' :
                         order.luluStatus === 'failed' ? 'error' :
+                        order.luluStatus === 'unpaid' ? 'warning' :
                         order.luluStatus === 'in_production' ? 'info' :
                         'default'
                       } />
