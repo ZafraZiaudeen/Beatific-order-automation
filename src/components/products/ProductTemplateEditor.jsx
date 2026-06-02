@@ -151,6 +151,99 @@ const draftMaxLines = (draft) => {
   return Math.max(1, Math.min(12, Math.floor(height / (fontSize * lineHeight)) || 1))
 }
 
+const rectFromText = (text) => ({
+  x: Number(text?.x) || 0,
+  y: Number(text?.y) || 0,
+  width: Math.max(1, Number(text?.width) || 1),
+  height: Math.max(1, Number(text?.height) || 1),
+})
+
+const textInsideSelection = (text, rect) => {
+  const box = rectFromText(text)
+  const x1 = box.x + box.width
+  const y1 = box.y + box.height
+  const rectX1 = rect.x + rect.width
+  const rectY1 = rect.y + rect.height
+  const overlapX = Math.max(0, Math.min(x1, rectX1) - Math.max(box.x, rect.x))
+  const overlapY = Math.max(0, Math.min(y1, rectY1) - Math.max(box.y, rect.y))
+  const overlapRatio = (overlapX * overlapY) / (box.width * box.height)
+  const centerX = box.x + box.width / 2
+  const centerY = box.y + box.height / 2
+  const centerInside = centerX >= rect.x && centerX <= rectX1 && centerY >= rect.y && centerY <= rectY1
+  return centerInside || overlapRatio >= 0.65
+}
+
+const textBounds = (texts) => {
+  const boxes = texts.map(rectFromText)
+  const left = Math.min(...boxes.map((box) => box.x))
+  const top = Math.min(...boxes.map((box) => box.y))
+  const right = Math.max(...boxes.map((box) => box.x + box.width))
+  const bottom = Math.max(...boxes.map((box) => box.y + box.height))
+  return { x: left, y: top, width: right - left, height: bottom - top }
+}
+
+const joinLineWords = (words) =>
+  words.reduce((line, word) => {
+    const value = String(word?.text || '').trim()
+    if (!value) return line
+    if (!line) return value
+    if (/^[,.;:!?)]/.test(value) || /[(]$/.test(line)) return `${line}${value}`
+    return `${line} ${value}`
+  }, '')
+
+const groupTextIntoLines = (texts) => {
+  const sorted = [...texts].sort((a, b) => {
+    const ay = (Number(a.y) || 0) + Math.max(1, Number(a.height) || 1) / 2
+    const by = (Number(b.y) || 0) + Math.max(1, Number(b.height) || 1) / 2
+    return ay === by ? (Number(a.x) || 0) - (Number(b.x) || 0) : ay - by
+  })
+  const avgHeight = sorted.reduce((sum, text) => sum + Math.max(1, Number(text.height) || 1), 0) / Math.max(1, sorted.length)
+  const lineTolerance = Math.max(2, avgHeight * 0.55)
+  const lines = []
+
+  for (const text of sorted) {
+    const centerY = (Number(text.y) || 0) + Math.max(1, Number(text.height) || 1) / 2
+    const current = lines[lines.length - 1]
+    if (current && Math.abs(centerY - current.centerY) <= lineTolerance) {
+      current.items.push(text)
+      current.centerY = (current.centerY * (current.items.length - 1) + centerY) / current.items.length
+    } else {
+      lines.push({ centerY, items: [text] })
+    }
+  }
+
+  return lines
+    .map((line) => joinLineWords(line.items.sort((a, b) => (Number(a.x) || 0) - (Number(b.x) || 0))))
+    .filter(Boolean)
+}
+
+const groupAlign = (texts, bounds) => {
+  const explicit = texts.map((text) => text.align).find((align) => ['left', 'center', 'right'].includes(align))
+  if (explicit && explicit !== 'left') return explicit
+  if (!bounds?.width) return explicit || 'left'
+  const lines = groupTextIntoLines(texts)
+  if (lines.length <= 1) return explicit || 'left'
+  const grouped = []
+  for (const text of [...texts].sort((a, b) => ((Number(a.y) || 0) === (Number(b.y) || 0) ? (Number(a.x) || 0) - (Number(b.x) || 0) : (Number(a.y) || 0) - (Number(b.y) || 0)))) {
+    const centerY = (Number(text.y) || 0) + Math.max(1, Number(text.height) || 1) / 2
+    const current = grouped[grouped.length - 1]
+    if (current && Math.abs(centerY - current.centerY) <= Math.max(2, (Number(text.height) || 1) * 0.55)) {
+      current.items.push(text)
+    } else {
+      grouped.push({ centerY, items: [text] })
+    }
+  }
+  const centeredLines = grouped.filter((line) => {
+    const lineBounds = textBounds(line.items)
+    const leftGap = lineBounds.x - bounds.x
+    const rightGap = bounds.x + bounds.width - (lineBounds.x + lineBounds.width)
+    return Math.abs(leftGap - rightGap) <= Math.max(4, bounds.width * 0.08)
+  })
+  return centeredLines.length >= Math.ceil(grouped.length * 0.6) ? 'center' : (explicit || 'left')
+}
+
+const lineCountForText = (value) => Math.max(1, String(value || '').split(/\r?\n/).filter(Boolean).length)
+
 const variantId = (variant) => String(variant?._id || variant?.id || '')
 const normalizePolicy = (policy) => ({ ...DEFAULT_TEMPLATE_POLICY, ...(policy || {}) })
 const emptyTemplate = () => ({ cover: null, interior: null, fields: [] })
@@ -438,23 +531,21 @@ function TemplateStage({
       return
     }
 
+    const normalizedRect = {
+      x: Math.max(0, Math.min(pageWidth, rect.x)),
+      y: Math.max(0, Math.min(pageHeight, rect.y)),
+      width: Math.max(1, Math.min(pageWidth - Math.max(0, rect.x), rect.width)),
+      height: Math.max(1, Math.min(pageHeight - Math.max(0, rect.y), rect.height)),
+    }
+
     const hits = (page?.extractedText || [])
-      .filter((text) => {
-        const width = Math.max(1, text.width)
-        const height = Math.max(1, text.height)
-        return !(
-          text.x + width < rect.x ||
-          text.x > rect.x + rect.width ||
-          text.y + height < rect.y ||
-          text.y > rect.y + rect.height
-        )
-      })
+      .filter((text) => textInsideSelection(text, normalizedRect))
       .sort((a, b) => (a.y === b.y ? a.x - b.x : a.y - b.y))
 
     if (hits.length === 1) {
       onCreateFromText(hits[0])
     } else if (hits.length > 1) {
-      onCreateFromTextGroup(hits)
+      onCreateFromTextGroup(hits, normalizedRect)
     }
 
     selectionRectRef.current = null
@@ -1390,6 +1481,7 @@ export default function ProductTemplateEditor({ product, onBack, onSaved, librar
       fontFamily: text.fontFamily,
       fontStyle: text.fontStyle,
       fill: text.fill,
+      align: ['left', 'center', 'right'].includes(text.align) ? text.align : 'left',
       replacementFill: defaultReplacementFill(text.fill),
       rotation: typeof text.rotation === 'number' ? text.rotation : 0,
       replacementTextId: text.id,
@@ -1402,7 +1494,7 @@ export default function ProductTemplateEditor({ product, onBack, onSaved, librar
     })
   }
 
-  const createFromTextGroup = (texts) => {
+  const createFromTextGroup = (texts, selectionBounds = null) => {
     if (!fieldsEditable || !texts?.length) return
     if (texts.length === 1) {
       createFromText(texts[0])
@@ -1410,39 +1502,39 @@ export default function ProductTemplateEditor({ product, onBack, onSaved, librar
     }
 
     const sorted = [...texts].sort((a, b) => (a.y === b.y ? a.x - b.x : a.y - b.y))
-    const combinedText = sorted.map((text) => String(text.text || '').trim()).filter(Boolean).join('\n')
+    const combinedText = groupTextIntoLines(sorted).join('\n')
     const firstLine = String(sorted[0]?.text || '').trim()
     const label = firstLine && firstLine.length <= 48 ? firstLine : 'Personalized text'
 
-    const left = Math.min(...sorted.map((text) => text.x))
-    const top = Math.min(...sorted.map((text) => text.y))
-    const right = Math.max(...sorted.map((text) => text.x + Math.max(1, text.width)))
-    const bottom = Math.max(...sorted.map((text) => text.y + Math.max(1, text.height)))
+    const sourceBounds = textBounds(sorted)
+    const fieldBounds = selectionBounds || sourceBounds
 
     const avgFontSize = Math.round(sorted.reduce((sum, text) => sum + (text.fontSize || 0), 0) / sorted.length) || 24
     const sampleFont = sorted.find((text) => text.fontFamily) || sorted[0]
+    const maxLines = Math.max(1, Math.min(12, lineCountForText(combinedText)))
 
     addField({
       label,
       text: combinedText,
       sampleValue: combinedText,
-      x: left,
-      y: top,
-      width: Math.max(right - left + 8, 120),
-      height: Math.max(bottom - top + 6, avgFontSize * (sorted.length + 0.35)),
-      maxLines: Math.max(1, Math.min(12, combinedText.split(/\r?\n/).length || sorted.length)),
-      preserveFontSizeOnWrap: true,
+      x: fieldBounds.x,
+      y: fieldBounds.y,
+      width: Math.max(fieldBounds.width, 8),
+      height: Math.max(fieldBounds.height, 8),
+      maxLines,
+      preserveFontSizeOnWrap: false,
       fontSize: avgFontSize,
       fontFamily: sampleFont.fontFamily,
       fontStyle: sampleFont.fontStyle,
       fill: sampleFont.fill,
+      align: groupAlign(sorted, fieldBounds),
       replacementFill: defaultReplacementFill(sampleFont.fill),
       rotation: typeof sampleFont.rotation === 'number' ? sampleFont.rotation : 0,
       replacementBox: {
-        x: left,
-        y: top,
-        width: Math.max(right - left + 2, 4),
-        height: Math.max(bottom - top + 2, 4),
+        x: sourceBounds.x,
+        y: sourceBounds.y,
+        width: Math.max(sourceBounds.width, 4),
+        height: Math.max(sourceBounds.height, 4),
       },
     })
   }
