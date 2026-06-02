@@ -60,6 +60,42 @@ const TARGETS = {
   interiorFirstPage: { label: 'Inside First Page', productKey: 'interior', policyKey: 'interior' },
 }
 
+const HEX_COLOR_RE = /^#?([0-9a-f]{6}|[0-9a-f]{3})$/i
+const REPLACEMENT_FILL_PRESETS = ['#FFFFFF', '#F8E7D6', '#26343A', '#172126', '#000000']
+
+const normalizeHexColor = (value) => {
+  const trimmed = String(value || '').trim()
+  const match = trimmed.match(HEX_COLOR_RE)
+  if (!match) return null
+  const hex = match[1]
+  const expanded = hex.length === 3 ? hex.split('').map((char) => `${char}${char}`).join('') : hex
+  return `#${expanded.toUpperCase()}`
+}
+
+const hexToRgb = (value) => {
+  const hex = normalizeHexColor(value)
+  if (!hex) return null
+  const int = Number.parseInt(hex.slice(1), 16)
+  return {
+    r: (int >> 16) & 255,
+    g: (int >> 8) & 255,
+    b: int & 255,
+  }
+}
+
+const colorLuminance = (value) => {
+  const rgb = hexToRgb(value)
+  if (!rgb) return null
+  return (0.2126 * rgb.r + 0.7152 * rgb.g + 0.0722 * rgb.b) / 255
+}
+
+const defaultReplacementFill = (textFill) => {
+  const luminance = colorLuminance(textFill)
+  return luminance !== null && luminance > 0.68 ? '#26343A' : '#FFFFFF'
+}
+
+const getReplacementFill = (field) => normalizeHexColor(field?.replacementFill) || defaultReplacementFill(field?.fill)
+
 const pageFromLibraryItem = (item) => {
   if (!item?.pageWidth || !item?.pageHeight) return null
   return {
@@ -124,6 +160,7 @@ const cloneFields = (fields = []) =>
     ...field,
     id: uuidv4(),
     replacementBox: field.replacementBox ? { ...field.replacementBox } : null,
+    replacementFill: field.replacementFill || null,
   }))
 
 const getVariant = (product, templateKey) => {
@@ -531,6 +568,7 @@ function TemplateStage({
                 const box = useReplacementBox ? field.replacementBox : field
                 const sampleText = field.sampleValue || field.label
                 const fittedSample = getFittedTextProps(field, sampleText, { paddingX: 6, paddingY: 4 })
+                const replacementFill = getReplacementFill(field)
                 return (
                   <React.Fragment key={field.id}>
                     {maskOriginal && (
@@ -540,7 +578,7 @@ function TemplateStage({
                         width={Math.max(1, box.width)}
                         height={Math.max(1, box.height)}
                         rotation={field.rotation || 0}
-                        fill="#ffffff"
+                        fill={replacementFill}
                         listening={false}
                       />
                     )}
@@ -678,6 +716,90 @@ function EmptyCanvas({ target, onImport, inherited }) {
   )
 }
 
+function ColorField({ label, value, disabled, onChange }) {
+  const pickerValue = normalizeHexColor(value) || '#000000'
+  const handleTextChange = (event) => {
+    const nextValue = event.target.value
+    const normalized = normalizeHexColor(nextValue)
+    onChange(normalized || nextValue)
+  }
+  const handleBlur = () => {
+    const normalized = normalizeHexColor(value)
+    if (normalized) onChange(normalized)
+  }
+
+  return (
+    <TextField
+      disabled={disabled}
+      label={label}
+      size="small"
+      value={value || ''}
+      onChange={handleTextChange}
+      onBlur={handleBlur}
+      slotProps={{
+        input: {
+          startAdornment: (
+            <Box
+              component="input"
+              type="color"
+              value={pickerValue}
+              disabled={disabled}
+              onChange={(event) => onChange(normalizeHexColor(event.target.value) || event.target.value)}
+              sx={{
+                width: 34,
+                height: 32,
+                border: 0,
+                p: 0,
+                mr: 1,
+                bgcolor: 'transparent',
+                cursor: disabled ? 'default' : 'pointer',
+              }}
+            />
+          ),
+        },
+      }}
+    />
+  )
+}
+
+function ReplacementFillPicker({ value, disabled, onChange }) {
+  const selectedColor = normalizeHexColor(value) || '#FFFFFF'
+
+  return (
+    <Box>
+      <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 800, display: 'block', mb: 0.75 }}>
+        Cover patch colour
+      </Typography>
+      <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: 'wrap', mb: 1 }}>
+        {REPLACEMENT_FILL_PRESETS.map((color) => {
+          const active = selectedColor === color
+          return (
+            <Tooltip key={color} title={color}>
+              <Box
+                component="button"
+                type="button"
+                disabled={disabled}
+                aria-label={`Use ${color}`}
+                onClick={() => onChange(color)}
+                sx={{
+                  width: 30,
+                  height: 30,
+                  borderRadius: '50%',
+                  border: active ? '2px solid #F97316' : '1px solid rgba(145, 158, 171, 0.45)',
+                  bgcolor: color,
+                  cursor: disabled ? 'default' : 'pointer',
+                  boxShadow: active ? '0 0 0 2px rgba(249, 115, 22, 0.16)' : 'none',
+                }}
+              />
+            </Tooltip>
+          )
+        })}
+      </Stack>
+      <ColorField label="Custom patch" value={selectedColor} disabled={disabled} onChange={onChange} />
+    </Box>
+  )
+}
+
 function FieldPanel({
   selected,
   fields,
@@ -721,6 +843,7 @@ function FieldPanel({
   const oneLineHeight = Math.max(1, Math.round((Number(selected.fontSize) || 12) * (Number(selected.lineHeight) || 1.2) * 100) / 100)
   const selectedMaxLines = getFieldMaxLines(selected)
   const keepSizeOnWrap = Boolean(selected.preserveFontSizeOnWrap)
+  const selectedReplacementFill = getReplacementFill(selected)
   const updateMaxLines = (value) => {
     const maxLines = Math.max(1, Math.min(12, Number(value) || 1))
     updateField(selected.id, {
@@ -954,12 +1077,19 @@ function FieldPanel({
           <TextField disabled={!fieldsEditable} select label="Align" size="small" value={selected.align} onChange={(e) => updateField(selected.id, { align: e.target.value })}>
             {['left', 'center', 'right'].map((align) => <MenuItem key={align} value={align}>{align}</MenuItem>)}
           </TextField>
-          <TextField disabled={!fieldsEditable} label="Color" size="small" value={selected.fill} onChange={(e) => updateField(selected.id, { fill: e.target.value })} />
+          <ColorField label="Text colour" value={selected.fill} disabled={!fieldsEditable} onChange={(fill) => updateField(selected.id, { fill })} />
+          {selected.replacementBox && (
+            <ReplacementFillPicker
+              value={selectedReplacementFill}
+              disabled={!fieldsEditable}
+              onChange={(replacementFill) => updateField(selected.id, { replacementFill })}
+            />
+          )}
           <FormControlLabel
             control={<Switch disabled={!fieldsEditable} checked={selected.required} onChange={(e) => updateField(selected.id, { required: e.target.checked })} />}
             label="Required before final PDF"
           />
-          {selected.replacementTextId && (
+          {selected.replacementBox && (
             <Alert severity="success">This field replaces the clicked source PDF text during generation.</Alert>
           )}
 
@@ -1232,6 +1362,7 @@ export default function ProductTemplateEditor({ product, onBack, onSaved, librar
         required: true,
         replacementTextId: draft.replacementTextId || null,
         replacementBox: draft.replacementBox || null,
+        replacementFill: draft.replacementFill || (draft.replacementBox ? defaultReplacementFill(draft.fill) : null),
       }
       return [...current, next]
     })
@@ -1259,6 +1390,7 @@ export default function ProductTemplateEditor({ product, onBack, onSaved, librar
       fontFamily: text.fontFamily,
       fontStyle: text.fontStyle,
       fill: text.fill,
+      replacementFill: defaultReplacementFill(text.fill),
       rotation: typeof text.rotation === 'number' ? text.rotation : 0,
       replacementTextId: text.id,
       replacementBox: {
@@ -1304,6 +1436,7 @@ export default function ProductTemplateEditor({ product, onBack, onSaved, librar
       fontFamily: sampleFont.fontFamily,
       fontStyle: sampleFont.fontStyle,
       fill: sampleFont.fill,
+      replacementFill: defaultReplacementFill(sampleFont.fill),
       rotation: typeof sampleFont.rotation === 'number' ? sampleFont.rotation : 0,
       replacementBox: {
         x: left,
@@ -1612,6 +1745,12 @@ export default function ProductTemplateEditor({ product, onBack, onSaved, librar
         target={target}
         mismatch={luluPageMismatch}
       />
+
+      {libraryMode && (
+        <Alert severity="warning" sx={{ flexShrink: 0, borderRadius: 0 }}>
+          Saving this shared {libraryItem?.category === 'cover' ? 'cover' : 'inside-page'} asset updates every product that uses it. Future or regenerated order PDFs from those products will use these changes.
+        </Alert>
+      )}
 
       {!libraryMode && selectedVariant && (
         <Box sx={{ flexShrink: 0, px: 1.5, py: 1, bgcolor: 'background.paper', borderBottom: '1px dashed', borderColor: 'divider', display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>

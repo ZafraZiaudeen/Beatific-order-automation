@@ -120,13 +120,12 @@ export const getItemStatus = (item) => {
   const hasGeneratedTemplate = hasBothGeneratedPdfs && item.templateFinalizedAt && !item.requiresTemplateFinalization
 
   if (item.luluStatus === 'failed' && hasGeneratedTemplate) return ITEM_STATUSES.FAILED
+  if (hasGeneratedTemplate && (item.luluStatus === 'shipped' || item.etsyStatus === 'completed')) return ITEM_STATUSES.SHIPPED
+  if (hasGeneratedTemplate) return ITEM_STATUSES.GENERATED
   if (reviewFlagsFor(item).length > 0) return ITEM_STATUSES.AI_FLAGGED
   if (!item.isProductMapped) return ITEM_STATUSES.UNMAPPED
   if (item.hasCustomArtwork || item.etsyStatus === 'custom_orders') return ITEM_STATUSES.CUSTOM
   if (item.luluStatus === 'shipped' || item.etsyStatus === 'completed') return ITEM_STATUSES.SHIPPED
-  if (hasGeneratedTemplate) {
-    return ITEM_STATUSES.GENERATED
-  }
   return ITEM_STATUSES.MAPPED
 }
 

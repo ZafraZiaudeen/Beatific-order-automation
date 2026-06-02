@@ -30,6 +30,7 @@ import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined'
 import api from '../lib/api'
 import useAuthStore from '../stores/authStore'
 import { canManageWorkspace } from '../lib/permissions'
+import { startPdfGenerationJob } from '../lib/pdfGenerationJobs'
 import LuluReviewDialog from '../components/orders/LuluReviewDialog'
 import { LULU_ORDER_STATUSES } from '../lib/constants'
 import {
@@ -91,6 +92,8 @@ function FailureDetailDialog({
   onClose,
   onRetry,
   retrying,
+  onRegenerate,
+  regenerating,
   onExplain,
   explaining,
 }) {
@@ -198,6 +201,15 @@ function FailureDetailDialog({
           {explaining ? 'Explaining...' : 'Explain with OpenRouter'}
         </SoftButton>
         <SoftButton
+          onClick={() => onRegenerate(order)}
+          color="primary"
+          variant="outlined"
+          startIcon={regenerating ? <CircularProgress size={14} /> : <AutoFixHighOutlinedIcon />}
+          disabled={regenerating}
+        >
+          {regenerating ? 'Regenerating...' : 'Regenerate PDFs'}
+        </SoftButton>
+        <SoftButton
           onClick={() => onRetry(order._id)}
           color="warning"
           variant="contained"
@@ -225,6 +237,7 @@ export default function LuluOrdersPage() {
   const [submitting, setSubmitting] = useState(false)
   const [refreshingId, setRefreshingId] = useState(null)
   const [retryingId, setRetryingId] = useState(null)
+  const [regeneratingId, setRegeneratingId] = useState(null)
   const [detailOrder, setDetailOrder] = useState(null)
   const [explainingId, setExplainingId] = useState(null)
   const [dateRange, setDateRange] = useState('all')
@@ -306,6 +319,29 @@ export default function LuluOrdersPage() {
       setSnack({ open: true, message: err.response?.data?.message || 'Failed to retry', severity: 'error' })
     } finally {
       setRetryingId(null)
+    }
+  }
+
+  const handleRegenerate = async (order) => {
+    if (!order?.etsyOrderId) return
+    setRegeneratingId(order._id)
+    try {
+      await startPdfGenerationJob(order.etsyOrderId, { force: true })
+      setDetailOrder(null)
+      setSnack({
+        open: true,
+        message: 'PDF regeneration started. When it finishes, this order will move back to Ready to Submit.',
+        severity: 'success',
+      })
+      fetchOrders()
+    } catch (err) {
+      setSnack({
+        open: true,
+        message: err.response?.data?.message || err.response?.data?.error || 'Failed to regenerate PDFs',
+        severity: 'error',
+      })
+    } finally {
+      setRegeneratingId(null)
     }
   }
 
@@ -636,6 +672,20 @@ export default function LuluOrdersPage() {
                           </Tooltip>
                         )}
                         {order.luluStatus === 'failed' && (
+                          <Tooltip title="Regenerate PDFs">
+                            <IconButton
+                              size="small"
+                              color="primary"
+                              disabled={regeneratingId === order._id}
+                              onClick={() => handleRegenerate(order)}
+                            >
+                              {regeneratingId === order._id
+                                ? <CircularProgress size={14} />
+                                : <AutoFixHighOutlinedIcon fontSize="small" />}
+                            </IconButton>
+                          </Tooltip>
+                        )}
+                        {order.luluStatus === 'failed' && (
                           <Tooltip title="Retry submission">
                             <IconButton
                               size="small"
@@ -676,6 +726,8 @@ export default function LuluOrdersPage() {
           order={detailOrder}
           onRetry={handleRetry}
           retrying={Boolean(detailOrder && retryingId === detailOrder._id)}
+          onRegenerate={handleRegenerate}
+          regenerating={Boolean(detailOrder && regeneratingId === detailOrder._id)}
           onExplain={handleExplainFailure}
           explaining={Boolean(detailOrder && explainingId === detailOrder._id)}
         />
