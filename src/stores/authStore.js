@@ -27,6 +27,7 @@ const useAuthStore = create((set, get) => ({
       persistAuthSession({
         token: data.token,
         tokenExpiresAt: data.tokenExpiresAt,
+        sessionDurationSeconds: data.sessionDurationSeconds,
         user: data.user,
         company: data.company,
       })
@@ -54,6 +55,7 @@ const useAuthStore = create((set, get) => ({
       persistAuthSession({
         token: data.token,
         tokenExpiresAt: data.tokenExpiresAt,
+        sessionDurationSeconds: data.sessionDurationSeconds,
         user: data.user,
         company: data.company,
         stores: data.stores || [],
@@ -154,6 +156,7 @@ const useAuthStore = create((set, get) => ({
       persistAuthSession({
         token: data.token,
         tokenExpiresAt: data.tokenExpiresAt,
+        sessionDurationSeconds: data.sessionDurationSeconds,
         user: data.user,
         company: data.company,
         stores: data.stores || [],

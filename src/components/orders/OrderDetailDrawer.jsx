@@ -51,8 +51,7 @@ const resolveEffectiveTemplateFields = (product, order) => {
 }
 
 const buildThumbnailUrl = (url) => {
-  if (!url || !url.includes('cloudinary.com')) return url
-  return url.replace('/upload/', '/upload/q_auto,w_400,f_webp/')
+  return url
 }
 
 const getInitials = (name = '') =>
