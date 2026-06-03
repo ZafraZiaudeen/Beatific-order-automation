@@ -4,9 +4,9 @@ import { getStoredToken } from './authSession'
 export const MAX_ASSET_FILE_SIZE = 50 * 1024 * 1024
 
 export const buildAssetThumbnailUrl = (url, width = 400) => {
+  void width
   if (!url) return ''
-  if (!url.includes('cloudinary.com')) return url
-  return url.replace('/upload/', `/upload/q_auto,w_${width},f_webp/`)
+  return url
 }
 
 export const normalizeAssetUrl = (value = '') => {

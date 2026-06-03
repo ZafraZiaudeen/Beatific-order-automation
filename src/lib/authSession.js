@@ -45,11 +45,15 @@ const decodeTokenExpiry = (token) => {
   }
 }
 
-const resolveTokenExpiry = ({ token, tokenExpiresAt, fallbackMs = DAY_MS }) => {
+const resolveTokenExpiry = ({ token, tokenExpiresAt, sessionDurationSeconds, fallbackMs = DAY_MS }) => {
   const serverExpiry = tokenExpiresAt ? Date.parse(tokenExpiresAt) : null
   if (serverExpiry && !Number.isNaN(serverExpiry)) return serverExpiry
 
-  return decodeTokenExpiry(token) || Date.now() + fallbackMs
+  const tokenExpiry = decodeTokenExpiry(token)
+  if (tokenExpiry) return tokenExpiry
+
+  const sessionMs = Number(sessionDurationSeconds) * 1000
+  return Date.now() + (sessionMs > 0 ? sessionMs : fallbackMs)
 }
 
 export const isAuthSessionExpired = () => {
@@ -84,12 +88,13 @@ export const getStoredAuthSession = () => {
 export const persistAuthSession = ({
   token,
   tokenExpiresAt,
+  sessionDurationSeconds,
   user,
   company,
   stores = [],
   activeStore = null,
 }) => {
-  const expiresAt = resolveTokenExpiry({ token, tokenExpiresAt })
+  const expiresAt = resolveTokenExpiry({ token, tokenExpiresAt, sessionDurationSeconds })
 
   localStorage.setItem(TOKEN_KEY, token)
   localStorage.setItem(TOKEN_EXPIRES_AT_KEY, String(expiresAt))

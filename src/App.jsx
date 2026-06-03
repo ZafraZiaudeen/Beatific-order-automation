@@ -28,15 +28,31 @@ function AdminOnly({ children }) {
   return children
 }
 
+function getAuthenticatedDestination(user) {
+  if (!user) return '/login'
+  return user.emailVerified ? '/dashboard' : '/verify-email'
+}
+
+function AuthRedirect() {
+  const { user, token } = useAuthStore()
+  return <Navigate to={token && user ? getAuthenticatedDestination(user) : '/login'} replace />
+}
+
+function PublicAuthRoute({ children }) {
+  const { user, token } = useAuthStore()
+  if (token && user) return <Navigate to={getAuthenticatedDestination(user)} replace />
+  return children
+}
+
 export default function App() {
   return (
     <ErrorBoundary>
       <Routes>
         {/* Auth routes */}
-        <Route path="/login" element={<AuthPage defaultTab="login" />} />
-        <Route path="/register" element={<AuthPage defaultTab="register" />} />
-        <Route path="/forgot-password" element={<AuthPage defaultTab="forgot" />} />
-        <Route path="/reset-password" element={<AuthPage defaultTab="reset" />} />
+        <Route path="/login" element={<PublicAuthRoute><AuthPage defaultTab="login" /></PublicAuthRoute>} />
+        <Route path="/register" element={<PublicAuthRoute><AuthPage defaultTab="register" /></PublicAuthRoute>} />
+        <Route path="/forgot-password" element={<PublicAuthRoute><AuthPage defaultTab="forgot" /></PublicAuthRoute>} />
+        <Route path="/reset-password" element={<PublicAuthRoute><AuthPage defaultTab="reset" /></PublicAuthRoute>} />
         <Route path="/verify-email" element={<VerifyEmailPage />} />
         <Route path="/invite/:token" element={<AcceptInvitePage />} />
 
@@ -84,7 +100,7 @@ export default function App() {
         </Route>
 
         {/* Default redirect */}
-        <Route path="*" element={<Navigate to="/login" replace />} />
+        <Route path="*" element={<AuthRedirect />} />
       </Routes>
     </ErrorBoundary>
   )
