@@ -80,6 +80,55 @@ const normalizeLuluPrintSpec = (spec = {}) => ({
   pageCount: spec?.pageCount ? String(spec.pageCount) : '',
 })
 
+const emptyMatchRule = () => ({ label: '', value: '' })
+
+const emptyVariant = () => ({
+  name: '',
+  coverAssetId: null,
+  insidePageAssetId: null,
+  matchRules: [],
+})
+
+const normalizeVariantsForForm = (variants = []) =>
+  variants.map((variant) => ({
+    _id: variant._id || variant.id,
+    name: variant.name || '',
+    coverAssetId: variant.coverAssetId || null,
+    insidePageAssetId: variant.insidePageAssetId || null,
+    matchRules: (variant.matchRules || []).map((rule) => ({
+      label: rule.label || '',
+      value: rule.value || '',
+    })),
+    luluPrintSpec: variant.luluPrintSpec || null,
+    podPackageId: variant.podPackageId || null,
+    interiorPdfUrl: variant.interiorPdfUrl || null,
+    priceLabel: variant.priceLabel || null,
+    templatePolicy: variant.templatePolicy,
+    printTemplate: variant.printTemplate,
+  }))
+
+const variantsForPayload = (variants = []) =>
+  variants
+    .map((variant) => ({
+      _id: variant._id,
+      name: variant.name.trim(),
+      coverAssetId: variant.coverAssetId || null,
+      insidePageAssetId: variant.insidePageAssetId || null,
+      matchRules: (variant.matchRules || [])
+        .map((rule) => ({
+          label: rule.label.trim(),
+          value: rule.value.trim(),
+        }))
+        .filter((rule) => rule.label && rule.value),
+      luluPrintSpec: variant.luluPrintSpec || undefined,
+      podPackageId: variant.podPackageId || undefined,
+      interiorPdfUrl: variant.interiorPdfUrl || undefined,
+      priceLabel: variant.priceLabel || undefined,
+      templatePolicy: variant.templatePolicy || undefined,
+      printTemplate: variant.printTemplate || undefined,
+    }))
+    .filter((variant) => variant.name)
+
 function AssetOptionCard(props) {
   const { option, icon } = props
   return (
@@ -116,6 +165,11 @@ function AssetOptionCard(props) {
         <Typography variant="caption" sx={{ color: 'text.secondary' }} noWrap>
           {option?.pageCount ? `${option.pageCount} page${option.pageCount === 1 ? '' : 's'}` : 'Preview available after PDF import'}
         </Typography>
+        {option?.matchingOptions?.length ? (
+          <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block' }} noWrap>
+            {option.matchingOptions.length} Etsy option{option.matchingOptions.length === 1 ? '' : 's'}
+          </Typography>
+        ) : null}
       </Box>
     </Stack>
   )
@@ -246,6 +300,7 @@ export default function ProductLibrary2ProductsPage({ mode = 'list' }) {
     insidePageAssetId: null,
     luluPrintSpec: DEFAULT_LULU_PRINT_SPEC,
     allowedCoverFinishes: ['MATTE', 'GLOSSY'],
+    variants: [],
   })
 
   const isListMode = mode === 'list'
@@ -281,6 +336,7 @@ export default function ProductLibrary2ProductsPage({ mode = 'list' }) {
         insidePageAssetId: data.insidePageAssetId || null,
         luluPrintSpec: normalizeLuluPrintSpec(data.luluPrintSpec),
         allowedCoverFinishes: data.allowedCoverFinishes?.length ? data.allowedCoverFinishes : ['MATTE', 'GLOSSY'],
+        variants: normalizeVariantsForForm(data.variants || []),
       })
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to load product')
@@ -460,6 +516,70 @@ export default function ProductLibrary2ProductsPage({ mode = 'list' }) {
     }))
   }
 
+  const addVariant = () => {
+    setForm((current) => ({
+      ...current,
+      variants: [...current.variants, emptyVariant()],
+    }))
+  }
+
+  const updateVariant = (index, changes) => {
+    setForm((current) => ({
+      ...current,
+      variants: current.variants.map((variant, variantIndex) =>
+        variantIndex === index ? { ...variant, ...changes } : variant
+      ),
+    }))
+  }
+
+  const removeVariant = (index) => {
+    setForm((current) => ({
+      ...current,
+      variants: current.variants.filter((_, variantIndex) => variantIndex !== index),
+    }))
+  }
+
+  const addVariantRule = (variantIndex) => {
+    setForm((current) => ({
+      ...current,
+      variants: current.variants.map((variant, index) =>
+        index === variantIndex
+          ? { ...variant, matchRules: [...(variant.matchRules || []), emptyMatchRule()] }
+          : variant
+      ),
+    }))
+  }
+
+  const updateVariantRule = (variantIndex, ruleIndex, key, value) => {
+    setForm((current) => ({
+      ...current,
+      variants: current.variants.map((variant, index) =>
+        index === variantIndex
+          ? {
+              ...variant,
+              matchRules: (variant.matchRules || []).map((rule, currentRuleIndex) =>
+                currentRuleIndex === ruleIndex ? { ...rule, [key]: value } : rule
+              ),
+            }
+          : variant
+      ),
+    }))
+  }
+
+  const removeVariantRule = (variantIndex, ruleIndex) => {
+    setForm((current) => ({
+      ...current,
+      variants: current.variants.map((variant, index) =>
+        index === variantIndex
+          ? {
+              ...variant,
+              matchRules: (variant.matchRules || []).filter((_, currentRuleIndex) => currentRuleIndex !== ruleIndex),
+            }
+          : variant
+      ),
+    }))
+  }
+
   const openAssetEditor = (asset, slot) => {
     if (!asset) return
     setEditorState({ asset, slot })
@@ -519,6 +639,7 @@ export default function ProductLibrary2ProductsPage({ mode = 'list' }) {
           luluPrintSpec,
           podPackageId: luluPrintSpec.podPackageId,
           allowedCoverFinishes: form.allowedCoverFinishes,
+          variants: variantsForPayload(form.variants),
         })
         navigate(`/product-library-2/product/${data._id}/designer`)
         return
@@ -533,6 +654,7 @@ export default function ProductLibrary2ProductsPage({ mode = 'list' }) {
         luluPrintSpec,
         podPackageId: luluPrintSpec.podPackageId,
         allowedCoverFinishes: form.allowedCoverFinishes,
+        variants: variantsForPayload(form.variants),
       }
       const { data } = await api.post('/products', payload)
       navigate(`/product-library-2/product/${data._id}/designer`)
@@ -987,6 +1109,139 @@ export default function ProductLibrary2ProductsPage({ mode = 'list' }) {
                     />
                   )}
                 />
+
+                <Box sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1.5, p: 1.5 }}>
+                  <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems={{ xs: 'stretch', sm: 'center' }} sx={{ mb: form.variants.length ? 1.5 : 0 }}>
+                    <Box sx={{ flex: 1, minWidth: 0 }}>
+                      <Typography sx={{ fontWeight: 800 }}>Etsy Variants</Typography>
+                      <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                        Use variants when one listing can choose different covers, inside layouts, months, colors, or other Etsy options.
+                      </Typography>
+                    </Box>
+                    <SoftButton variant="outlined" startIcon={<AddIcon />} onClick={addVariant}>
+                      Add Variant
+                    </SoftButton>
+                  </Stack>
+
+                  <Stack spacing={1.75}>
+                    {form.variants.map((variant, variantIndex) => {
+                      const variantCover = coverAssets.find((asset) => asset._id === variant.coverAssetId) || null
+                      const variantInside = insideAssets.find((asset) => asset._id === variant.insidePageAssetId) || null
+                      const inheritedCover = coverAssets.find((asset) => asset._id === form.coverAssetId) || selectedCover
+                      const inheritedInside = insideAssets.find((asset) => asset._id === form.insidePageAssetId) || selectedInside
+
+                      return (
+                        <Box key={variant._id || variantIndex} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1.5, p: 1.5, bgcolor: '#f8fafc' }}>
+                          <Stack spacing={1.5}>
+                            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.25} alignItems={{ xs: 'stretch', sm: 'center' }}>
+                              <TextField
+                                label="Variant name"
+                                value={variant.name}
+                                onChange={(event) => updateVariant(variantIndex, { name: event.target.value })}
+                                placeholder="Dotted planner - Red spine"
+                                fullWidth
+                              />
+                              <Tooltip title="Remove variant">
+                                <IconButton color="error" onClick={() => removeVariant(variantIndex)} sx={{ alignSelf: { xs: 'flex-end', sm: 'center' } }}>
+                                  <DeleteOutlineIcon fontSize="small" />
+                                </IconButton>
+                              </Tooltip>
+                            </Stack>
+
+                            <Grid container spacing={1.5}>
+                              <Grid size={{ xs: 12, md: 6 }}>
+                                <Autocomplete
+                                  options={coverAssets}
+                                  value={variantCover}
+                                  onChange={(_, value) => updateVariant(variantIndex, { coverAssetId: value?._id || null })}
+                                  getOptionLabel={(option) => option.title || ''}
+                                  isOptionEqualToValue={(option, value) => option._id === value._id}
+                                  renderOption={(props, option) => {
+                                    const { key, ...rest } = props
+                                    return (
+                                      <Box component="li" key={key} {...rest}>
+                                        <AssetOptionCard option={option} icon={DescriptionOutlinedIcon} />
+                                      </Box>
+                                    )
+                                  }}
+                                  renderInput={(params) => (
+                                    <TextField
+                                      {...params}
+                                      label="Variant cover"
+                                      helperText={variantCover ? 'Overrides the product cover.' : `Inherits ${inheritedCover?.title || 'product cover'}.`}
+                                      fullWidth
+                                    />
+                                  )}
+                                />
+                              </Grid>
+                              <Grid size={{ xs: 12, md: 6 }}>
+                                <Autocomplete
+                                  options={insideAssets}
+                                  value={variantInside}
+                                  onChange={(_, value) => updateVariant(variantIndex, { insidePageAssetId: value?._id || null })}
+                                  getOptionLabel={(option) => option.title || ''}
+                                  isOptionEqualToValue={(option, value) => option._id === value._id}
+                                  renderOption={(props, option) => {
+                                    const { key, ...rest } = props
+                                    return (
+                                      <Box component="li" key={key} {...rest}>
+                                        <AssetOptionCard option={option} icon={AutoStoriesOutlinedIcon} />
+                                      </Box>
+                                    )
+                                  }}
+                                  renderInput={(params) => (
+                                    <TextField
+                                      {...params}
+                                      label="Variant inside pages"
+                                      helperText={variantInside ? 'Overrides the product inside pages.' : `Inherits ${inheritedInside?.title || 'product inside pages'}.`}
+                                      fullWidth
+                                    />
+                                  )}
+                                />
+                              </Grid>
+                            </Grid>
+
+                            <Box>
+                              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ xs: 'stretch', sm: 'center' }} sx={{ mb: (variant.matchRules || []).length ? 1 : 0 }}>
+                                <Typography variant="body2" sx={{ color: 'text.secondary', flex: 1 }}>
+                                  Extra variant rules. Linked asset Etsy options are also used automatically.
+                                </Typography>
+                                <SoftButton variant="outlined" startIcon={<AddIcon />} onClick={() => addVariantRule(variantIndex)}>
+                                  Add Rule
+                                </SoftButton>
+                              </Stack>
+                              <Stack spacing={1}>
+                                {(variant.matchRules || []).map((rule, ruleIndex) => (
+                                  <Stack key={ruleIndex} direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ xs: 'stretch', sm: 'center' }}>
+                                    <TextField
+                                      label="Etsy option name"
+                                      value={rule.label}
+                                      onChange={(event) => updateVariantRule(variantIndex, ruleIndex, 'label', event.target.value)}
+                                      placeholder="Layout"
+                                      fullWidth
+                                    />
+                                    <TextField
+                                      label="Required value"
+                                      value={rule.value}
+                                      onChange={(event) => updateVariantRule(variantIndex, ruleIndex, 'value', event.target.value)}
+                                      placeholder="Dotted"
+                                      fullWidth
+                                    />
+                                    <Tooltip title="Remove rule">
+                                      <IconButton color="error" onClick={() => removeVariantRule(variantIndex, ruleIndex)} sx={{ alignSelf: { xs: 'flex-end', sm: 'center' } }}>
+                                        <DeleteOutlineIcon fontSize="small" />
+                                      </IconButton>
+                                    </Tooltip>
+                                  </Stack>
+                                ))}
+                              </Stack>
+                            </Box>
+                          </Stack>
+                        </Box>
+                      )
+                    })}
+                  </Stack>
+                </Box>
 
                 <Box sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1.5, p: 1.5 }}>
                   <Typography sx={{ fontWeight: 800, mb: 1.5 }}>Lulu Print Spec</Typography>

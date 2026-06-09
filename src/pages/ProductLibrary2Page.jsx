@@ -159,6 +159,24 @@ const buildCategoryForm = (section, parentId = null) => ({
   sortOrder: 0,
 })
 
+const emptyMatchingOption = () => ({ label: '', value: '' })
+
+const normalizeMatchingOptionsForForm = (options = []) =>
+  options
+    .map((option) => ({
+      label: String(option?.label || ''),
+      value: String(option?.value || ''),
+    }))
+    .filter((option) => option.label || option.value)
+
+const matchingOptionsForPayload = (options = []) =>
+  options
+    .map((option) => ({
+      label: option.label.trim(),
+      value: option.value.trim(),
+    }))
+    .filter((option) => option.label && option.value)
+
 function CategoryBadge({ trail }) {
   if (!trail?.length) {
     return <Chip label="Uncategorized" size="small" sx={{ alignSelf: 'flex-start', bgcolor: '#f1f5f9', color: '#475569' }} />
@@ -653,6 +671,7 @@ function LibraryItemDialog({ open, category, item, activeStore, categoryOptions,
     paperType: '',
     insideSize: '',
     pageCount: '',
+    matchingOptions: [],
     imageUrl: '',
     tags: '',
     status: 'active',
@@ -676,6 +695,7 @@ function LibraryItemDialog({ open, category, item, activeStore, categoryOptions,
       paperType: item?.paperType || '',
       insideSize: item?.insideSize || '',
       pageCount: item?.pageCount ? String(item.pageCount) : '',
+      matchingOptions: normalizeMatchingOptionsForForm(item?.matchingOptions),
       imageUrl: item?.imageUrl || '',
       tags: item?.tags?.join(', ') || '',
       status: item?.status || 'active',
@@ -691,6 +711,20 @@ function LibraryItemDialog({ open, category, item, activeStore, categoryOptions,
   }, [open])
 
   const set = (key) => (event) => setForm((current) => ({ ...current, [key]: event.target.value }))
+  const addMatchingOption = () => setForm((current) => ({
+    ...current,
+    matchingOptions: [...current.matchingOptions, emptyMatchingOption()],
+  }))
+  const updateMatchingOption = (index, key, value) => setForm((current) => ({
+    ...current,
+    matchingOptions: current.matchingOptions.map((option, optionIndex) =>
+      optionIndex === index ? { ...option, [key]: value } : option
+    ),
+  }))
+  const removeMatchingOption = (index) => setForm((current) => ({
+    ...current,
+    matchingOptions: current.matchingOptions.filter((_, optionIndex) => optionIndex !== index),
+  }))
 
   const luluPackages = luluOptions.packages || []
   const pageCount = Number(form.pageCount || item?.pageCount || 0)
@@ -749,6 +783,7 @@ function LibraryItemDialog({ open, category, item, activeStore, categoryOptions,
             pageCount: Number(form.pageCount || 0),
           }
         : {}),
+      matchingOptions: matchingOptionsForPayload(form.matchingOptions),
       imageUrl: form.imageUrl.trim() || null,
       tags: form.tags.split(',').map((tag) => tag.trim()).filter(Boolean),
     }
@@ -767,7 +802,7 @@ function LibraryItemDialog({ open, category, item, activeStore, categoryOptions,
   }
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
+    <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
       <DialogTitle sx={{ fontWeight: 800 }}>
         {item ? 'Edit Library Item' : `Add ${CATEGORY_CONFIG[category]?.itemLabel || 'item'}`}
       </DialogTitle>
@@ -845,7 +880,7 @@ function LibraryItemDialog({ open, category, item, activeStore, categoryOptions,
             </TextField>
             <TextField
               select
-              label="Paper type"
+              label="Lulu paper"
               value={form.paperType}
               onChange={set('paperType')}
               fullWidth
@@ -867,6 +902,44 @@ function LibraryItemDialog({ open, category, item, activeStore, categoryOptions,
             />
           </Stack>
         )}
+        <Box sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1.5, p: 1.5 }}>
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems={{ xs: 'stretch', sm: 'center' }} sx={{ mb: form.matchingOptions.length ? 1.5 : 0 }}>
+            <Box sx={{ flex: 1, minWidth: 0 }}>
+              <Typography sx={{ fontWeight: 800 }}>Etsy option matching</Typography>
+              <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                Add the order options that must match this {isCoverCategory ? 'cover' : 'inside-page'} asset.
+              </Typography>
+            </Box>
+            <SoftButton variant="outlined" startIcon={<AddIcon />} onClick={addMatchingOption}>
+              Add Option
+            </SoftButton>
+          </Stack>
+          <Stack spacing={1.25}>
+            {form.matchingOptions.map((option, index) => (
+              <Stack key={index} direction={{ xs: 'column', sm: 'row' }} spacing={1.25} alignItems={{ xs: 'stretch', sm: 'center' }}>
+                <TextField
+                  label="Etsy option name"
+                  value={option.label}
+                  onChange={(event) => updateMatchingOption(index, 'label', event.target.value)}
+                  placeholder={isCoverCategory ? 'Spine background colour' : 'Layout'}
+                  fullWidth
+                />
+                <TextField
+                  label="Required value"
+                  value={option.value}
+                  onChange={(event) => updateMatchingOption(index, 'value', event.target.value)}
+                  placeholder={isCoverCategory ? 'Red' : 'Dotted'}
+                  fullWidth
+                />
+                <Tooltip title="Remove option">
+                  <IconButton color="error" onClick={() => removeMatchingOption(index)} sx={{ alignSelf: { xs: 'flex-end', sm: 'center' } }}>
+                    <DeleteOutlineIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+              </Stack>
+            ))}
+          </Stack>
+        </Box>
         <Autocomplete
           options={categoryOptions}
           value={categoryOptions.find((option) => option._id === form.categoryId) || null}
@@ -995,6 +1068,9 @@ function AssetGrid({ items, category, canManage, isProductCategory, onDetail, on
                   <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 600 }}>
                     Cover size: {item.coverSize || pageSizeInches(item)}
                   </Typography>
+                  <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 600 }}>
+                    Etsy options: {item.matchingOptions?.length || 'None'}
+                  </Typography>
                 </Stack>
               )}
               {isInsideCategory && (
@@ -1010,6 +1086,9 @@ function AssetGrid({ items, category, canManage, isProductCategory, onDetail, on
                   </Typography>
                   <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 600 }}>
                     Pages: {item.pageCount || 'Not set'}
+                  </Typography>
+                  <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 600 }}>
+                    Etsy options: {item.matchingOptions?.length || 'None'}
                   </Typography>
                 </Stack>
               )}
@@ -1064,9 +1143,10 @@ function AssetList({ items, category, canManage, isProductCategory, onDetail, on
                   {isCoverCategory && <SoftTableCell>Cover Type</SoftTableCell>}
                   {isCoverCategory && <SoftTableCell>Cover Size</SoftTableCell>}
                   {isInsideCategory && <SoftTableCell>Interior Color</SoftTableCell>}
-                  {isInsideCategory && <SoftTableCell>Paper Type</SoftTableCell>}
+                  {isInsideCategory && <SoftTableCell>Lulu Paper</SoftTableCell>}
                   {isInsideCategory && <SoftTableCell>Size</SoftTableCell>}
                   {isInsideCategory && <SoftTableCell>Pages</SoftTableCell>}
+                  <SoftTableCell>Etsy Options</SoftTableCell>
                 </>
               )}
               <SoftTableCell align="left">Actions</SoftTableCell>
@@ -1100,6 +1180,7 @@ function AssetList({ items, category, canManage, isProductCategory, onDetail, on
                     {isInsideCategory && <SoftTableCell>{item.paperType || '-'}</SoftTableCell>}
                     {isInsideCategory && <SoftTableCell>{item.insideSize || pageSizeInches(item)}</SoftTableCell>}
                     {isInsideCategory && <SoftTableCell>{item.pageCount || '-'}</SoftTableCell>}
+                    <SoftTableCell>{item.matchingOptions?.length || '-'}</SoftTableCell>
                   </>
                 )}
                 <SoftTableCell align="left">
