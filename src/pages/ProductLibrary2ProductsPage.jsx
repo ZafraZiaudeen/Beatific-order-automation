@@ -81,6 +81,8 @@ const normalizeLuluPrintSpec = (spec = {}) => ({
 })
 
 const emptyMatchRule = () => ({ label: '', value: '' })
+const emptyPoolRule = () => ({ key: '', equals: '' })
+const emptyAssetPoolEntry = () => ({ assetId: null, rules: [emptyPoolRule()], priority: 0, enabled: true })
 
 const emptyVariant = () => ({
   name: '',
@@ -128,6 +130,32 @@ const variantsForPayload = (variants = []) =>
       printTemplate: variant.printTemplate || undefined,
     }))
     .filter((variant) => variant.name)
+
+const normalizeAssetPoolForForm = (entries = []) =>
+  entries.map((entry) => ({
+    assetId: entry.assetId || null,
+    rules: (entry.rules?.length ? entry.rules : [emptyPoolRule()]).map((rule) => ({
+      key: rule.key || '',
+      equals: rule.equals || '',
+    })),
+    priority: Number(entry.priority || 0),
+    enabled: entry.enabled !== false,
+  }))
+
+const assetPoolForPayload = (entries = []) =>
+  entries
+    .map((entry) => ({
+      assetId: entry.assetId,
+      rules: (entry.rules || [])
+        .map((rule) => ({
+          key: String(rule.key || '').trim(),
+          equals: String(rule.equals || '').trim(),
+        }))
+        .filter((rule) => rule.key && rule.equals),
+      priority: Number(entry.priority || 0),
+      enabled: entry.enabled !== false,
+    }))
+    .filter((entry) => entry.assetId)
 
 function AssetOptionCard(props) {
   const { option, icon } = props
@@ -300,6 +328,11 @@ export default function ProductLibrary2ProductsPage({ mode = 'list' }) {
     insidePageAssetId: null,
     luluPrintSpec: DEFAULT_LULU_PRINT_SPEC,
     allowedCoverFinishes: ['MATTE', 'GLOSSY'],
+    coverAssetPool: [],
+    insideAssetPool: [],
+    optionSchema: [],
+    templatePool: [],
+    printProfileRules: [],
     variants: [],
   })
 
@@ -336,6 +369,11 @@ export default function ProductLibrary2ProductsPage({ mode = 'list' }) {
         insidePageAssetId: data.insidePageAssetId || null,
         luluPrintSpec: normalizeLuluPrintSpec(data.luluPrintSpec),
         allowedCoverFinishes: data.allowedCoverFinishes?.length ? data.allowedCoverFinishes : ['MATTE', 'GLOSSY'],
+        coverAssetPool: normalizeAssetPoolForForm(data.coverAssetPool || []),
+        insideAssetPool: normalizeAssetPoolForForm(data.insideAssetPool || []),
+        optionSchema: data.optionSchema || [],
+        templatePool: data.templatePool || [],
+        printProfileRules: data.printProfileRules || [],
         variants: normalizeVariantsForForm(data.variants || []),
       })
     } catch (err) {
@@ -393,6 +431,7 @@ export default function ProductLibrary2ProductsPage({ mode = 'list' }) {
     () => insideAssets.find((item) => item._id === form.insidePageAssetId) || product?.insidePageAsset || null,
     [insideAssets, form.insidePageAssetId, product]
   )
+  const usesAssetPools = form.coverAssetPool.length > 0 || form.insideAssetPool.length > 0
   const effectiveLuluPrintSpec = useMemo(() => ({
     ...form.luluPrintSpec,
     trimSizeKey:
@@ -431,8 +470,20 @@ export default function ProductLibrary2ProductsPage({ mode = 'list' }) {
     const warnings = []
     const packages = luluOptions.packages || []
     const spec = effectiveLuluPrintSpec
+    if (usesAssetPools) {
+      return {
+        isValid: true,
+        warnings: ['Lulu package will be resolved per order from the matched cover and inside-page assets.'],
+        podPackageIds: {},
+      }
+    }
     if (!selectedCover || !selectedInside) {
-      return { isValid: false, warnings: ['Choose a cover asset and inside-page asset.'], podPackageIds: {} }
+      const hasPools = form.coverAssetPool.length > 0 && form.insideAssetPool.length > 0
+      return {
+        isValid: hasPools,
+        warnings: hasPools ? ['Lulu package will be resolved from the matching pool assets for each order.'] : ['Choose fallback assets or add cover and inside asset pools.'],
+        podPackageIds: {},
+      }
     }
     if (!spec.trimSizeKey) warnings.push('Choose a Lulu trim size.')
     const coverTrim = luluOptionCode(selectedCover.coverSize, luluOptions.trims)
@@ -465,7 +516,7 @@ export default function ProductLibrary2ProductsPage({ mode = 'list' }) {
       }
     }
     return { isValid: Object.keys(podPackageIds).length > 0, warnings, podPackageIds }
-  }, [effectiveLuluPrintSpec, luluOptions.packages, luluOptions.trims, selectedCover, selectedInside])
+  }, [effectiveLuluPrintSpec, form.coverAssetPool.length, form.insideAssetPool.length, luluOptions.packages, luluOptions.trims, selectedCover, selectedInside, usesAssetPools])
 
   const toggleFinish = (finish) => (event) => {
     setForm((current) => {
@@ -580,6 +631,167 @@ export default function ProductLibrary2ProductsPage({ mode = 'list' }) {
     }))
   }
 
+  const addPoolEntry = (poolKey) => {
+    setForm((current) => ({
+      ...current,
+      [poolKey]: [...current[poolKey], emptyAssetPoolEntry()],
+    }))
+  }
+
+  const updatePoolEntry = (poolKey, entryIndex, changes) => {
+    setForm((current) => ({
+      ...current,
+      [poolKey]: current[poolKey].map((entry, index) =>
+        index === entryIndex ? { ...entry, ...changes } : entry
+      ),
+    }))
+  }
+
+  const removePoolEntry = (poolKey, entryIndex) => {
+    setForm((current) => ({
+      ...current,
+      [poolKey]: current[poolKey].filter((_, index) => index !== entryIndex),
+    }))
+  }
+
+  const addPoolRule = (poolKey, entryIndex) => {
+    setForm((current) => ({
+      ...current,
+      [poolKey]: current[poolKey].map((entry, index) =>
+        index === entryIndex
+          ? { ...entry, rules: [...(entry.rules || []), emptyPoolRule()] }
+          : entry
+      ),
+    }))
+  }
+
+  const updatePoolRule = (poolKey, entryIndex, ruleIndex, key, value) => {
+    setForm((current) => ({
+      ...current,
+      [poolKey]: current[poolKey].map((entry, index) =>
+        index === entryIndex
+          ? {
+              ...entry,
+              rules: (entry.rules || []).map((rule, currentRuleIndex) =>
+                currentRuleIndex === ruleIndex ? { ...rule, [key]: value } : rule
+              ),
+            }
+          : entry
+      ),
+    }))
+  }
+
+  const removePoolRule = (poolKey, entryIndex, ruleIndex) => {
+    setForm((current) => ({
+      ...current,
+      [poolKey]: current[poolKey].map((entry, index) =>
+        index === entryIndex
+          ? { ...entry, rules: (entry.rules || []).filter((_, currentRuleIndex) => currentRuleIndex !== ruleIndex) }
+          : entry
+      ),
+    }))
+  }
+
+  const renderAssetPool = ({ title, poolKey, assets, icon, addLabel }) => (
+    <Box sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1.5, p: 1.5 }}>
+      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems={{ xs: 'stretch', sm: 'center' }} sx={{ mb: form[poolKey].length ? 1.5 : 0 }}>
+        <Box sx={{ flex: 1, minWidth: 0 }}>
+          <Typography sx={{ fontWeight: 800 }}>{title}</Typography>
+          <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+            Canonical asset rules for order matching.
+          </Typography>
+        </Box>
+        <SoftButton variant="outlined" startIcon={<AddIcon />} onClick={() => addPoolEntry(poolKey)}>
+          {addLabel}
+        </SoftButton>
+      </Stack>
+
+      <Stack spacing={1.5}>
+        {form[poolKey].map((entry, entryIndex) => {
+          const selectedAsset = assets.find((asset) => asset._id === entry.assetId) || null
+          return (
+            <Box key={`${poolKey}-${entryIndex}`} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1.5, p: 1.5, bgcolor: '#f8fafc' }}>
+              <Stack spacing={1.25}>
+                <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.25} alignItems={{ xs: 'stretch', md: 'center' }}>
+                  <Autocomplete
+                    options={assets}
+                    value={selectedAsset}
+                    onChange={(_, value) => updatePoolEntry(poolKey, entryIndex, { assetId: value?._id || null })}
+                    getOptionLabel={(option) => option.title || ''}
+                    isOptionEqualToValue={(option, value) => option._id === value._id}
+                    renderOption={(props, option) => {
+                      const { key, ...rest } = props
+                      return (
+                        <Box component="li" key={key} {...rest}>
+                          <AssetOptionCard option={option} icon={icon} />
+                        </Box>
+                      )
+                    }}
+                    renderInput={(params) => (
+                      <TextField {...params} label="Asset" placeholder="Choose asset" fullWidth />
+                    )}
+                    sx={{ flex: 1 }}
+                  />
+                  <TextField
+                    label="Priority"
+                    type="number"
+                    value={entry.priority}
+                    onChange={(event) => updatePoolEntry(poolKey, entryIndex, { priority: event.target.value })}
+                    sx={{ width: { xs: '100%', md: 120 } }}
+                  />
+                  <FormControlLabel
+                    control={(
+                      <Checkbox
+                        checked={entry.enabled !== false}
+                        onChange={(event) => updatePoolEntry(poolKey, entryIndex, { enabled: event.target.checked })}
+                      />
+                    )}
+                    label="Enabled"
+                  />
+                  <Tooltip title="Remove pool asset">
+                    <IconButton color="error" onClick={() => removePoolEntry(poolKey, entryIndex)}>
+                      <DeleteOutlineIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                </Stack>
+
+                <Stack spacing={1}>
+                  {(entry.rules || []).map((rule, ruleIndex) => (
+                    <Stack key={ruleIndex} direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ xs: 'stretch', sm: 'center' }}>
+                      <TextField
+                        label="Canonical key"
+                        value={rule.key}
+                        onChange={(event) => updatePoolRule(poolKey, entryIndex, ruleIndex, 'key', event.target.value)}
+                        placeholder="inside_layout"
+                        fullWidth
+                      />
+                      <TextField
+                        label="Required value"
+                        value={rule.equals}
+                        onChange={(event) => updatePoolRule(poolKey, entryIndex, ruleIndex, 'equals', event.target.value)}
+                        placeholder="Weekly Layout 2"
+                        fullWidth
+                      />
+                      <Tooltip title="Remove rule">
+                        <IconButton color="error" onClick={() => removePoolRule(poolKey, entryIndex, ruleIndex)} sx={{ alignSelf: { xs: 'flex-end', sm: 'center' } }}>
+                          <DeleteOutlineIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                    </Stack>
+                  ))}
+                </Stack>
+
+                <SoftButton variant="outlined" startIcon={<AddIcon />} onClick={() => addPoolRule(poolKey, entryIndex)}>
+                  Add Rule
+                </SoftButton>
+              </Stack>
+            </Box>
+          )
+        })}
+      </Stack>
+    </Box>
+  )
+
   const openAssetEditor = (asset, slot) => {
     if (!asset) return
     setEditorState({ asset, slot })
@@ -614,8 +826,10 @@ export default function ProductLibrary2ProductsPage({ mode = 'list' }) {
       setError('Listing ID is required')
       return
     }
-    if (!form.title.trim() || !form.coverAssetId || !form.insidePageAssetId) {
-      setError('Product title, cover asset, and inside pages are required')
+    const hasCoverSource = Boolean(form.coverAssetId || form.coverAssetPool.length)
+    const hasInsideSource = Boolean(form.insidePageAssetId || form.insideAssetPool.length)
+    if (!form.title.trim() || !hasCoverSource || !hasInsideSource) {
+      setError('Product title, cover source, and inside-page source are required')
       return
     }
     if (!compatibility.isValid) {
@@ -628,7 +842,7 @@ export default function ProductLibrary2ProductsPage({ mode = 'list' }) {
     const luluPrintSpec = {
       ...effectiveLuluPrintSpec,
       pageCount: Number(effectiveLuluPrintSpec.pageCount || 0),
-      podPackageId: compatibility.podPackageIds[effectiveLuluPrintSpec.coverFinish] || '',
+      podPackageId: usesAssetPools ? '' : compatibility.podPackageIds[effectiveLuluPrintSpec.coverFinish] || '',
     }
     try {
       if (isEditMode && product?._id) {
@@ -639,6 +853,11 @@ export default function ProductLibrary2ProductsPage({ mode = 'list' }) {
           luluPrintSpec,
           podPackageId: luluPrintSpec.podPackageId,
           allowedCoverFinishes: form.allowedCoverFinishes,
+          coverAssetPool: assetPoolForPayload(form.coverAssetPool),
+          insideAssetPool: assetPoolForPayload(form.insideAssetPool),
+          optionSchema: form.optionSchema,
+          templatePool: form.templatePool,
+          printProfileRules: form.printProfileRules,
           variants: variantsForPayload(form.variants),
         })
         navigate(`/product-library-2/product/${data._id}/designer`)
@@ -654,6 +873,11 @@ export default function ProductLibrary2ProductsPage({ mode = 'list' }) {
         luluPrintSpec,
         podPackageId: luluPrintSpec.podPackageId,
         allowedCoverFinishes: form.allowedCoverFinishes,
+        coverAssetPool: assetPoolForPayload(form.coverAssetPool),
+        insideAssetPool: assetPoolForPayload(form.insideAssetPool),
+        optionSchema: form.optionSchema,
+        templatePool: form.templatePool,
+        printProfileRules: form.printProfileRules,
         variants: variantsForPayload(form.variants),
       }
       const { data } = await api.post('/products', payload)
@@ -768,7 +992,12 @@ export default function ProductLibrary2ProductsPage({ mode = 'list' }) {
                     </SoftTableCell>
                   </SoftTableRow>
                 ) : (
-                  filteredProducts.map((item) => (
+                  filteredProducts.map((item) => {
+                    const coverPoolCount = item.coverAssetPool?.length || 0
+                    const insidePoolCount = item.insideAssetPool?.length || 0
+                    const hasCoverSource = Boolean(item.coverAssetId || coverPoolCount)
+                    const hasInsideSource = Boolean(item.insidePageAssetId || insidePoolCount)
+                    return (
                     <SoftTableRow key={item._id}>
                       <SoftTableCell>
                         <Typography variant="subtitle2" sx={{ fontFamily: 'monospace' }}>
@@ -804,24 +1033,24 @@ export default function ProductLibrary2ProductsPage({ mode = 'list' }) {
                         </Stack>
                       </SoftTableCell>
                       <SoftTableCell>
-                        <Typography sx={{ fontWeight: 700 }}>{item.coverAsset?.title || 'Not linked'}</Typography>
+                        <Typography sx={{ fontWeight: 700 }}>{coverPoolCount ? `${coverPoolCount} cover pool asset${coverPoolCount === 1 ? '' : 's'}` : item.coverAsset?.title || 'Not linked'}</Typography>
                         <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-                          {item.coverAsset?.pageCount ? `${item.coverAsset.pageCount} page${item.coverAsset.pageCount === 1 ? '' : 's'}` : 'Select a cover asset'}
+                          {item.coverAsset?.pageCount ? `${item.coverAsset.pageCount} page${item.coverAsset.pageCount === 1 ? '' : 's'}` : coverPoolCount ? 'Rule matched' : 'Select a cover asset'}
                         </Typography>
                       </SoftTableCell>
                       <SoftTableCell>
-                        <Typography sx={{ fontWeight: 700 }}>{item.insidePageAsset?.title || 'Not linked'}</Typography>
+                        <Typography sx={{ fontWeight: 700 }}>{insidePoolCount ? `${insidePoolCount} inside pool asset${insidePoolCount === 1 ? '' : 's'}` : item.insidePageAsset?.title || 'Not linked'}</Typography>
                         <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-                          {item.insidePageAsset?.pageCount ? `${item.insidePageAsset.pageCount} page${item.insidePageAsset.pageCount === 1 ? '' : 's'}` : 'Select inside pages'}
+                          {item.insidePageAsset?.pageCount ? `${item.insidePageAsset.pageCount} page${item.insidePageAsset.pageCount === 1 ? '' : 's'}` : insidePoolCount ? 'Rule matched' : 'Select inside pages'}
                         </Typography>
                       </SoftTableCell>
                       <SoftTableCell>
                         <Chip
-                          label={item.coverAssetId && item.insidePageAssetId ? 'Ready' : 'Incomplete'}
+                          label={hasCoverSource && hasInsideSource ? 'Ready' : 'Incomplete'}
                           size="small"
                           sx={{
-                            bgcolor: item.coverAssetId && item.insidePageAssetId ? '#dcfce7' : '#fef3c7',
-                            color: item.coverAssetId && item.insidePageAssetId ? '#166534' : '#92400e',
+                            bgcolor: hasCoverSource && hasInsideSource ? '#dcfce7' : '#fef3c7',
+                            color: hasCoverSource && hasInsideSource ? '#166534' : '#92400e',
                             fontWeight: 700,
                           }}
                         />
@@ -852,7 +1081,8 @@ export default function ProductLibrary2ProductsPage({ mode = 'list' }) {
                         </Stack>
                       </SoftTableCell>
                     </SoftTableRow>
-                  ))
+                    )
+                  })
                 )}
               </SoftTableBody>
             </SoftTable>
@@ -1007,7 +1237,7 @@ export default function ProductLibrary2ProductsPage({ mode = 'list' }) {
     <Box>
       <SoftPageHeader
         title={isCreateMode ? 'Create New Product' : 'Edit Product'}
-        subtitle="Set the product title, choose the linked cover asset, choose the linked inside pages, and save."
+        subtitle="Set fallback assets for simple products, or use asset pools when size, binding, layout, or color can change per order."
         breadcrumbs={[
           <Typography key="root" component={RouterLink} to="/product-library-2" sx={{ color: '#2563eb', textDecoration: 'none' }}>Home</Typography>,
           <Typography key="products" component={RouterLink} to="/product-library-2/product" sx={{ color: '#2563eb', textDecoration: 'none' }}>Products</Typography>,
@@ -1075,11 +1305,10 @@ export default function ProductLibrary2ProductsPage({ mode = 'list' }) {
                   renderInput={(params) => (
                     <TextField
                       {...params}
-                      label="Select Cover Asset"
-                      placeholder="Choose a cover"
-                      helperText="Links this product to one cover asset."
+                      label="Fallback Cover Asset"
+                      placeholder="Choose a fallback cover"
+                      helperText="Used only when no cover pool is configured."
                       fullWidth
-                      required
                     />
                   )}
                 />
@@ -1101,21 +1330,36 @@ export default function ProductLibrary2ProductsPage({ mode = 'list' }) {
                   renderInput={(params) => (
                     <TextField
                       {...params}
-                      label="Select Inside Pages"
-                      placeholder="Choose inside pages"
-                      helperText="Links this product to one inside-page asset."
+                      label="Fallback Inside Pages"
+                      placeholder="Choose fallback inside pages"
+                      helperText="Used only when no inside pool is configured."
                       fullWidth
-                      required
                     />
                   )}
                 />
+
+                {renderAssetPool({
+                  title: 'Cover Asset Pool',
+                  poolKey: 'coverAssetPool',
+                  assets: coverAssets,
+                  icon: DescriptionOutlinedIcon,
+                  addLabel: 'Add Cover',
+                })}
+
+                {renderAssetPool({
+                  title: 'Inside Page Pool',
+                  poolKey: 'insideAssetPool',
+                  assets: insideAssets,
+                  icon: AutoStoriesOutlinedIcon,
+                  addLabel: 'Add Inside',
+                })}
 
                 <Box sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1.5, p: 1.5 }}>
                   <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems={{ xs: 'stretch', sm: 'center' }} sx={{ mb: form.variants.length ? 1.5 : 0 }}>
                     <Box sx={{ flex: 1, minWidth: 0 }}>
                       <Typography sx={{ fontWeight: 800 }}>Etsy Variants</Typography>
                       <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                        Use variants when one listing can choose different covers, inside layouts, months, colors, or other Etsy options.
+                        Use only for true sellable packages. Use asset pools for color, layout, size, binding, timeline, and page-count choices.
                       </Typography>
                     </Box>
                     <SoftButton variant="outlined" startIcon={<AddIcon />} onClick={addVariant}>
@@ -1244,7 +1488,12 @@ export default function ProductLibrary2ProductsPage({ mode = 'list' }) {
                 </Box>
 
                 <Box sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1.5, p: 1.5 }}>
-                  <Typography sx={{ fontWeight: 800, mb: 1.5 }}>Lulu Print Spec</Typography>
+                  <Typography sx={{ fontWeight: 800, mb: 0.5 }}>Fallback Lulu Print Spec</Typography>
+                  <Typography variant="body2" sx={{ color: 'text.secondary', mb: 1.5 }}>
+                    {usesAssetPools
+                      ? 'Pool-backed orders resolve size, binding, page count, paper, and package from the matched assets.'
+                      : 'Used as the product-level Lulu package for simple products with one fixed cover and inside-page set.'}
+                  </Typography>
                   <Grid container spacing={1.5}>
                     <Grid size={{ xs: 12, sm: 6 }}>
                       <TextField

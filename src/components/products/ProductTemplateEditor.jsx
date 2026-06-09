@@ -167,10 +167,12 @@ const textInsideSelection = (text, rect) => {
   const overlapX = Math.max(0, Math.min(x1, rectX1) - Math.max(box.x, rect.x))
   const overlapY = Math.max(0, Math.min(y1, rectY1) - Math.max(box.y, rect.y))
   const overlapRatio = (overlapX * overlapY) / (box.width * box.height)
+  const overlapXRatio = overlapX / box.width
+  const overlapYRatio = overlapY / box.height
   const centerX = box.x + box.width / 2
   const centerY = box.y + box.height / 2
   const centerInside = centerX >= rect.x && centerX <= rectX1 && centerY >= rect.y && centerY <= rectY1
-  return centerInside || overlapRatio >= 0.65
+  return (centerInside && overlapXRatio >= 0.45 && overlapYRatio >= 0.55) || overlapRatio >= 0.75
 }
 
 const textBounds = (texts) => {
@@ -1488,8 +1490,8 @@ export default function ProductTemplateEditor({ product, onBack, onSaved, librar
       replacementBox: {
         x: text.x,
         y: text.y,
-        width: Math.max(text.width + 2, 4),
-        height: Math.max(text.height + 2, 4),
+        width: Math.max(text.width, 4),
+        height: Math.max(text.height, 4),
       },
     })
   }
