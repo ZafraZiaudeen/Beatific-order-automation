@@ -96,7 +96,7 @@ const ComparisonRow = ({ label, etsyValue, libraryValue, isMatch }) => (
 
 export default function Etsy2ItemMappingPage() {
   const navigate = useNavigate()
-  const { orderId, itemId } = useParams()
+  const { orderId } = useParams()
   const [item] = useState(MOCK_ITEM)
   const [originalText, setOriginalText] = useState(item.aiFlag.originalText)
   const [editedText, setEditedText] = useState(item.aiFlag.suggestedText)

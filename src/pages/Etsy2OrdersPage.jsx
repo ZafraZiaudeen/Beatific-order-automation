@@ -42,6 +42,7 @@ import {
 } from '../lib/pdfGenerationJobs'
 
 const ITEMS_PER_PAGE = 10
+const ORDER_FETCH_LIMIT = 2000
 
 const DATE_RANGE_OPTIONS = [
   { value: 'all', label: 'All time' },
@@ -99,22 +100,33 @@ export default function Etsy2OrdersPage() {
   const fetchOrders = useCallback(async () => {
     setLoading(true)
     try {
+      const params = {
+        limit: ORDER_FETCH_LIMIT,
+        ...(activeStore?._id ? { storeId: activeStore._id } : {}),
+        ...(search ? { search } : {}),
+        ...getPresetDateRange(dateRange),
+      }
       const { data } = await api.get('/orders', {
         params: {
+          ...params,
           page: 1,
-          limit: view === 'board' ? 200 : 500,
-          ...(activeStore?._id ? { storeId: activeStore._id } : {}),
-          ...(search ? { search } : {}),
-          ...getPresetDateRange(dateRange),
         },
       })
-      setOrders(data.orders || [])
+      const totalPages = Math.max(1, Number(data.totalPages || 1))
+      const remainingPages = Array.from({ length: Math.max(0, totalPages - 1) }, (_, index) => index + 2)
+      const remainingResults = await Promise.all(
+        remainingPages.map((nextPage) => api.get('/orders', { params: { ...params, page: nextPage } }))
+      )
+      setOrders([
+        ...(data.orders || []),
+        ...remainingResults.flatMap((result) => result.data?.orders || []),
+      ])
     } catch {
       setSnack({ open: true, message: 'Failed to load orders', severity: 'error' })
     } finally {
       setLoading(false)
     }
-  }, [activeStore?._id, dateRange, search, view])
+  }, [activeStore?._id, dateRange, search])
 
   const fetchCounts = useCallback(async () => {
     try {
