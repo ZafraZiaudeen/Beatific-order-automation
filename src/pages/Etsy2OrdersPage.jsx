@@ -20,6 +20,7 @@ import {
 } from '@mui/material'
 import SearchIcon from '@mui/icons-material/Search'
 import SyncIcon from '@mui/icons-material/Sync'
+import RefreshIcon from '@mui/icons-material/Refresh'
 import AddIcon from '@mui/icons-material/Add'
 import PrintIcon from '@mui/icons-material/Print'
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined'
@@ -43,6 +44,7 @@ import {
 
 const ITEMS_PER_PAGE = 10
 const ORDER_FETCH_LIMIT = 2000
+const ORDER_FETCH_RETRY_DELAYS = [1000, 2000]
 
 const DATE_RANGE_OPTIONS = [
   { value: 'all', label: 'All time' },
@@ -77,15 +79,20 @@ const canGenerateItemPdf = (item) =>
 const shouldForceGenerateOrder = (order) =>
   order.items?.some((item) => [ITEM_STATUSES.FAILED, ITEM_STATUSES.GENERATED].includes(item.status))
 
+const wait = (ms) => new Promise((resolve) => window.setTimeout(resolve, ms))
+
 export default function Etsy2OrdersPage() {
   const navigate = useNavigate()
-  const { activeStore, user } = useAuthStore()
+  const { activeStore, stores, user } = useAuthStore()
   const canManage = canManageWorkspace(user)
   const [orders, setOrders] = useState([])
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
+  const [fetchError, setFetchError] = useState('')
   const [search, setSearch] = useState('')
   const [activeFilter, setActiveFilter] = useState('all')
   const [dateRange, setDateRange] = useState('all')
+  const [orderStoreFilter, setOrderStoreFilter] = useState('all')
   const [page, setPage] = useState(1)
   const [view, setView] = useState(() => localStorage.getItem('beatific_etsy2_order_view') || 'list')
   const [statusCounts, setStatusCounts] = useState({})
@@ -97,42 +104,74 @@ export default function Etsy2OrdersPage() {
   const [manualOpen, setManualOpen] = useState(false)
   const [snack, setSnack] = useState({ open: false, message: '', severity: 'success' })
 
-  const fetchOrders = useCallback(async () => {
-    setLoading(true)
+  const selectedOrderStoreId = orderStoreFilter === 'all' ? '' : orderStoreFilter
+  const selectedOrderStore = useMemo(
+    () => stores.find((store) => store._id === selectedOrderStoreId) || null,
+    [selectedOrderStoreId, stores]
+  )
+  const actionStore = selectedOrderStore || activeStore
+
+  const orderQueryParams = useMemo(() => ({
+    limit: ORDER_FETCH_LIMIT,
+    ...(selectedOrderStoreId ? { storeId: selectedOrderStoreId } : {}),
+    ...(search ? { search } : {}),
+    ...getPresetDateRange(dateRange),
+  }), [dateRange, search, selectedOrderStoreId])
+
+  const fetchOrders = useCallback(async ({
+    showLoading = true,
+    showRefreshing = false,
+    retry = true,
+    showError = true,
+  } = {}) => {
+    if (showLoading) setLoading(true)
+    if (showRefreshing) setRefreshing(true)
+
+    let lastError = null
     try {
-      const params = {
-        limit: ORDER_FETCH_LIMIT,
-        ...(activeStore?._id ? { storeId: activeStore._id } : {}),
-        ...(search ? { search } : {}),
-        ...getPresetDateRange(dateRange),
+      for (let attempt = 0; attempt <= ORDER_FETCH_RETRY_DELAYS.length; attempt++) {
+        try {
+          const params = orderQueryParams
+          const { data } = await api.get('/orders', {
+            params: {
+              ...params,
+              page: 1,
+            },
+          })
+          const totalPages = Math.max(1, Number(data.totalPages || 1))
+          const remainingPages = Array.from({ length: Math.max(0, totalPages - 1) }, (_, index) => index + 2)
+          const remainingResults = await Promise.all(
+            remainingPages.map((nextPage) => api.get('/orders', { params: { ...params, page: nextPage } }))
+          )
+          setOrders([
+            ...(data.orders || []),
+            ...remainingResults.flatMap((result) => result.data?.orders || []),
+          ])
+          setFetchError('')
+          return true
+        } catch (err) {
+          lastError = err
+          if (!retry || attempt >= ORDER_FETCH_RETRY_DELAYS.length) break
+          await wait(ORDER_FETCH_RETRY_DELAYS[attempt])
+        }
       }
-      const { data } = await api.get('/orders', {
-        params: {
-          ...params,
-          page: 1,
-        },
-      })
-      const totalPages = Math.max(1, Number(data.totalPages || 1))
-      const remainingPages = Array.from({ length: Math.max(0, totalPages - 1) }, (_, index) => index + 2)
-      const remainingResults = await Promise.all(
-        remainingPages.map((nextPage) => api.get('/orders', { params: { ...params, page: nextPage } }))
-      )
-      setOrders([
-        ...(data.orders || []),
-        ...remainingResults.flatMap((result) => result.data?.orders || []),
-      ])
-    } catch {
-      setSnack({ open: true, message: 'Failed to load orders', severity: 'error' })
+
+      if (showError) {
+        const message = lastError?.response?.data?.message || 'Failed to load saved orders from the database.'
+        setFetchError(message)
+      }
+      return false
     } finally {
-      setLoading(false)
+      if (showLoading) setLoading(false)
+      if (showRefreshing) setRefreshing(false)
     }
-  }, [activeStore?._id, dateRange, search])
+  }, [orderQueryParams])
 
   const fetchCounts = useCallback(async () => {
     try {
       const { data } = await api.get('/orders/status-counts', {
         params: {
-          ...(activeStore?._id ? { storeId: activeStore._id } : {}),
+          ...(selectedOrderStoreId ? { storeId: selectedOrderStoreId } : {}),
           ...getPresetDateRange(dateRange),
         },
       })
@@ -140,7 +179,14 @@ export default function Etsy2OrdersPage() {
     } catch {
       setStatusCounts({})
     }
-  }, [activeStore?._id, dateRange])
+  }, [dateRange, selectedOrderStoreId])
+
+  const reloadOrdersFromDatabase = useCallback(({ showRefreshing = true, showError = true } = {}) => {
+    return Promise.all([
+      fetchOrders({ showLoading: false, showRefreshing, retry: true, showError }),
+      fetchCounts(),
+    ])
+  }, [fetchCounts, fetchOrders])
 
   useEffect(() => {
     fetchOrders()
@@ -149,6 +195,25 @@ export default function Etsy2OrdersPage() {
   useEffect(() => {
     fetchCounts()
   }, [fetchCounts])
+
+  useEffect(() => {
+    if (orderStoreFilter === 'all') return
+    if (stores.some((store) => store._id === orderStoreFilter)) return
+    setOrderStoreFilter('all')
+  }, [orderStoreFilter, stores])
+
+  useEffect(() => {
+    const handleFocus = () => {
+      if (document.visibilityState !== 'visible') return
+      reloadOrdersFromDatabase({ showRefreshing: false, showError: false })
+    }
+    window.addEventListener('focus', handleFocus)
+    document.addEventListener('visibilitychange', handleFocus)
+    return () => {
+      window.removeEventListener('focus', handleFocus)
+      document.removeEventListener('visibilitychange', handleFocus)
+    }
+  }, [reloadOrdersFromDatabase])
 
   const refreshGenerationJobs = useCallback(async () => {
     try {
@@ -165,12 +230,12 @@ export default function Etsy2OrdersPage() {
       )
       if (newlyFinished.length > 0) {
         newlyFinished.forEach((job) => completedGenerationJobIdsRef.current.add(job.id))
-        await Promise.all([fetchOrders(), fetchCounts()])
+        await reloadOrdersFromDatabase({ showRefreshing: false })
       }
     } catch {
       // Keep the list usable if polling fails briefly.
     }
-  }, [fetchCounts, fetchOrders])
+  }, [reloadOrdersFromDatabase])
 
   useEffect(() => {
     refreshGenerationJobs()
@@ -186,7 +251,7 @@ export default function Etsy2OrdersPage() {
   useEffect(() => {
     setPage(1)
     setSelectedOrderIds([])
-  }, [activeFilter, dateRange, search, activeStore?._id, view])
+  }, [activeFilter, dateRange, search, orderStoreFilter, view])
 
   const etsy2Orders = useMemo(
     () => buildOrderGroups(orders).map(toEtsy2Order),
@@ -221,15 +286,15 @@ export default function Etsy2OrdersPage() {
   }
 
   const handleSync = async () => {
-    if (!activeStore?._id) {
+    if (!actionStore?._id) {
       setSnack({ open: true, message: 'Select a store before syncing email orders.', severity: 'warning' })
       return
     }
 
     setSyncing(true)
     try {
-      const { data } = await api.post('/email-orders/fetch', { storeId: activeStore._id })
-      await Promise.all([fetchOrders(), fetchCounts()])
+      const { data } = await api.post('/email-orders/fetch', { storeId: actionStore._id })
+      await reloadOrdersFromDatabase()
       setSnack({
         open: true,
         message: `Email sync complete: ${data.created || 0} created, ${data.updated || 0} updated, ${data.skipped || 0} skipped`,
@@ -382,7 +447,7 @@ export default function Etsy2OrdersPage() {
     try {
       await api.delete('/orders/bulk', { data: { orderIds: sourceOrderIds } })
       setSelectedOrderIds((current) => current.filter((id) => !orderIds.includes(id)))
-      await Promise.all([fetchOrders(), fetchCounts()])
+      await reloadOrdersFromDatabase()
       setSnack({
         open: true,
         message: `${orderIds.length} order group${orderIds.length === 1 ? '' : 's'} deleted`,
@@ -426,6 +491,18 @@ export default function Etsy2OrdersPage() {
           </Box>
 
           <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
+            <FormControl size="small" sx={{ minWidth: 160 }}>
+              <Select
+                value={orderStoreFilter}
+                onChange={(e) => setOrderStoreFilter(e.target.value)}
+                sx={{ bgcolor: '#FFFFFF', borderRadius: '8px', '& fieldset': { borderColor: '#E3E3E7' } }}
+              >
+                <MenuItem value="all">All stores</MenuItem>
+                {stores.map((store) => (
+                  <MenuItem key={store._id} value={store._id}>{store.name}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
             <FormControl size="small" sx={{ minWidth: 140 }}>
               <Select
                 value={dateRange}
@@ -480,6 +557,15 @@ export default function Etsy2OrdersPage() {
                 Delete Selected
               </Button>
             )}
+            <Button
+              variant="outlined"
+              startIcon={refreshing ? <CircularProgress size={16} /> : <RefreshIcon />}
+              onClick={() => reloadOrdersFromDatabase()}
+              disabled={refreshing || loading}
+              sx={{ borderColor: '#E3E3E7', color: '#27272A', '&:hover': { borderColor: '#D4D4D8', bgcolor: '#FAFAFA' } }}
+            >
+              {refreshing ? 'Refreshing...' : 'Refresh'}
+            </Button>
             <Button
               variant="outlined"
               startIcon={syncing ? <CircularProgress size={16} /> : <SyncIcon />}
@@ -559,14 +645,25 @@ export default function Etsy2OrdersPage() {
         <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}>
           <CircularProgress />
         </Box>
+      ) : fetchError ? (
+        <Alert
+          severity="warning"
+          action={
+            <Button color="inherit" size="small" onClick={() => reloadOrdersFromDatabase()}>
+              Retry
+            </Button>
+          }
+          sx={{ borderRadius: '12px' }}
+        >
+          {fetchError}
+        </Alert>
       ) : view === 'board' ? (
         <Box sx={{ p: 2, bgcolor: '#FFFFFF', border: '1px solid #E3E3E7', borderRadius: '12px' }}>
           <OrderKanban
             orders={orders}
             onOrderClick={openEtsy2Detail}
             onOrdersChange={() => {
-              fetchOrders()
-              fetchCounts()
+              reloadOrdersFromDatabase()
             }}
             statusCounts={statusCounts}
             readOnly={!canManage}
@@ -623,12 +720,11 @@ export default function Etsy2OrdersPage() {
         <OrderFormDialog
           open={manualOpen}
           mode="create"
-          activeStore={activeStore}
+          activeStore={actionStore}
           onClose={() => setManualOpen(false)}
           onSaved={() => {
             setManualOpen(false)
-            fetchOrders()
-            fetchCounts()
+            reloadOrdersFromDatabase()
           }}
         />
       )}

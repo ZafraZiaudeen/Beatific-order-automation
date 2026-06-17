@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
+import { useParams, useNavigate } from 'react-router-dom'
 import {
   Alert,
   Avatar,
@@ -319,7 +319,6 @@ function ItemBlock({ item, index }) {
 export default function Etsy2OrderDetailPage() {
   const { orderId } = useParams()
   const navigate = useNavigate()
-  const [searchParams] = useSearchParams()
   const { activeStore, user } = useAuthStore()
   const canManage = canManageWorkspace(user)
   const [group, setGroup] = useState(null)
@@ -404,10 +403,7 @@ export default function Etsy2OrderDetailPage() {
     } : null,
   ].filter(Boolean)
   const activeAsset = previewAssets.find((asset) => asset.kind === activePreviewKind) || previewAssets[0]
-  const showGeneratedPreview = generatedItems.length > 0 && (
-    searchParams.get('view') === 'generated' ||
-    batchStatus === ITEM_STATUSES.GENERATED
-  )
+  const showGeneratedPreview = false
 
   useEffect(() => {
     if (!generating) return undefined

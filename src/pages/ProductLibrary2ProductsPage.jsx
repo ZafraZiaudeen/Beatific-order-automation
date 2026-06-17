@@ -203,8 +203,27 @@ function AssetOptionCard(props) {
   )
 }
 
+const uniqueAssets = (assets = []) => {
+  const seen = new Set()
+  return assets.filter((asset) => {
+    if (!asset?._id || seen.has(asset._id)) return false
+    seen.add(asset._id)
+    return true
+  })
+}
+
+const poolAssets = (pool = [], assetOptions = []) =>
+  uniqueAssets(
+    pool
+      .map((entry) => entry.asset || assetOptions.find((asset) => asset._id === entry.assetId))
+      .filter(Boolean)
+  )
+
 function ProductCanvasCard(props) {
-  const { title, asset, icon, accent, onEditCanvas, canManage } = props
+  const { title, asset, assets = [], icon, accent, onEditCanvas, canManage } = props
+  const displayAssets = assets.length ? assets : (asset ? [asset] : [])
+  const isPoolBacked = assets.length > 0
+  const assetCountLabel = `${displayAssets.length} asset${displayAssets.length === 1 ? '' : 's'}`
   return (
     <SoftCard hover={false} sx={{ height: '100%', p: 0, overflow: 'hidden' }}>
       <Box
@@ -237,35 +256,89 @@ function ProductCanvasCard(props) {
         <Box sx={{ minWidth: 0 }}>
           <Typography variant="h6" sx={{ fontWeight: 800 }}>{title}</Typography>
           <Typography variant="body2" sx={{ color: '#475569' }}>
-            {asset ? asset.title : 'No asset linked yet'}
+            {displayAssets.length ? (isPoolBacked ? `${assetCountLabel} in pool` : displayAssets[0].title) : 'No asset linked yet'}
           </Typography>
         </Box>
       </Box>
 
       <Box sx={{ p: 2.5 }}>
-        <Box
-          sx={{
-            minHeight: 360,
-            borderRadius: '1.2rem',
-            overflow: 'hidden',
-            border: '1px solid',
-            borderColor: 'divider',
-            bgcolor: '#f8fafc',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            mb: 2,
-          }}
-        >
-          {asset?.imageUrl ? (
-            <Box
-              component="img"
-              src={asset.imageUrl}
-              alt=""
-              onError={(event) => { event.currentTarget.src = placeholderImage }}
-              sx={{ width: '100%', height: '100%', objectFit: 'contain', bgcolor: '#fff' }}
-            />
-          ) : (
+        {displayAssets.length ? (
+          <Stack spacing={2} sx={{ mb: 2 }}>
+            {displayAssets.map((displayAsset) => (
+              <Box
+                key={displayAsset._id}
+                sx={{
+                  border: '1px solid',
+                  borderColor: 'divider',
+                  borderRadius: '1.2rem',
+                  overflow: 'hidden',
+                  bgcolor: '#fff',
+                }}
+              >
+                <Box
+                  sx={{
+                    minHeight: 300,
+                    bgcolor: '#f8fafc',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  {displayAsset.imageUrl ? (
+                    <Box
+                      component="img"
+                      src={displayAsset.imageUrl}
+                      alt=""
+                      onError={(event) => { event.currentTarget.src = placeholderImage }}
+                      sx={{ width: '100%', height: '100%', objectFit: 'contain', bgcolor: '#fff' }}
+                    />
+                  ) : (
+                    <Stack spacing={1} alignItems="center" sx={{ px: 3, py: 5, textAlign: 'center' }}>
+                      <Box component={icon} sx={{ fontSize: 44, color: '#94a3b8' }} />
+                      <Typography sx={{ fontWeight: 700, color: '#334155' }}>Canvas preview unavailable</Typography>
+                      <Typography variant="body2" sx={{ color: '#64748b', maxWidth: 280 }}>
+                        Link a PDF-based asset to show its designer canvas here.
+                      </Typography>
+                    </Stack>
+                  )}
+                </Box>
+                <Box sx={{ p: 1.5, borderTop: '1px solid', borderColor: 'divider' }}>
+                  <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.25} alignItems={{ xs: 'stretch', sm: 'center' }}>
+                    <Box sx={{ minWidth: 0, flex: 1 }}>
+                      <Typography sx={{ fontWeight: 800 }} noWrap>{displayAsset.title || 'Untitled asset'}</Typography>
+                      <Typography variant="body2" sx={{ color: '#64748b' }} noWrap>
+                        {isPoolBacked ? 'Asset pool design' : 'Fallback design'}
+                      </Typography>
+                    </Box>
+                    {canManage && (
+                      <SoftButton
+                        variant="outlined"
+                        startIcon={<EditOutlinedIcon />}
+                        onClick={() => onEditCanvas(displayAsset)}
+                      >
+                        Edit Canvas
+                      </SoftButton>
+                    )}
+                  </Stack>
+                </Box>
+              </Box>
+            ))}
+          </Stack>
+        ) : (
+          <Box
+            sx={{
+              minHeight: 360,
+              borderRadius: '1.2rem',
+              overflow: 'hidden',
+              border: '1px solid',
+              borderColor: 'divider',
+              bgcolor: '#f8fafc',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              mb: 2,
+            }}
+          >
             <Stack spacing={1} alignItems="center" sx={{ px: 3, py: 5, textAlign: 'center' }}>
               <Box component={icon} sx={{ fontSize: 44, color: '#94a3b8' }} />
               <Typography sx={{ fontWeight: 700, color: '#334155' }}>Canvas preview unavailable</Typography>
@@ -273,32 +346,23 @@ function ProductCanvasCard(props) {
                 Link a PDF-based asset to show its designer canvas here.
               </Typography>
             </Stack>
-          )}
-        </Box>
+          </Box>
+        )}
 
         <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mb: 2 }}>
-          <Chip label={asset?.pageCount ? `${asset.pageCount} page${asset.pageCount === 1 ? '' : 's'}` : 'No PDF pages'} size="small" />
-          <Chip label={asset?.templateFields?.length ? `${asset.templateFields.length} mapped fields` : 'No mapped fields'} size="small" />
-          {asset?.pageWidth && asset?.pageHeight ? (
+          {isPoolBacked && <Chip label={assetCountLabel} size="small" />}
+          {!isPoolBacked && <Chip label={asset?.pageCount ? `${asset.pageCount} page${asset.pageCount === 1 ? '' : 's'}` : 'No PDF pages'} size="small" />}
+          {!isPoolBacked && <Chip label={asset?.templateFields?.length ? `${asset.templateFields.length} mapped fields` : 'No mapped fields'} size="small" />}
+          {!isPoolBacked && asset?.pageWidth && asset?.pageHeight ? (
             <Chip label={`${(asset.pageWidth / 72).toFixed(2)} x ${(asset.pageHeight / 72).toFixed(2)} in`} size="small" />
           ) : null}
         </Stack>
 
         <Typography variant="body2" sx={{ color: '#64748b', mb: 2.25 }}>
-          {asset?.description || 'This linked asset feeds the product designer and print template workflow.'}
+          {isPoolBacked
+            ? 'These pool assets feed order matching and print template generation.'
+            : asset?.description || 'This linked asset feeds the product designer and print template workflow.'}
         </Typography>
-
-        {canManage && (
-          <SoftButton
-            fullWidth
-            variant="outlined"
-            startIcon={<EditOutlinedIcon />}
-            onClick={onEditCanvas}
-            disabled={!asset}
-          >
-            Edit Canvas
-          </SoftButton>
-        )}
       </Box>
     </SoftCard>
   )
@@ -410,8 +474,8 @@ export default function ProductLibrary2ProductsPage({ mode = 'list' }) {
       return
     }
     fetchProduct()
-    if (isEditMode) fetchAssetOptions()
-  }, [fetchAssetOptions, fetchProduct, fetchProducts, isCreateMode, isEditMode, isListMode])
+    if (isEditMode || isDesignerMode) fetchAssetOptions()
+  }, [fetchAssetOptions, fetchProduct, fetchProducts, isCreateMode, isDesignerMode, isEditMode, isListMode])
 
   const filteredProducts = useMemo(() => {
     const query = search.trim().toLowerCase()
@@ -431,6 +495,16 @@ export default function ProductLibrary2ProductsPage({ mode = 'list' }) {
     () => insideAssets.find((item) => item._id === form.insidePageAssetId) || product?.insidePageAsset || null,
     [insideAssets, form.insidePageAssetId, product]
   )
+  const designerCoverAssets = useMemo(
+    () => poolAssets(product?.coverAssetPool || [], coverAssets),
+    [coverAssets, product?.coverAssetPool]
+  )
+  const designerInsideAssets = useMemo(
+    () => poolAssets(product?.insideAssetPool || [], insideAssets),
+    [insideAssets, product?.insideAssetPool]
+  )
+  const usesCoverAssetPool = form.coverAssetPool.length > 0
+  const usesInsideAssetPool = form.insideAssetPool.length > 0
   const usesAssetPools = form.coverAssetPool.length > 0 || form.insideAssetPool.length > 0
   const effectiveLuluPrintSpec = useMemo(() => ({
     ...form.luluPrintSpec,
@@ -839,19 +913,19 @@ export default function ProductLibrary2ProductsPage({ mode = 'list' }) {
 
     setSaving(true)
     setError('')
-    const luluPrintSpec = {
+    const luluPrintSpec = usesAssetPools ? undefined : {
       ...effectiveLuluPrintSpec,
       pageCount: Number(effectiveLuluPrintSpec.pageCount || 0),
-      podPackageId: usesAssetPools ? '' : compatibility.podPackageIds[effectiveLuluPrintSpec.coverFinish] || '',
+      podPackageId: compatibility.podPackageIds[effectiveLuluPrintSpec.coverFinish] || '',
     }
     try {
       if (isEditMode && product?._id) {
         const { data } = await api.patch(`/products/${product._id}`, {
           title: form.title.trim(),
-          coverAssetId: form.coverAssetId,
-          insidePageAssetId: form.insidePageAssetId,
-          luluPrintSpec,
-          podPackageId: luluPrintSpec.podPackageId,
+          coverAssetId: usesCoverAssetPool ? null : form.coverAssetId || null,
+          insidePageAssetId: usesInsideAssetPool ? null : form.insidePageAssetId || null,
+          luluPrintSpec: usesAssetPools ? null : luluPrintSpec,
+          podPackageId: usesAssetPools ? null : luluPrintSpec.podPackageId,
           allowedCoverFinishes: form.allowedCoverFinishes,
           coverAssetPool: assetPoolForPayload(form.coverAssetPool),
           insideAssetPool: assetPoolForPayload(form.insideAssetPool),
@@ -868,10 +942,10 @@ export default function ProductLibrary2ProductsPage({ mode = 'list' }) {
         listingId: form.listingId.trim(),
         storeId: activeStore?._id,
         title: form.title.trim(),
-        coverAssetId: form.coverAssetId,
-        insidePageAssetId: form.insidePageAssetId,
+        coverAssetId: usesCoverAssetPool ? null : form.coverAssetId || null,
+        insidePageAssetId: usesInsideAssetPool ? null : form.insidePageAssetId || null,
         luluPrintSpec,
-        podPackageId: luluPrintSpec.podPackageId,
+        podPackageId: usesAssetPools ? null : luluPrintSpec.podPackageId,
         allowedCoverFinishes: form.allowedCoverFinishes,
         coverAssetPool: assetPoolForPayload(form.coverAssetPool),
         insideAssetPool: assetPoolForPayload(form.insideAssetPool),
@@ -1201,8 +1275,14 @@ export default function ProductLibrary2ProductsPage({ mode = 'list' }) {
             </Box>
             <Box sx={{ flex: 1 }} />
             <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-              <Chip label={product.coverAsset?.title || 'Cover missing'} size="small" />
-              <Chip label={product.insidePageAsset?.title || 'Inside pages missing'} size="small" />
+              <Chip
+                label={designerCoverAssets.length ? `${designerCoverAssets.length} cover pool asset${designerCoverAssets.length === 1 ? '' : 's'}` : product.coverAsset?.title || 'Cover missing'}
+                size="small"
+              />
+              <Chip
+                label={designerInsideAssets.length ? `${designerInsideAssets.length} inside pool asset${designerInsideAssets.length === 1 ? '' : 's'}` : product.insidePageAsset?.title || 'Inside pages missing'}
+                size="small"
+              />
             </Stack>
           </Stack>
         </SoftCard>
@@ -1212,9 +1292,10 @@ export default function ProductLibrary2ProductsPage({ mode = 'list' }) {
             <ProductCanvasCard
               title="Cover Canvas"
               asset={product.coverAsset}
+              assets={designerCoverAssets}
               icon={DescriptionOutlinedIcon}
               accent="#f5f3ff"
-              onEditCanvas={() => openAssetEditor(product.coverAsset, 'cover')}
+              onEditCanvas={(asset) => openAssetEditor(asset || product.coverAsset, 'cover')}
               canManage={canManage}
             />
           </Grid>
@@ -1222,9 +1303,10 @@ export default function ProductLibrary2ProductsPage({ mode = 'list' }) {
             <ProductCanvasCard
               title="Inside Pages Canvas"
               asset={product.insidePageAsset}
+              assets={designerInsideAssets}
               icon={AutoStoriesOutlinedIcon}
               accent="#ecfeff"
-              onEditCanvas={() => openAssetEditor(product.insidePageAsset, 'inside')}
+              onEditCanvas={(asset) => openAssetEditor(asset || product.insidePageAsset, 'inside')}
               canManage={canManage}
             />
           </Grid>
@@ -1288,55 +1370,59 @@ export default function ProductLibrary2ProductsPage({ mode = 'list' }) {
                   required
                 />
 
-                <Autocomplete
-                  options={compatibleCoverAssets}
-                  value={coverAssets.find((item) => item._id === form.coverAssetId) || null}
-                  onChange={(_, value) => selectCoverAsset(value)}
-                  getOptionLabel={(option) => option.title || ''}
-                  isOptionEqualToValue={(option, value) => option._id === value._id}
-                  renderOption={(props, option) => {
-                    const { key, ...rest } = props
-                    return (
-                      <Box component="li" key={key} {...rest}>
-                        <AssetOptionCard option={option} icon={DescriptionOutlinedIcon} />
-                      </Box>
-                    )
-                  }}
-                  renderInput={(params) => (
-                    <TextField
-                      {...params}
-                      label="Fallback Cover Asset"
-                      placeholder="Choose a fallback cover"
-                      helperText="Used only when no cover pool is configured."
-                      fullWidth
-                    />
-                  )}
-                />
+                {!usesCoverAssetPool && (
+                  <Autocomplete
+                    options={compatibleCoverAssets}
+                    value={coverAssets.find((item) => item._id === form.coverAssetId) || null}
+                    onChange={(_, value) => selectCoverAsset(value)}
+                    getOptionLabel={(option) => option.title || ''}
+                    isOptionEqualToValue={(option, value) => option._id === value._id}
+                    renderOption={(props, option) => {
+                      const { key, ...rest } = props
+                      return (
+                        <Box component="li" key={key} {...rest}>
+                          <AssetOptionCard option={option} icon={DescriptionOutlinedIcon} />
+                        </Box>
+                      )
+                    }}
+                    renderInput={(params) => (
+                      <TextField
+                        {...params}
+                        label="Cover Asset"
+                        placeholder="Choose a fixed cover"
+                        helperText="Used for simple products without a cover pool."
+                        fullWidth
+                      />
+                    )}
+                  />
+                )}
 
-                <Autocomplete
-                  options={insideAssets}
-                  value={insideAssets.find((item) => item._id === form.insidePageAssetId) || null}
-                  onChange={(_, value) => selectInsideAsset(value)}
-                  getOptionLabel={(option) => option.title || ''}
-                  isOptionEqualToValue={(option, value) => option._id === value._id}
-                  renderOption={(props, option) => {
-                    const { key, ...rest } = props
-                    return (
-                      <Box component="li" key={key} {...rest}>
-                        <AssetOptionCard option={option} icon={AutoStoriesOutlinedIcon} />
-                      </Box>
-                    )
-                  }}
-                  renderInput={(params) => (
-                    <TextField
-                      {...params}
-                      label="Fallback Inside Pages"
-                      placeholder="Choose fallback inside pages"
-                      helperText="Used only when no inside pool is configured."
-                      fullWidth
-                    />
-                  )}
-                />
+                {!usesInsideAssetPool && (
+                  <Autocomplete
+                    options={insideAssets}
+                    value={insideAssets.find((item) => item._id === form.insidePageAssetId) || null}
+                    onChange={(_, value) => selectInsideAsset(value)}
+                    getOptionLabel={(option) => option.title || ''}
+                    isOptionEqualToValue={(option, value) => option._id === value._id}
+                    renderOption={(props, option) => {
+                      const { key, ...rest } = props
+                      return (
+                        <Box component="li" key={key} {...rest}>
+                          <AssetOptionCard option={option} icon={AutoStoriesOutlinedIcon} />
+                        </Box>
+                      )
+                    }}
+                    renderInput={(params) => (
+                      <TextField
+                        {...params}
+                        label="Inside Pages"
+                        placeholder="Choose fixed inside pages"
+                        helperText="Used for simple products without an inside-page pool."
+                        fullWidth
+                      />
+                    )}
+                  />
+                )}
 
                 {renderAssetPool({
                   title: 'Cover Asset Pool',
@@ -1487,108 +1573,112 @@ export default function ProductLibrary2ProductsPage({ mode = 'list' }) {
                   </Stack>
                 </Box>
 
-                <Box sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1.5, p: 1.5 }}>
-                  <Typography sx={{ fontWeight: 800, mb: 0.5 }}>Fallback Lulu Print Spec</Typography>
-                  <Typography variant="body2" sx={{ color: 'text.secondary', mb: 1.5 }}>
-                    {usesAssetPools
-                      ? 'Pool-backed orders resolve size, binding, page count, paper, and package from the matched assets.'
-                      : 'Used as the product-level Lulu package for simple products with one fixed cover and inside-page set.'}
-                  </Typography>
-                  <Grid container spacing={1.5}>
-                    <Grid size={{ xs: 12, sm: 6 }}>
-                      <TextField
-                        select
-                        label="Trim size"
-                        value={effectiveLuluPrintSpec.trimSizeKey}
-                        onChange={(event) => updateLuluSpec({ trimSizeKey: event.target.value })}
-                        fullWidth
-                      >
-                        <MenuItem value="">Select trim size</MenuItem>
-                        {(luluOptions.trims || []).map((option) => (
-                          <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
-                        ))}
-                      </TextField>
+                {usesAssetPools ? (
+                  <Alert severity="info">
+                    Pool-backed orders resolve size, binding, page count, paper, and package from the matched cover and inside-page assets.
+                  </Alert>
+                ) : (
+                  <Box sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1.5, p: 1.5 }}>
+                    <Typography sx={{ fontWeight: 800, mb: 0.5 }}>Lulu Print Spec</Typography>
+                    <Typography variant="body2" sx={{ color: 'text.secondary', mb: 1.5 }}>
+                      Used as the product-level Lulu package for simple products with one fixed cover and inside-page set.
+                    </Typography>
+                    <Grid container spacing={1.5}>
+                      <Grid size={{ xs: 12, sm: 6 }}>
+                        <TextField
+                          select
+                          label="Trim size"
+                          value={effectiveLuluPrintSpec.trimSizeKey}
+                          onChange={(event) => updateLuluSpec({ trimSizeKey: event.target.value })}
+                          fullWidth
+                        >
+                          <MenuItem value="">Select trim size</MenuItem>
+                          {(luluOptions.trims || []).map((option) => (
+                            <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
+                          ))}
+                        </TextField>
+                      </Grid>
+                      <Grid size={{ xs: 12, sm: 6 }}>
+                        <TextField
+                          select
+                          label="Binding"
+                          value={effectiveLuluPrintSpec.bindingType}
+                          onChange={(event) => updateLuluSpec({ bindingType: event.target.value })}
+                          fullWidth
+                        >
+                          <MenuItem value="">Select binding</MenuItem>
+                          {(luluOptions.bindings || []).map((option) => (
+                            <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
+                          ))}
+                        </TextField>
+                      </Grid>
+                      <Grid size={{ xs: 12, sm: 6 }}>
+                        <TextField
+                          select
+                          label="Interior color"
+                          value={effectiveLuluPrintSpec.interiorColor}
+                          onChange={(event) => updateLuluSpec({ interiorColor: event.target.value })}
+                          fullWidth
+                        >
+                          <MenuItem value="">Select color</MenuItem>
+                          {(luluOptions.interiorColors || []).map((option) => (
+                            <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
+                          ))}
+                        </TextField>
+                      </Grid>
+                      <Grid size={{ xs: 12, sm: 6 }}>
+                        <TextField
+                          select
+                          label="Paper"
+                          value={effectiveLuluPrintSpec.paperType}
+                          onChange={(event) => updateLuluSpec({ paperType: event.target.value })}
+                          fullWidth
+                        >
+                          <MenuItem value="">Select paper</MenuItem>
+                          {(luluOptions.papers || []).map((option) => (
+                            <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
+                          ))}
+                        </TextField>
+                      </Grid>
+                      <Grid size={{ xs: 12, sm: 4 }}>
+                        <TextField
+                          select
+                          label="Print quality"
+                          value={effectiveLuluPrintSpec.printQuality}
+                          onChange={(event) => updateLuluSpec({ printQuality: event.target.value })}
+                          fullWidth
+                        >
+                          {(luluOptions.printQualities || [{ value: 'STD', label: 'Standard' }, { value: 'PRE', label: 'Premium' }]).map((option) => (
+                            <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
+                          ))}
+                        </TextField>
+                      </Grid>
+                      <Grid size={{ xs: 12, sm: 4 }}>
+                        <TextField
+                          select
+                          label="Cover finish"
+                          value={effectiveLuluPrintSpec.coverFinish}
+                          onChange={(event) => updateLuluSpec({ coverFinish: event.target.value })}
+                          fullWidth
+                        >
+                          {FINISH_OPTIONS.map((option) => (
+                            <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
+                          ))}
+                        </TextField>
+                      </Grid>
+                      <Grid size={{ xs: 12, sm: 4 }}>
+                        <TextField
+                          label="Page count"
+                          type="number"
+                          value={effectiveLuluPrintSpec.pageCount}
+                          onChange={(event) => updateLuluSpec({ pageCount: event.target.value })}
+                          inputProps={{ min: 1, step: 1 }}
+                          fullWidth
+                        />
+                      </Grid>
                     </Grid>
-                    <Grid size={{ xs: 12, sm: 6 }}>
-                      <TextField
-                        select
-                        label="Binding"
-                        value={effectiveLuluPrintSpec.bindingType}
-                        onChange={(event) => updateLuluSpec({ bindingType: event.target.value })}
-                        fullWidth
-                      >
-                        <MenuItem value="">Select binding</MenuItem>
-                        {(luluOptions.bindings || []).map((option) => (
-                          <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
-                        ))}
-                      </TextField>
-                    </Grid>
-                    <Grid size={{ xs: 12, sm: 6 }}>
-                      <TextField
-                        select
-                        label="Interior color"
-                        value={effectiveLuluPrintSpec.interiorColor}
-                        onChange={(event) => updateLuluSpec({ interiorColor: event.target.value })}
-                        fullWidth
-                      >
-                        <MenuItem value="">Select color</MenuItem>
-                        {(luluOptions.interiorColors || []).map((option) => (
-                          <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
-                        ))}
-                      </TextField>
-                    </Grid>
-                    <Grid size={{ xs: 12, sm: 6 }}>
-                      <TextField
-                        select
-                        label="Paper"
-                        value={effectiveLuluPrintSpec.paperType}
-                        onChange={(event) => updateLuluSpec({ paperType: event.target.value })}
-                        fullWidth
-                      >
-                        <MenuItem value="">Select paper</MenuItem>
-                        {(luluOptions.papers || []).map((option) => (
-                          <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
-                        ))}
-                      </TextField>
-                    </Grid>
-                    <Grid size={{ xs: 12, sm: 4 }}>
-                      <TextField
-                        select
-                        label="Print quality"
-                        value={effectiveLuluPrintSpec.printQuality}
-                        onChange={(event) => updateLuluSpec({ printQuality: event.target.value })}
-                        fullWidth
-                      >
-                        {(luluOptions.printQualities || [{ value: 'STD', label: 'Standard' }, { value: 'PRE', label: 'Premium' }]).map((option) => (
-                          <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
-                        ))}
-                      </TextField>
-                    </Grid>
-                    <Grid size={{ xs: 12, sm: 4 }}>
-                      <TextField
-                        select
-                        label="Cover finish"
-                        value={effectiveLuluPrintSpec.coverFinish}
-                        onChange={(event) => updateLuluSpec({ coverFinish: event.target.value })}
-                        fullWidth
-                      >
-                        {FINISH_OPTIONS.map((option) => (
-                          <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
-                        ))}
-                      </TextField>
-                    </Grid>
-                    <Grid size={{ xs: 12, sm: 4 }}>
-                      <TextField
-                        label="Page count"
-                        type="number"
-                        value={effectiveLuluPrintSpec.pageCount}
-                        onChange={(event) => updateLuluSpec({ pageCount: event.target.value })}
-                        inputProps={{ min: 1, step: 1 }}
-                        fullWidth
-                      />
-                    </Grid>
-                  </Grid>
-                </Box>
+                  </Box>
+                )}
 
                 <Box sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1.5, p: 1.5 }}>
                   <Typography sx={{ fontWeight: 800, mb: 0.5 }}>Allowed Cover Finishes</Typography>
@@ -1625,7 +1715,11 @@ export default function ProductLibrary2ProductsPage({ mode = 'list' }) {
             <Stack spacing={2}>
               <Box sx={{ border: '1px solid', borderColor: 'divider', borderRadius: '1.1rem', p: 1.5 }}>
                 <Typography sx={{ fontWeight: 700, mb: 1 }}>Cover</Typography>
-                {selectedCover ? (
+                {usesCoverAssetPool ? (
+                  <Typography variant="body2" sx={{ color: '#64748b' }}>
+                    {form.coverAssetPool.length} cover pool asset{form.coverAssetPool.length === 1 ? '' : 's'} configured.
+                  </Typography>
+                ) : selectedCover ? (
                   <AssetOptionCard option={selectedCover} icon={DescriptionOutlinedIcon} />
                 ) : (
                   <Typography variant="body2" sx={{ color: '#64748b' }}>No cover asset selected yet.</Typography>
@@ -1634,7 +1728,11 @@ export default function ProductLibrary2ProductsPage({ mode = 'list' }) {
 
               <Box sx={{ border: '1px solid', borderColor: 'divider', borderRadius: '1.1rem', p: 1.5 }}>
                 <Typography sx={{ fontWeight: 700, mb: 1 }}>Inside Pages</Typography>
-                {selectedInside ? (
+                {usesInsideAssetPool ? (
+                  <Typography variant="body2" sx={{ color: '#64748b' }}>
+                    {form.insideAssetPool.length} inside-page pool asset{form.insideAssetPool.length === 1 ? '' : 's'} configured.
+                  </Typography>
+                ) : selectedInside ? (
                   <AssetOptionCard option={selectedInside} icon={AutoStoriesOutlinedIcon} />
                 ) : (
                   <Typography variant="body2" sx={{ color: '#64748b' }}>No inside-page asset selected yet.</Typography>

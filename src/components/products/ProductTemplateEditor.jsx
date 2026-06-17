@@ -109,6 +109,18 @@ const pageFromLibraryItem = (item) => {
   }
 }
 
+const uniqueAssets = (assets = []) => {
+  const seen = new Set()
+  return assets.filter((asset) => {
+    if (!asset?._id || seen.has(asset._id)) return false
+    seen.add(asset._id)
+    return true
+  })
+}
+
+const poolAssetsFromProduct = (product, poolKey) =>
+  uniqueAssets((product?.[poolKey] || []).map((entry) => entry.asset).filter(Boolean))
+
 const productFromLibraryItem = (item) => {
   const isCover = item?.category === 'cover'
   return {
@@ -354,22 +366,38 @@ function downloadBlob(blob, filename) {
   window.setTimeout(() => URL.revokeObjectURL(blobUrl), 0)
 }
 
-function MeasurementStatusStrip({ page, geometry, zoom, unit = 'in', target = 'cover', mismatch = null }) {
+function MeasurementStatusStrip({ page, geometry, zoom, unit = 'in', target = 'cover', mismatch = null, luluPrintSpec = null, resolvedFrom = '' }) {
   if (!page) return null
   const width = page.pageWidth || page.width || 0
   const height = page.pageHeight || page.height || 0
-  const panels = target === 'cover' ? getGeometryPanelSummaries(geometry) : []
+  const panels = target === 'cover' && !mismatch ? getGeometryPanelSummaries(geometry) : []
+  const expectedTrim = luluPrintSpec?.trimSizeKey || ''
+  const expectedSource = resolvedFrom === 'order'
+    ? 'order match'
+    : resolvedFrom === 'assetPair'
+      ? 'asset pair'
+      : resolvedFrom === 'productFallback'
+        ? 'fallback package'
+        : 'Lulu package'
 
   return (
     <Box sx={{ flexShrink: 0, px: 1.5, py: 0.85, bgcolor: 'background.paper', borderBottom: '1px dashed', borderColor: 'divider', display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-      <Chip size="small" label={`MediaBox ${formatDualDimensions(width, height)}`} sx={{ fontFamily: 'monospace', fontWeight: 700 }} />
+      <Chip size="small" label={`Actual PDF MediaBox ${formatDualDimensions(width, height)}`} sx={{ fontFamily: 'monospace', fontWeight: 700 }} />
       <Chip size="small" variant="outlined" label={`Preview zoom ${Math.round(zoom * 100)}%`} />
+      {target === 'cover' && mismatch && (
+        <Chip
+          size="small"
+          color="warning"
+          variant="outlined"
+          label={`Expected ${expectedTrim ? `${expectedTrim} ` : ''}${formatDimensions(mismatch.expected.width, mismatch.expected.height, 'pt')}`}
+        />
+      )}
       {panels.map(([label, box]) => (
         <Chip key={label} size="small" variant="outlined" label={`${label} ${formatDimensions(box.width, box.height, unit)}`} />
       ))}
       {mismatch && (
         <Alert severity="warning" sx={{ py: 0, minHeight: 30, alignItems: 'center' }}>
-          PDF page is {formatDimensions(mismatch.page.width, mismatch.page.height, 'pt')}; Lulu expects {formatDimensions(mismatch.expected.width, mismatch.expected.height, 'pt')}.
+          Actual PDF is {formatDimensions(mismatch.page.width, mismatch.page.height, 'pt')}; {expectedSource} expects {formatDimensions(mismatch.expected.width, mismatch.expected.height, 'pt')}. Cover guides are hidden until the PDF and expected package match.
         </Alert>
       )}
     </Box>
@@ -472,6 +500,7 @@ function TemplateStage({
   const [selectionRect, setSelectionRect] = useState(null)
   const pageWidth = page?.pageWidth || 612
   const pageHeight = page?.pageHeight || 792
+  const luluMismatch = target === 'cover' ? getGeometryMismatch(geometry, { pageWidth, pageHeight }) : null
   const activeFields = fields.filter((field) => field.target === target)
   const selectedField = fields.find((field) => field.id === selectedId) || null
   const selectedLocked = Boolean(selectedField?.locked)
@@ -646,7 +675,7 @@ function TemplateStage({
                 geometry={geometry}
                 page={{ pageWidth, pageHeight }}
                 selectedBox={selectedField}
-                showGuides={showGuides && target === 'cover'}
+                showGuides={showGuides && target === 'cover' && !luluMismatch}
                 showRulers={showRulers && target === 'cover'}
                 unit={measurementUnit}
               />
@@ -1232,18 +1261,27 @@ export default function ProductTemplateEditor({ product, onBack, onSaved, librar
   const [measurementUnit, setMeasurementUnit] = useState('in')
   const [alignmentOpacity, setAlignmentOpacity] = useState(0.62)
   const [backgroundOpacity, setBackgroundOpacity] = useState(1)
-  const [geometryState, setGeometryState] = useState({ loading: false, geometry: null, svgDataUrl: null, pageWidth: 0, pageHeight: 0, warnings: [] })
+  const [geometryState, setGeometryState] = useState({ loading: false, geometry: null, svgDataUrl: null, pageWidth: 0, pageHeight: 0, warnings: [], luluPrintSpec: null, resolvedFrom: '' })
   const [autoFit, setAutoFit] = useState(true)
   const [uploading, setUploading] = useState('')
   const [saving, setSaving] = useState(false)
   const [generating, setGenerating] = useState(false)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
+  const [geometryCoverAssetId, setGeometryCoverAssetId] = useState(
+    libraryMode && libraryItem?.category === 'cover' ? libraryItem._id : product?.coverAssetId || product?.coverAsset?._id || ''
+  )
+  const [geometryInsideAssetId, setGeometryInsideAssetId] = useState(
+    libraryMode && libraryItem?.category === 'inside-page' ? libraryItem._id : product?.insidePageAssetId || product?.insidePageAsset?._id || ''
+  )
   const fileInputRef = useRef(null)
   const viewportRef = useRef(null)
   const stageRef = useRef(null)
 
   const variants = libraryMode ? [] : localProduct?.variants || []
+  const geometryCoverAssets = useMemo(() => poolAssetsFromProduct(product, 'coverAssetPool'), [product])
+  const geometryInsideAssets = useMemo(() => poolAssetsFromProduct(product, 'insideAssetPool'), [product])
+  const usesGeometryAssetPools = geometryCoverAssets.length > 0 || geometryInsideAssets.length > 0
   const selectedVariant = getVariant(localProduct, templateKey)
   const selectedVariantId = selectedVariant ? variantId(selectedVariant) : null
   const selectedPolicy = normalizePolicy(selectedVariant?.templatePolicy)
@@ -1302,6 +1340,23 @@ export default function ProductTemplateEditor({ product, onBack, onSaved, librar
   }, [libraryItem, libraryMode, libraryTarget, product])
 
   useEffect(() => {
+    const coverAssets = poolAssetsFromProduct(product, 'coverAssetPool')
+    const insideAssets = poolAssetsFromProduct(product, 'insideAssetPool')
+    const coverId = libraryMode && libraryItem?.category === 'cover'
+      ? libraryItem._id
+      : coverAssets.length === 1
+        ? coverAssets[0]._id
+        : product?.coverAssetId || product?.coverAsset?._id || ''
+    const insideId = libraryMode && libraryItem?.category === 'inside-page'
+      ? libraryItem._id
+      : insideAssets.length === 1
+        ? insideAssets[0]._id
+        : product?.insidePageAssetId || product?.insidePageAsset?._id || ''
+    setGeometryCoverAssetId(coverId || '')
+    setGeometryInsideAssetId(insideId || '')
+  }, [libraryItem, libraryMode, product])
+
+  useEffect(() => {
     const next = resolveEffectiveTemplate(localProduct, templateKey).template.fields || []
     setFields(next)
     setSelectedId(null)
@@ -1310,22 +1365,29 @@ export default function ProductTemplateEditor({ product, onBack, onSaved, librar
   useEffect(() => {
     const productId = libraryMode ? product?._id : localProduct?._id
     if (target !== 'cover' || !productId) {
-      setGeometryState({
-        loading: false,
-        geometry: null,
-        svgDataUrl: null,
-        pageWidth: 0,
-        pageHeight: 0,
-        warnings: target === 'cover' && libraryMode && !product?._id
-          ? ['Open this cover from a product to load exact Lulu spine alignment.']
-          : [],
+        setGeometryState({
+          loading: false,
+          geometry: null,
+          svgDataUrl: null,
+          pageWidth: 0,
+          pageHeight: 0,
+          luluPrintSpec: null,
+          resolvedFrom: '',
+          warnings: target === 'cover' && libraryMode && !product?._id
+            ? ['Open this cover from a product to load exact Lulu spine alignment.']
+            : [],
       })
       return undefined
     }
 
     let cancelled = false
     setGeometryState((current) => ({ ...current, loading: true }))
-    api.get(`/products/${productId}/template/cover-alignment`, { params: selectedVariantId ? { variantId: selectedVariantId } : {} })
+    const params = {
+      ...(selectedVariantId ? { variantId: selectedVariantId } : {}),
+      ...(geometryCoverAssetId ? { coverAssetId: geometryCoverAssetId } : {}),
+      ...(geometryInsideAssetId ? { insidePageAssetId: geometryInsideAssetId } : {}),
+    }
+    api.get(`/products/${productId}/template/cover-alignment`, { params })
       .then(({ data }) => {
         if (cancelled) return
         setGeometryState({
@@ -1334,6 +1396,8 @@ export default function ProductTemplateEditor({ product, onBack, onSaved, librar
           svgDataUrl: data?.svgDataUrl || null,
           pageWidth: data?.pageWidth || data?.geometry?.points?.document?.width || 0,
           pageHeight: data?.pageHeight || data?.geometry?.points?.document?.height || 0,
+          luluPrintSpec: data?.luluPrintSpec || null,
+          resolvedFrom: data?.resolvedFrom || '',
           warnings: data?.warnings || [],
         })
       })
@@ -1345,13 +1409,15 @@ export default function ProductTemplateEditor({ product, onBack, onSaved, librar
           svgDataUrl: null,
           pageWidth: 0,
           pageHeight: 0,
+          luluPrintSpec: null,
+          resolvedFrom: '',
           warnings: [err.response?.data?.message || 'Could not load Lulu cover geometry.'],
         })
       })
     return () => {
       cancelled = true
     }
-  }, [libraryMode, localProduct?._id, product?._id, selectedVariantId, target])
+  }, [geometryCoverAssetId, geometryInsideAssetId, libraryMode, localProduct?._id, product?._id, selectedVariantId, target])
 
   const stats = useMemo(() => ({
     cover: fields.filter((field) => field.target === 'cover').length,
@@ -1581,7 +1647,10 @@ export default function ProductTemplateEditor({ product, onBack, onSaved, librar
       setLocalProduct(libraryMode ? productFromLibraryItem(data) : data)
       onSaved?.(data)
       setAutoFit(true)
-      setMessage(`${libraryMode ? libraryItem.title : selectedVariant ? `${selectedVariant.name} ` : ''}${libraryMode ? ' PDF' : ` ${TARGETS[target].label}`} imported`)
+      const warnings = data?.importWarnings || []
+      setMessage(warnings.length
+        ? `${libraryMode ? libraryItem.title : selectedVariant ? `${selectedVariant.name} ` : ''}${libraryMode ? ' PDF' : ` ${TARGETS[target].label}`} imported. ${warnings.join(' ')}`
+        : `${libraryMode ? libraryItem.title : selectedVariant ? `${selectedVariant.name} ` : ''}${libraryMode ? ' PDF' : ` ${TARGETS[target].label}`} imported`)
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to import PDF. Make sure the Python PDF template service is running.')
     } finally {
@@ -1747,6 +1816,42 @@ export default function ProductTemplateEditor({ product, onBack, onSaved, librar
           </Tabs>
         )}
 
+        {target === 'cover' && usesGeometryAssetPools && (
+          <>
+            <Divider orientation="vertical" flexItem />
+            <Stack direction="row" spacing={1} sx={{ display: { xs: 'none', lg: 'flex' }, alignItems: 'center' }}>
+              <TextField
+                select
+                size="small"
+                label="Geometry cover"
+                value={geometryCoverAssetId}
+                onChange={(event) => setGeometryCoverAssetId(event.target.value)}
+                sx={{ width: 168 }}
+                disabled={libraryMode && libraryItem?.category === 'cover'}
+              >
+                <MenuItem value="">Select cover</MenuItem>
+                {geometryCoverAssets.map((asset) => (
+                  <MenuItem key={asset._id} value={asset._id}>{asset.title}</MenuItem>
+                ))}
+              </TextField>
+              <TextField
+                select
+                size="small"
+                label="Geometry inside"
+                value={geometryInsideAssetId}
+                onChange={(event) => setGeometryInsideAssetId(event.target.value)}
+                sx={{ width: 168 }}
+                disabled={libraryMode && libraryItem?.category === 'inside-page'}
+              >
+                <MenuItem value="">Select inside</MenuItem>
+                {geometryInsideAssets.map((asset) => (
+                  <MenuItem key={asset._id} value={asset._id}>{asset.title}</MenuItem>
+                ))}
+              </TextField>
+            </Stack>
+          </>
+        )}
+
         <Box sx={{ flex: 1 }} />
 
         <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
@@ -1838,6 +1943,8 @@ export default function ProductTemplateEditor({ product, onBack, onSaved, librar
         unit={measurementUnit}
         target={target}
         mismatch={luluPageMismatch}
+        luluPrintSpec={geometryState.luluPrintSpec}
+        resolvedFrom={geometryState.resolvedFrom}
       />
 
       {libraryMode && (

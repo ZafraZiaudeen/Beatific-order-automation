@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Alert,
@@ -18,6 +18,7 @@ import {
 import SearchIcon from '@mui/icons-material/Search'
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined'
 import LocalShippingOutlinedIcon from '@mui/icons-material/LocalShippingOutlined'
+import PrintIcon from '@mui/icons-material/Print'
 import CircularProgressIcon from '@mui/icons-material/AutorenewOutlined'
 import api from '../lib/api'
 import useAuthStore from '../stores/authStore'
@@ -30,8 +31,15 @@ import {
   hasGeneratedOrderItems,
 } from '../lib/generatedOrders'
 import { buildOrderGroups, getPresetDateRange, toEtsy2Order } from '../lib/etsy2Orders'
+import {
+  cancelPdfGenerationJob,
+  isPdfGenerationJobActive,
+  listPdfGenerationJobs,
+  startPdfGenerationJob,
+} from '../lib/pdfGenerationJobs'
 
 const ITEMS_PER_PAGE = 10
+const ORDER_FETCH_LIMIT = 2000
 
 const DATE_RANGE_OPTIONS = [
   { value: 'all', label: 'All time' },
@@ -50,7 +58,7 @@ const STATUS_FILTERS = [
 
 export default function GeneratedOrdersPage() {
   const navigate = useNavigate()
-  const { activeStore, user } = useAuthStore()
+  const { user } = useAuthStore()
   const canManage = canManageWorkspace(user)
   const [orders, setOrders] = useState([])
   const [loading, setLoading] = useState(true)
@@ -59,6 +67,9 @@ export default function GeneratedOrdersPage() {
   const [statusFilter, setStatusFilter] = useState('all')
   const [page, setPage] = useState(1)
   const [selectedOrderIds, setSelectedOrderIds] = useState([])
+  const [generationJobs, setGenerationJobs] = useState({})
+  const completedGenerationJobIdsRef = useRef(new Set())
+  const [bulkGenerating, setBulkGenerating] = useState(false)
   const [bulkSending, setBulkSending] = useState(false)
   const [sendingOrderIds, setSendingOrderIds] = useState({})
   const [snack, setSnack] = useState({ open: false, message: '', severity: 'success' })
@@ -69,8 +80,7 @@ export default function GeneratedOrdersPage() {
       const { data } = await api.get('/orders', {
         params: {
           page: 1,
-          limit: 500,
-          ...(activeStore?._id ? { storeId: activeStore._id } : {}),
+          limit: ORDER_FETCH_LIMIT,
           ...(search ? { search } : {}),
           ...getPresetDateRange(dateRange),
         },
@@ -81,16 +91,49 @@ export default function GeneratedOrdersPage() {
     } finally {
       setLoading(false)
     }
-  }, [activeStore?._id, dateRange, search])
+  }, [dateRange, search])
 
   useEffect(() => {
     fetchOrders()
   }, [fetchOrders])
 
+  const refreshGenerationJobs = useCallback(async () => {
+    try {
+      const jobs = await listPdfGenerationJobs()
+      setGenerationJobs((current) => {
+        const next = { ...current }
+        for (const job of jobs) next[job.etsyOrderId] = job
+        return next
+      })
+
+      const newlyFinished = jobs.filter((job) =>
+        ['succeeded', 'failed', 'cancelled'].includes(job.status) &&
+        !completedGenerationJobIdsRef.current.has(job.id)
+      )
+      if (newlyFinished.length > 0) {
+        newlyFinished.forEach((job) => completedGenerationJobIdsRef.current.add(job.id))
+        await fetchOrders()
+      }
+    } catch {
+      // Keep the generated list usable if polling briefly fails.
+    }
+  }, [fetchOrders])
+
+  useEffect(() => {
+    refreshGenerationJobs()
+  }, [refreshGenerationJobs])
+
+  useEffect(() => {
+    const hasActiveJobs = Object.values(generationJobs).some(isPdfGenerationJobActive)
+    if (!hasActiveJobs) return undefined
+    const timer = window.setInterval(refreshGenerationJobs, 2500)
+    return () => window.clearInterval(timer)
+  }, [generationJobs, refreshGenerationJobs])
+
   useEffect(() => {
     setPage(1)
     setSelectedOrderIds([])
-  }, [dateRange, search, statusFilter, activeStore?._id])
+  }, [dateRange, search, statusFilter])
 
   const groupedOrders = useMemo(
     () => buildOrderGroups(orders).map(toEtsy2Order),
@@ -187,6 +230,101 @@ export default function GeneratedOrdersPage() {
     }
   }
 
+  const canGenerateOrderPdf = useCallback((order) =>
+    order?.items?.some((item) => item.sourceOrder?.isProductMapped), [])
+
+  const handleGenerate = async (order) => {
+    const etsyOrderId = order?.orderId || order?.etsyOrderId
+    if (!etsyOrderId) return
+    if (!canGenerateOrderPdf(order)) {
+      setSnack({ open: true, message: 'Only mapped generated order items can regenerate PDFs.', severity: 'warning' })
+      return
+    }
+
+    try {
+      const job = await startPdfGenerationJob(etsyOrderId, { force: true })
+      setGenerationJobs((current) => ({ ...current, [etsyOrderId]: job }))
+      setSnack({
+        open: true,
+        message: 'PDF generation started. You can leave this page and it will keep running.',
+        severity: 'success',
+      })
+    } catch (err) {
+      setSnack({
+        open: true,
+        message: err.response?.data?.error || err.response?.data?.message || err.message || 'Failed to generate PDFs',
+        severity: 'error',
+      })
+    }
+  }
+
+  const selectedGeneratableOrderIds = useMemo(
+    () => filteredOrders
+      .filter((order) => selectedOrderIds.includes(order.orderId) && canGenerateOrderPdf(order))
+      .map((order) => order.orderId),
+    [canGenerateOrderPdf, filteredOrders, selectedOrderIds]
+  )
+
+  const handleBulkGenerate = async () => {
+    if (selectedGeneratableOrderIds.length === 0) {
+      setSnack({ open: true, message: 'Select generated orders before regenerating PDFs.', severity: 'warning' })
+      return
+    }
+
+    setBulkGenerating(true)
+    try {
+      const jobs = await Promise.all(selectedGeneratableOrderIds.map((etsyOrderId) =>
+        startPdfGenerationJob(etsyOrderId, { force: true })
+      ))
+      setGenerationJobs((current) => {
+        const next = { ...current }
+        for (const job of jobs) next[job.etsyOrderId] = job
+        return next
+      })
+      setSnack({
+        open: true,
+        message: `Started PDF generation for ${jobs.length} selected order group${jobs.length === 1 ? '' : 's'}.`,
+        severity: 'success',
+      })
+    } catch (err) {
+      setSnack({
+        open: true,
+        message: err.response?.data?.error || err.response?.data?.message || err.message || 'Failed to start PDF generation',
+        severity: 'error',
+      })
+    } finally {
+      setBulkGenerating(false)
+    }
+  }
+
+  const handleCancelGeneration = async (order) => {
+    const etsyOrderId = order?.orderId || order?.etsyOrderId
+    const job = generationJobs[etsyOrderId]
+    if (!job?.id) return
+
+    try {
+      const cancelledJob = await cancelPdfGenerationJob(job.id)
+      setGenerationJobs((current) => ({ ...current, [etsyOrderId]: cancelledJob }))
+      setSnack({ open: true, message: 'PDF generation cancellation requested.', severity: 'info' })
+      refreshGenerationJobs()
+    } catch (err) {
+      setSnack({
+        open: true,
+        message: err.response?.data?.message || err.message || 'Failed to cancel PDF generation',
+        severity: 'error',
+      })
+    }
+  }
+
+  const activeGeneratingOrderIds = useMemo(
+    () => Object.fromEntries(
+      Object.entries(generationJobs)
+        .filter(([, job]) => isPdfGenerationJobActive(job))
+        .map(([etsyOrderId]) => [etsyOrderId, true])
+    ),
+    [generationJobs]
+  )
+
   const handleBulkSendToLulu = async () => {
     const selectedOrders = filteredOrders.filter((order) => selectedOrderIds.includes(order.orderId))
     const sourceIds = selectedOrders.flatMap(getGeneratedOrderSourceIds)
@@ -243,6 +381,17 @@ export default function GeneratedOrdersPage() {
               ))}
             </Select>
           </FormControl>
+          {canManage && (
+            <Button
+              variant="outlined"
+              startIcon={bulkGenerating ? <CircularProgress size={16} /> : <PrintIcon />}
+              onClick={handleBulkGenerate}
+              disabled={selectedGeneratableOrderIds.length === 0 || bulkGenerating}
+              sx={{ borderColor: '#E5E7EB', color: '#111827', fontWeight: 800 }}
+            >
+              {bulkGenerating ? 'Generating...' : 'Generate Selected'}
+            </Button>
+          )}
           {canManage && (
             <Button
               variant="contained"
@@ -322,6 +471,8 @@ export default function GeneratedOrdersPage() {
               orders={paginatedOrders}
               onPreview={openGeneratedDetail}
               onEditCanvas={handleEditCanvas}
+              onGenerateOrder={handleGenerate}
+              onCancelGeneration={handleCancelGeneration}
               onSendToLulu={handleSendToLulu}
               canManage={canManage}
               selectedOrderIds={selectedOrderIds}
@@ -329,6 +480,7 @@ export default function GeneratedOrdersPage() {
               onToggleVisible={handleToggleVisible}
               allVisibleSelected={paginatedOrders.length > 0 && selectedVisibleCount === paginatedOrders.length}
               partiallyVisibleSelected={selectedVisibleCount > 0 && selectedVisibleCount < paginatedOrders.length}
+              generatingOrderIds={activeGeneratingOrderIds}
               sendingOrderIds={sendingOrderIds}
             />
           </Box>

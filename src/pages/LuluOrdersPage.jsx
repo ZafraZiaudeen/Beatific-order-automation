@@ -59,6 +59,8 @@ const DATE_RANGE_OPTIONS = [
   { value: '1y', label: 'This year' },
 ]
 
+const ORDER_FETCH_LIMIT = 2000
+
 const getPresetDateRange = (preset) => {
   if (!preset || preset === 'all') return {}
 
@@ -248,8 +250,7 @@ export default function LuluOrdersPage() {
     try {
       const dateParams = getPresetDateRange(dateRange)
       const params = {
-        limit: 100,
-        ...(activeStore && { storeId: activeStore._id }),
+        limit: ORDER_FETCH_LIMIT,
         ...dateParams,
       }
 
@@ -262,7 +263,8 @@ export default function LuluOrdersPage() {
       const statusFiltered = tab ? luluFiltered.filter((o) => o.luluStatus === tab) : luluFiltered
       setOrders(statusFiltered)
 
-      // Ready to submit
+      // Ready to submit. Keep this fresh-only: once an order has any Lulu
+      // status or job ID, it belongs in Submitted Orders / failure handling.
       setReadyOrders(allOrders.filter((o) =>
         o.etsyStatus === 'completed' &&
         !o.luluStatus &&
@@ -276,7 +278,7 @@ export default function LuluOrdersPage() {
     } finally {
       if (!silent) setLoading(false)
     }
-  }, [activeStore, tab, dateRange])
+  }, [tab, dateRange])
 
   useEffect(() => { fetchOrders() }, [fetchOrders])
 
