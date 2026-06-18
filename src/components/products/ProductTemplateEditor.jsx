@@ -72,29 +72,14 @@ const normalizeHexColor = (value) => {
   return `#${expanded.toUpperCase()}`
 }
 
-const hexToRgb = (value) => {
-  const hex = normalizeHexColor(value)
-  if (!hex) return null
-  const int = Number.parseInt(hex.slice(1), 16)
-  return {
-    r: (int >> 16) & 255,
-    g: (int >> 8) & 255,
-    b: int & 255,
-  }
+const defaultReplacementFill = () => 'transparent'
+
+const isSolidReplacementFill = (field) => {
+  const mode = field?.replacementFillMode || 'transparent'
+  return (mode === 'solid' || field?.forceReplacementFill) && Boolean(normalizeHexColor(field?.replacementFill))
 }
 
-const colorLuminance = (value) => {
-  const rgb = hexToRgb(value)
-  if (!rgb) return null
-  return (0.2126 * rgb.r + 0.7152 * rgb.g + 0.0722 * rgb.b) / 255
-}
-
-const defaultReplacementFill = (textFill) => {
-  const luminance = colorLuminance(textFill)
-  return luminance !== null && luminance > 0.68 ? '#26343A' : '#FFFFFF'
-}
-
-const getReplacementFill = (field) => normalizeHexColor(field?.replacementFill) || defaultReplacementFill(field?.fill)
+const getReplacementFill = (field) => normalizeHexColor(field?.replacementFill) || '#FFFFFF'
 
 const pageFromLibraryItem = (item) => {
   if (!item?.pageWidth || !item?.pageHeight) return null
@@ -267,7 +252,9 @@ const cloneFields = (fields = []) =>
     ...field,
     id: uuidv4(),
     replacementBox: field.replacementBox ? { ...field.replacementBox } : null,
-    replacementFill: field.replacementFill || null,
+    replacementFill: field.replacementFill || (field.replacementBox ? defaultReplacementFill() : null),
+    replacementFillMode: field.replacementFillMode || (field.replacementBox ? 'transparent' : undefined),
+    forceReplacementFill: Boolean(field.forceReplacementFill),
   }))
 
 const getVariant = (product, templateKey) => {
@@ -685,7 +672,7 @@ function TemplateStage({
                 const fieldLocked = Boolean(field.locked)
                 const previewMode = previewModes[field.id] || 'sample'
                 const showSample = previewMode !== 'original'
-                const maskOriginal = previewMode === 'sample' && field.replacementBox
+                const maskOriginal = previewMode === 'sample' && field.replacementBox && isSolidReplacementFill(field)
                 const useReplacementBox = Boolean(field.replacementBox && !(field.rotation || 0))
                 const box = useReplacementBox ? field.replacementBox : field
                 const sampleText = field.sampleValue || field.label
@@ -884,11 +871,23 @@ function ColorField({ label, value, disabled, onChange }) {
   )
 }
 
-function ReplacementFillPicker({ value, disabled, onChange }) {
+function ReplacementFillPicker({ value, mode = 'transparent', disabled, onChange, onModeChange }) {
   const selectedColor = normalizeHexColor(value) || '#FFFFFF'
+  const solid = mode === 'solid'
 
   return (
     <Box>
+      <FormControlLabel
+        control={
+          <Switch
+            disabled={disabled}
+            checked={solid}
+            onChange={(event) => onModeChange(event.target.checked ? 'solid' : 'transparent')}
+          />
+        }
+        label="Solid background replacement"
+        sx={{ mb: 0.5 }}
+      />
       <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 800, display: 'block', mb: 0.75 }}>
         Cover patch colour
       </Typography>
@@ -900,7 +899,7 @@ function ReplacementFillPicker({ value, disabled, onChange }) {
               <Box
                 component="button"
                 type="button"
-                disabled={disabled}
+                disabled={disabled || !solid}
                 aria-label={`Use ${color}`}
                 onClick={() => onChange(color)}
                 sx={{
@@ -917,7 +916,7 @@ function ReplacementFillPicker({ value, disabled, onChange }) {
           )
         })}
       </Stack>
-      <ColorField label="Custom patch" value={selectedColor} disabled={disabled} onChange={onChange} />
+      <ColorField label="Custom patch" value={selectedColor} disabled={disabled || !solid} onChange={onChange} />
     </Box>
   )
 }
@@ -1203,8 +1202,14 @@ function FieldPanel({
           {selected.replacementBox && (
             <ReplacementFillPicker
               value={selectedReplacementFill}
+              mode={selected.replacementFillMode || 'transparent'}
               disabled={!fieldsEditable}
-              onChange={(replacementFill) => updateField(selected.id, { replacementFill })}
+              onChange={(replacementFill) => updateField(selected.id, { replacementFill, replacementFillMode: 'solid' })}
+              onModeChange={(replacementFillMode) => updateField(selected.id, {
+                replacementFillMode,
+                replacementFill: replacementFillMode === 'solid' ? selectedReplacementFill : 'transparent',
+                forceReplacementFill: false,
+              })}
             />
           )}
           <FormControlLabel
@@ -1521,7 +1526,9 @@ export default function ProductTemplateEditor({ product, onBack, onSaved, librar
         required: true,
         replacementTextId: draft.replacementTextId || null,
         replacementBox: draft.replacementBox || null,
-        replacementFill: draft.replacementFill || (draft.replacementBox ? defaultReplacementFill(draft.fill) : null),
+        replacementFill: draft.replacementFill || (draft.replacementBox ? defaultReplacementFill() : null),
+        replacementFillMode: draft.replacementFillMode || (draft.replacementBox ? 'transparent' : undefined),
+        forceReplacementFill: Boolean(draft.forceReplacementFill),
       }
       return [...current, next]
     })
@@ -1550,7 +1557,8 @@ export default function ProductTemplateEditor({ product, onBack, onSaved, librar
       fontStyle: text.fontStyle,
       fill: text.fill,
       align: ['left', 'center', 'right'].includes(text.align) ? text.align : 'left',
-      replacementFill: defaultReplacementFill(text.fill),
+      replacementFill: defaultReplacementFill(),
+      replacementFillMode: 'transparent',
       rotation: typeof text.rotation === 'number' ? text.rotation : 0,
       replacementTextId: text.id,
       replacementBox: {
@@ -1596,7 +1604,8 @@ export default function ProductTemplateEditor({ product, onBack, onSaved, librar
       fontStyle: sampleFont.fontStyle,
       fill: sampleFont.fill,
       align: groupAlign(sorted, fieldBounds),
-      replacementFill: defaultReplacementFill(sampleFont.fill),
+      replacementFill: defaultReplacementFill(),
+      replacementFillMode: 'transparent',
       rotation: typeof sampleFont.rotation === 'number' ? sampleFont.rotation : 0,
       replacementBox: {
         x: sourceBounds.x,

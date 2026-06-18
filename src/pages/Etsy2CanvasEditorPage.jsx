@@ -86,6 +86,13 @@ const inches = (value) => Number((Number(value || 0) / 72).toFixed(2))
 const points = (value) => Number(value || 0) * 72
 const valueForUnit = (value, unit) => unit === 'pt' ? Number((Number(value || 0)).toFixed(2)) : inches(value)
 const pointsFromUnit = (value, unit) => unit === 'pt' ? Number(value || 0) : points(value)
+const defaultReplacementFill = () => 'transparent'
+const isSolidReplacementFill = (layer) => {
+  const value = String(layer?.replacementFill || '').trim().toLowerCase()
+  return (layer?.replacementFillMode === 'solid' || layer?.forceReplacementFill) &&
+    Boolean(value) &&
+    !['transparent', 'none', 'null'].includes(value)
+}
 const fontOptionsFor = (value) => (
   value && !FONT_OPTIONS.some((font) => font.value === value)
     ? [{ label: value, value, weight: 400, style: 'normal' }, ...FONT_OPTIONS]
@@ -159,12 +166,20 @@ function defaultLayers(orderItem, order, page = DEFAULT_PAGE, decomposedPage = n
       align: text.align || 'left',
       fontStyle: normalizeFontStyle(text.fontStyle),
       lineHeight: 1.15,
-      maskOriginal: false,
+      maskOriginal: true,
+      replacementBox: {
+        x: text.x,
+        y: text.y,
+        width: Math.max(4, text.width || 180),
+        height: Math.max(4, text.height || text.fontSize || 24),
+      },
+      replacementFill: defaultReplacementFill(text.fill),
+      replacementFillMode: 'transparent',
       writingMode: text.writingMode || 'horizontal',
       rawFontFamily: text.rawFontFamily || text.fontFamily || '',
       source: text.source || 'pdf',
       confidence: text.confidence,
-      dirty: true,
+      dirty: false,
     }))
 
   return [
@@ -181,6 +196,7 @@ function defaultLayers(orderItem, order, page = DEFAULT_PAGE, decomposedPage = n
       rotation: 0,
       opacity: 1,
       url: backgroundUrl,
+      textlessPreview: Boolean(decomposedPage?.previewImageUrl),
     },
     ...textLayers,
   ]
@@ -381,6 +397,16 @@ function downloadDataUrl(dataUrl, filename) {
   link.click()
   document.body.removeChild(link)
   window.setTimeout(() => URL.revokeObjectURL(blobUrl), 0)
+}
+
+function downloadUrl(url, filename) {
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  link.rel = 'noopener'
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
 }
 
 function LayerRow({ layer, active, onSelect, onToggleVisibility, onDelete }) {
@@ -597,20 +623,20 @@ function CanvasStage({
                   <ImageCanvasNode key={layer.id} layer={layer} setSelectedId={setSelectedId} updateLayer={updateLayer} />
                 ) : (
                   <Group key={layer.id}>
-                    {layer.maskOriginal && layer.dirty && (
+                    {layer.maskOriginal && layer.dirty && isSolidReplacementFill(layer) && (
                       <Rect
                         key={`${layer.id}-mask`}
-                        x={layer.x - 2}
-                        y={layer.y - 2}
-                        width={Math.max(8, layer.width + 4)}
-                        height={Math.max(8, layer.height + 4)}
+                        x={(layer.replacementBox?.x ?? layer.x) - 2}
+                        y={(layer.replacementBox?.y ?? layer.y) - 2}
+                        width={Math.max(8, (layer.replacementBox?.width ?? layer.width) + 4)}
+                        height={Math.max(8, (layer.replacementBox?.height ?? layer.height) + 4)}
                         rotation={layer.rotation}
-                        fill="#FBF7EF"
+                        fill={layer.replacementFill}
                         opacity={0.98}
                         listening={false}
                       />
                     )}
-                    {layer.dirty && layer.visible ? (() => {
+                    {layer.visible ? (() => {
                       const fittedText = getFittedTextProps(layer, layer.text)
                       return (
                         <Text
@@ -882,6 +908,10 @@ export default function Etsy2CanvasEditorPage() {
   const realValueStatuses = useMemo(() => valueStatusesFor(orderItem, editKind), [orderItem, editKind])
   const dummyTextWarnings = useMemo(() => dummyTextWarningsFor(layers), [layers])
   const geometryMismatch = normalizedGeometry ? getGeometryMismatch(normalizedGeometry, pageSize) : null
+  const editorTitle = editKind === 'interior' ? 'Inside First Page PDF Editor' : 'Cover PDF Editor'
+  const editorSubtitle = editKind === 'interior'
+    ? `Edit only the first inside page for order #${orderId}. Remaining inside pages are preserved.`
+    : `Edit the customer-specific cover PDF design for order #${orderId}.`
   const backToGeneratedPath = isGeneratedEdit
     ? `/orders/generated/${encodeURIComponent(orderId)}`
     : `/orders/etsy2/${encodeURIComponent(orderId)}?view=generated`
@@ -889,7 +919,7 @@ export default function Etsy2CanvasEditorPage() {
   useEffect(() => {
     if (!orderItem || !order) return
     const saved = parseSavedState(orderItem, editKind)
-    const savedHasBackground = saved?.layers?.some((layer) => layer.type === 'background' && layer.url)
+    const savedHasBackground = saved?.layers?.some((layer) => layer.type === 'background' && layer.url && layer.textlessPreview)
     if (saved && savedHasBackground) {
       setPageSize(saved.page || DEFAULT_PAGE)
       setLayers(saved.layers)
@@ -988,6 +1018,10 @@ export default function Etsy2CanvasEditorPage() {
         align: 'center',
         fontStyle: 'normal',
         lineHeight: 1.15,
+        maskOriginal: false,
+        replacementFill: 'transparent',
+        replacementFillMode: 'transparent',
+        dirty: true,
       },
     ])
     setSelectedId(id)
@@ -1013,6 +1047,7 @@ export default function Etsy2CanvasEditorPage() {
           height: 180,
           rotation: 0,
           opacity: 1,
+          dirty: true,
         },
       ])
       setSelectedId(id)
@@ -1079,6 +1114,28 @@ export default function Etsy2CanvasEditorPage() {
     return !block
   }
 
+  const buildCanvasState = () => ({
+    version: 2,
+    kind: editKind,
+    page: pageSize,
+    savedAt: new Date().toISOString(),
+    orderId,
+    itemId: String(orderItem?._id || ''),
+    layers,
+    geometry: pageGeometry,
+    settings: { showAlignment, showGuides, showRulers, measurementUnit, alignmentOpacity, backgroundOpacity },
+  })
+
+  const renderGeneratedVectorPdf = async () => {
+    if (!orderItem?._id) throw new Error('Order item is not ready yet')
+    const canvasState = JSON.stringify(buildCanvasState())
+    const { data } = await api.post(`/orders/${orderItem._id}/generated-canvas-pdf`, {
+      kind: editKind,
+      canvasState,
+    })
+    return { data, canvasState }
+  }
+
   const exportPdfDataUrl = async ({ proof = false } = {}) => {
     const stage = stageRef.current
     if (!stage) return ''
@@ -1117,26 +1174,11 @@ export default function Etsy2CanvasEditorPage() {
     if (!validateRealDataForExport({ block: true })) return
     setSaving(true)
     try {
-      const pdfDataUrl = await exportPdfDataUrl({ proof: false })
-      const state = {
-        version: 1,
-        kind: editKind,
-        page: pageSize,
-        savedAt: new Date().toISOString(),
-        orderId,
-        itemId: String(orderItem._id),
-        layers,
-        geometry: pageGeometry,
-        settings: { showAlignment, showGuides, showRulers, measurementUnit, alignmentOpacity, backgroundOpacity },
-      }
-      const canvasState = JSON.stringify(state)
       if (isGeneratedEdit) {
-        await api.post(`/orders/${orderItem._id}/generated-canvas-pdf`, {
-          kind: editKind,
-          pdfDataUrl,
-          canvasState,
-        })
+        await renderGeneratedVectorPdf()
       } else {
+        const pdfDataUrl = await exportPdfDataUrl({ proof: false })
+        const canvasState = JSON.stringify(buildCanvasState())
         const templateFieldValues = {
           ...(orderItem.templateFieldValues || {}),
           [canvasStateKeyFor(editKind)]: canvasState,
@@ -1157,6 +1199,13 @@ export default function Etsy2CanvasEditorPage() {
     if (!validateRealDataForExport({ block: false })) return
     setExportingPdf(proof ? 'proof' : 'print')
     try {
+      if (!proof && isGeneratedEdit) {
+        const { data } = await renderGeneratedVectorPdf()
+        if (!data?.pdfUrl) throw new Error('The vector PDF render did not return a file URL')
+        downloadUrl(data.pdfUrl, `order-${orderId}-${editKind === 'interior' ? 'inside-first-page' : 'cover'}-print.pdf`)
+        setSnack({ open: true, message: 'Editable print PDF download started.', severity: 'success' })
+        return
+      }
       const pdfDataUrl = await exportPdfDataUrl({ proof })
       if (!pdfDataUrl) throw new Error('Canvas is not ready yet')
       downloadDataUrl(pdfDataUrl, `order-${orderId}-canvas-${proof ? 'proof' : 'print'}.pdf`)
@@ -1199,10 +1248,10 @@ export default function Etsy2CanvasEditorPage() {
             Back to Generated Orders
           </Button>
           <Typography variant="h4" sx={{ color: '#0F172A', fontWeight: 900, fontSize: { xs: '1.7rem', md: '2.25rem' } }}>
-            Canvas PDF Editor
+            {editorTitle}
           </Typography>
           <Typography variant="body2" sx={{ color: '#64748B', mt: 0.5 }}>
-            Edit the customer-specific PDF design for order #{orderId}.
+            {editorSubtitle}
           </Typography>
         </Box>
         <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
