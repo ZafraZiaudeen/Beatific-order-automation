@@ -8,12 +8,28 @@ import {
 
 const storedAuth = getStoredAuthSession()
 
+const resolveActiveStore = (stores = [], current = null) =>
+  stores.find((store) => store._id === current?._id) || stores[0] || null
+
+const persistActiveStoreSelection = (store) => {
+  if (store) {
+    localStorage.setItem('beatific_active_store', JSON.stringify(store))
+  } else {
+    localStorage.removeItem('beatific_active_store')
+  }
+}
+
+const initialActiveStore = resolveActiveStore(storedAuth.stores, storedAuth.activeStore)
+if (initialActiveStore?._id !== storedAuth.activeStore?._id) {
+  persistActiveStoreSelection(initialActiveStore)
+}
+
 const useAuthStore = create((set, get) => ({
   user: storedAuth.user,
   token: storedAuth.token,
   company: storedAuth.company,
   stores: storedAuth.stores,
-  activeStore: storedAuth.activeStore,
+  activeStore: initialActiveStore,
   loading: false,
   error: null,
 
@@ -182,13 +198,17 @@ const useAuthStore = create((set, get) => ({
   fetchMe: async () => {
     try {
       const { data } = await api.get('/auth/me')
+      const stores = data.stores || []
+      const activeStore = resolveActiveStore(stores, get().activeStore)
       localStorage.setItem('beatific_user', JSON.stringify(data.user))
       localStorage.setItem('beatific_company', JSON.stringify(data.company))
-      localStorage.setItem('beatific_stores', JSON.stringify(data.stores || []))
+      localStorage.setItem('beatific_stores', JSON.stringify(stores))
+      persistActiveStoreSelection(activeStore)
       set({
         user: data.user,
         company: data.company,
-        stores: data.stores || [],
+        stores,
+        activeStore,
       })
       return data
     } catch {
@@ -197,7 +217,7 @@ const useAuthStore = create((set, get) => ({
   },
 
   setActiveStore: (store) => {
-    localStorage.setItem('beatific_active_store', JSON.stringify(store))
+    persistActiveStoreSelection(store)
     set({ activeStore: store })
   },
 

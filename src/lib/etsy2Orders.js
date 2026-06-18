@@ -115,17 +115,24 @@ export const buildOrderGroups = (orders) => {
 
 export const reviewFlagsFor = (item) => (item.aiFlags || []).filter((flag) => !NON_REVIEW_AI_FLAGS.has(flag))
 
+const isGeneratedPdfUrl = (value = '') =>
+  /(?:^|[/\\])generated-pdfs(?:[/\\]|$)/i.test(String(value || ''))
+
 export const getItemStatus = (item) => {
-  const hasBothGeneratedPdfs = Boolean(item.coverImageUrl && item.interiorPdfUrl)
-  const hasGeneratedTemplate = hasBothGeneratedPdfs && item.templateFinalizedAt && !item.requiresTemplateFinalization
+  const hasAnyGeneratedPdf = Boolean(item.coverImageUrl || item.interiorPdfUrl)
+  const hasGeneratedStoragePdfs = isGeneratedPdfUrl(item.coverImageUrl) || isGeneratedPdfUrl(item.interiorPdfUrl)
+  const hasGeneratedTemplate = hasAnyGeneratedPdf && !item.requiresTemplateFinalization && (
+    Boolean(item.templateFinalizedAt) ||
+    hasGeneratedStoragePdfs
+  )
 
   if (item.luluStatus === 'failed' && hasGeneratedTemplate) return ITEM_STATUSES.FAILED
-  if (hasGeneratedTemplate && (item.luluStatus === 'shipped' || item.etsyStatus === 'completed')) return ITEM_STATUSES.SHIPPED
+  if (item.luluStatus === 'shipped') return ITEM_STATUSES.SHIPPED
   if (hasGeneratedTemplate) return ITEM_STATUSES.GENERATED
   if (reviewFlagsFor(item).length > 0) return ITEM_STATUSES.AI_FLAGGED
   if (!item.isProductMapped) return ITEM_STATUSES.UNMAPPED
   if (item.hasCustomArtwork || item.etsyStatus === 'custom_orders') return ITEM_STATUSES.CUSTOM
-  if (item.luluStatus === 'shipped' || item.etsyStatus === 'completed') return ITEM_STATUSES.SHIPPED
+  if (item.etsyStatus === 'completed') return ITEM_STATUSES.GENERATED
   return ITEM_STATUSES.MAPPED
 }
 

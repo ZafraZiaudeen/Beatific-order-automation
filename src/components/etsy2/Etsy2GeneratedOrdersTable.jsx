@@ -18,6 +18,8 @@ import LocalShippingOutlinedIcon from '@mui/icons-material/LocalShippingOutlined
 import MoreVertIcon from '@mui/icons-material/MoreVert'
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined'
 import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined'
+import PrintOutlinedIcon from '@mui/icons-material/PrintOutlined'
+import CancelOutlinedIcon from '@mui/icons-material/CancelOutlined'
 import ArticleOutlinedIcon from '@mui/icons-material/ArticleOutlined'
 import Etsy2StatusBadge from './Etsy2StatusBadge'
 import { buildAssetThumbnailUrl } from '../../lib/assets'
@@ -68,7 +70,10 @@ export default function Etsy2GeneratedOrdersTable({
   partiallyVisibleSelected = false,
   onPreview,
   onEditCanvas,
+  onGenerateOrder,
+  onCancelGeneration,
   onSendToLulu,
+  generatingOrderIds = {},
   sendingOrderIds = {},
   onDeleteOrder,
 }) {
@@ -103,8 +108,10 @@ export default function Etsy2GeneratedOrdersTable({
             const source = item?.sourceOrder || {}
             const generatedAt = source.templateFinalizedAt || source.updatedAt || order.sourceGroup?.updatedAt || order.date
             const templateName = source.matchedVariantName || source.projectName || 'Print Template'
+            const generating = Boolean(generatingOrderIds[order.orderId])
             const sending = Boolean(sendingOrderIds[order.orderId])
             const orderStatus = item?.status || order?.status
+            const canGenerate = Boolean(item?.sourceOrder?.isProductMapped)
 
             return (
               <TableRow key={order.orderId} hover sx={{ '& td': { borderColor: '#EEF2F7', py: 2 } }}>
@@ -165,7 +172,31 @@ export default function Etsy2GeneratedOrdersTable({
                     >
                       Preview
                     </Button>
-                    {canManage && onDeleteOrder && (
+                    {canManage && (
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        startIcon={generating ? <CircularProgress size={14} /> : <PrintOutlinedIcon />}
+                        disabled={generating || !canGenerate}
+                        onClick={() => onGenerateOrder?.(order)}
+                        sx={{ borderColor: '#E5E7EB', color: '#111827', fontWeight: 700, borderRadius: '6px' }}
+                      >
+                        {generating ? 'Generating...' : 'Generate PDF'}
+                      </Button>
+                    )}
+                    {canManage && generating && (
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        color="error"
+                        startIcon={<CancelOutlinedIcon />}
+                        onClick={() => onCancelGeneration?.(order)}
+                        sx={{ fontWeight: 700, borderRadius: '6px' }}
+                      >
+                        Cancel
+                      </Button>
+                    )}
+                    {canManage && onEditCanvas && (
                       <Button
                         size="small"
                         variant="outlined"
@@ -188,7 +219,7 @@ export default function Etsy2GeneratedOrdersTable({
                         {orderStatus === 'failed' ? 'Resend to Lulu' : 'Send to Lulu'}
                       </Button>
                     )}
-                    {canManage && (
+                    {canManage && onDeleteOrder && (
                       <Button
                         size="small"
                         variant="outlined"

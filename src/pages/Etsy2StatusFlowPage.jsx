@@ -1,5 +1,5 @@
+import { createElement } from 'react'
 import { Box, Typography, Paper, Chip } from '@mui/material'
-import { useNavigate } from 'react-router-dom'
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward'
 import CloudUploadIcon from '@mui/icons-material/CloudUpload'
 import PsychologyIcon from '@mui/icons-material/Psychology'
@@ -12,7 +12,7 @@ import DescriptionIcon from '@mui/icons-material/Description'
 import LocalShippingIcon from '@mui/icons-material/LocalShipping'
 import InfoIcon from '@mui/icons-material/Info'
 
-const FlowStep = ({ number, title, icon: Icon, description, color, children }) => (
+const FlowStep = ({ number, title, icon, description, color, children }) => (
   <Box
     sx={{
       display: 'flex',
@@ -49,7 +49,7 @@ const FlowStep = ({ number, title, icon: Icon, description, color, children }) =
           mb: 1,
         }}
       >
-        <Icon sx={{ fontSize: '24px', color: '#27272A' }} />
+        {createElement(icon, { sx: { fontSize: '24px', color: '#27272A' } })}
       </Box>
       <Typography variant="caption" sx={{ color: '#71717A', fontWeight: 600, fontSize: '0.7rem' }}>
         {number}. {title}
@@ -99,7 +99,7 @@ const FlowArrow = ({ label, color = '#71717A' }) => (
   </Box>
 )
 
-const StatusBadge = ({ label, color, bgColor, icon: Icon }) => (
+const StatusBadge = ({ label, color, bgColor, icon }) => (
   <Box
     sx={{
       display: 'flex',
@@ -125,7 +125,7 @@ const StatusBadge = ({ label, color, bgColor, icon: Icon }) => (
         mb: 1,
       }}
     >
-      <Icon sx={{ fontSize: '20px', color: '#FFFFFF' }} />
+      {createElement(icon, { sx: { fontSize: '20px', color: '#FFFFFF' } })}
     </Box>
     <Typography variant="caption" sx={{ color, fontWeight: 700, fontSize: '0.75rem', textAlign: 'center' }}>
       {label}
@@ -134,8 +134,6 @@ const StatusBadge = ({ label, color, bgColor, icon: Icon }) => (
 )
 
 export default function Etsy2StatusFlowPage() {
-  const navigate = useNavigate()
-
   return (
     <Box sx={{ p: 3 }}>
       {/* Header */}

@@ -1,13 +1,20 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Outlet } from 'react-router-dom'
 import Box from '@mui/material/Box'
 import Sidebar from './Sidebar'
 import Header from './Header'
 import FloatingHelp from './FloatingHelp'
+import useAuthStore from '../../stores/authStore'
 
 export default function DashboardLayout() {
   const [collapsed, setCollapsed] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
+  const { fetchMe, token } = useAuthStore()
+
+  useEffect(() => {
+    if (!token) return
+    fetchMe()
+  }, [fetchMe, token])
 
   return (
     <Box sx={{ display: 'flex', minHeight: '100vh', bgcolor: 'background.default' }}>

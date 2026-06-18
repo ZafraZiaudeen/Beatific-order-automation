@@ -60,8 +60,24 @@ import {
 
 const CANVAS_STATE_KEY = '_canvasEditorState'
 const CANVAS_PDF_KEY = '_canvasPdfDataUrl'
+const canvasStateKeyFor = (kind) => `_canvasEditorState:${kind === 'interior' ? 'interior' : 'cover'}`
 const DEFAULT_PAGE = { width: 612, height: 792 }
 const COVER_VALUE_KEYS = ['front_cover_name', 'spine_text', 'back_cover_text']
+const INSIDE_VALUE_KEYS = ['first_page_message']
+const FIRST_PAGE_MESSAGE_ALIASES = [
+  'first_page_message',
+  'First Page Message',
+  'first page message',
+  'gift message',
+  'special message',
+  'quote',
+  'inside_page_name',
+  'inside page name',
+  'valediction_text',
+  'valediction',
+  'valedicatation for inside page',
+  'valedictation for inside page',
+]
 const DUMMY_TEXT_VALUES = new Set(['customer name', 'new text', 'bloom where you are planted'])
 
 const isImageUrl = (value = '') => /\.(png|jpe?g|webp|gif|svg)(\?.*)?$/i.test(value)
@@ -70,6 +86,13 @@ const inches = (value) => Number((Number(value || 0) / 72).toFixed(2))
 const points = (value) => Number(value || 0) * 72
 const valueForUnit = (value, unit) => unit === 'pt' ? Number((Number(value || 0)).toFixed(2)) : inches(value)
 const pointsFromUnit = (value, unit) => unit === 'pt' ? Number(value || 0) : points(value)
+const defaultReplacementFill = () => 'transparent'
+const isSolidReplacementFill = (layer) => {
+  const value = String(layer?.replacementFill || '').trim().toLowerCase()
+  return (layer?.replacementFillMode === 'solid' || layer?.forceReplacementFill) &&
+    Boolean(value) &&
+    !['transparent', 'none', 'null'].includes(value)
+}
 const fontOptionsFor = (value) => (
   value && !FONT_OPTIONS.some((font) => font.value === value)
     ? [{ label: value, value, weight: 400, style: 'normal' }, ...FONT_OPTIONS]
@@ -105,8 +128,8 @@ function useLoadedImage(src) {
   return image
 }
 
-function parseSavedState(orderItem) {
-  const raw = orderItem?.templateFieldValues?.[CANVAS_STATE_KEY]
+function parseSavedState(orderItem, kind = 'cover') {
+  const raw = orderItem?.templateFieldValues?.[canvasStateKeyFor(kind)] || orderItem?.templateFieldValues?.[CANVAS_STATE_KEY]
   if (!raw) return null
   try {
     const parsed = JSON.parse(raw)
@@ -144,55 +167,20 @@ function defaultLayers(orderItem, order, page = DEFAULT_PAGE, decomposedPage = n
       fontStyle: normalizeFontStyle(text.fontStyle),
       lineHeight: 1.15,
       maskOriginal: true,
+      replacementBox: {
+        x: text.x,
+        y: text.y,
+        width: Math.max(4, text.width || 180),
+        height: Math.max(4, text.height || text.fontSize || 24),
+      },
+      replacementFill: defaultReplacementFill(text.fill),
+      replacementFillMode: 'transparent',
       writingMode: text.writingMode || 'horizontal',
       rawFontFamily: text.rawFontFamily || text.fontFamily || '',
+      source: text.source || 'pdf',
+      confidence: text.confidence,
       dirty: false,
     }))
-
-  const fallbackTextLayers = [
-    {
-      id: uuidv4(),
-      type: 'text',
-      name: 'Text Layer',
-      visible: true,
-      locked: false,
-      text: orderItem?.templateFieldValues?.front_cover_name || order?.buyerName || orderItem?.customerName || 'Customer Name',
-      x: 76,
-      y: 92,
-      width: 460,
-      height: 78,
-      rotation: 0,
-      opacity: 1,
-      fontFamily: 'Canela Regular',
-      fontSize: 54,
-      fill: '#2F2F2F',
-      align: 'center',
-      fontStyle: 'normal',
-      lineHeight: 1.15,
-      dirty: true,
-    },
-    {
-      id: uuidv4(),
-      type: 'text',
-      name: 'Subtitle',
-      visible: true,
-      locked: false,
-      text: orderItem?.templateFieldValues?.back_cover_text || 'BLOOM WHERE YOU ARE PLANTED',
-      x: 96,
-      y: 644,
-      width: 420,
-      height: 28,
-      rotation: 0,
-      opacity: 1,
-      fontFamily: 'Canela Text Regular',
-      fontSize: 14,
-      fill: '#3F3F46',
-      align: 'center',
-      fontStyle: 'normal',
-      lineHeight: 1.2,
-      dirty: true,
-    },
-  ]
 
   return [
     {
@@ -208,23 +196,35 @@ function defaultLayers(orderItem, order, page = DEFAULT_PAGE, decomposedPage = n
       rotation: 0,
       opacity: 1,
       url: backgroundUrl,
+      textlessPreview: Boolean(decomposedPage?.previewImageUrl),
     },
-    ...(textLayers.length ? textLayers : fallbackTextLayers),
+    ...textLayers,
   ]
 }
 
 const fixedCoverFields = FIXED_PERSONALIZATION_FIELDS.filter((field) => COVER_VALUE_KEYS.includes(field.key))
+const fixedInsideFields = FIXED_PERSONALIZATION_FIELDS.filter((field) => INSIDE_VALUE_KEYS.includes(field.key))
 
-const resolveCoverValue = (orderItem, key) => String(
-  orderItem?.templateFieldValues?.[key] ??
-  orderItem?.templateAiSuggestions?.[key] ??
-  orderItem?.personalization?.[key] ??
-  ''
-).trim()
+const firstValueForKeys = (records, keys) => {
+  for (const record of records) {
+    if (!record) continue
+    for (const key of keys) {
+      const value = record[key]
+      if (String(value ?? '').trim()) return String(value).trim()
+    }
+  }
+  return ''
+}
 
-const coverValueStatusesFor = (orderItem) => fixedCoverFields.map((field) => ({
+const resolveFieldValue = (orderItem, key) => {
+  const records = [orderItem?.templateFieldValues, orderItem?.templateAiSuggestions, orderItem?.personalization]
+  if (key === 'first_page_message') return firstValueForKeys(records, FIRST_PAGE_MESSAGE_ALIASES)
+  return firstValueForKeys(records, [key])
+}
+
+const valueStatusesFor = (orderItem, kind = 'cover') => (kind === 'interior' ? fixedInsideFields : fixedCoverFields).map((field) => ({
   ...field,
-  value: resolveCoverValue(orderItem, field.key),
+  value: resolveFieldValue(orderItem, field.key),
 }))
 
 const dummyTextWarningsFor = (layers) => layers
@@ -264,9 +264,9 @@ function RealDataStatus({ statuses, dummyWarnings }) {
         <Chip
           key={field.key}
           size="small"
-          color={field.value ? 'success' : 'warning'}
+          color={field.value ? 'success' : 'default'}
           variant={field.value ? 'outlined' : 'filled'}
-          label={`${field.label}: ${field.value || 'Missing real order value'}`}
+          label={`${field.label}: ${field.value || 'Empty'}`}
           sx={{ maxWidth: 340, '& .MuiChip-label': { overflow: 'hidden', textOverflow: 'ellipsis' } }}
         />
       ))}
@@ -399,7 +399,18 @@ function downloadDataUrl(dataUrl, filename) {
   window.setTimeout(() => URL.revokeObjectURL(blobUrl), 0)
 }
 
-function LayerRow({ layer, active, onSelect, onToggleVisibility }) {
+function downloadUrl(url, filename) {
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  link.rel = 'noopener'
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+}
+
+function LayerRow({ layer, active, onSelect, onToggleVisibility, onDelete }) {
+  const canDelete = !layer.locked && layer.type !== 'background'
   return (
     <Box
       onClick={onSelect}
@@ -433,6 +444,20 @@ function LayerRow({ layer, active, onSelect, onToggleVisibility }) {
       >
         {layer.visible ? <VisibilityIcon fontSize="small" /> : <VisibilityOffIcon fontSize="small" />}
       </IconButton>
+      {canDelete && (
+        <Tooltip title="Delete layer">
+          <IconButton
+            size="small"
+            color="error"
+            onClick={(event) => {
+              event.stopPropagation()
+              onDelete?.()
+            }}
+          >
+            <DeleteOutlineIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
+      )}
     </Box>
   )
 }
@@ -598,20 +623,20 @@ function CanvasStage({
                   <ImageCanvasNode key={layer.id} layer={layer} setSelectedId={setSelectedId} updateLayer={updateLayer} />
                 ) : (
                   <Group key={layer.id}>
-                    {layer.maskOriginal && layer.dirty && (
+                    {layer.maskOriginal && layer.dirty && isSolidReplacementFill(layer) && (
                       <Rect
                         key={`${layer.id}-mask`}
-                        x={layer.x - 2}
-                        y={layer.y - 2}
-                        width={Math.max(8, layer.width + 4)}
-                        height={Math.max(8, layer.height + 4)}
+                        x={(layer.replacementBox?.x ?? layer.x) - 2}
+                        y={(layer.replacementBox?.y ?? layer.y) - 2}
+                        width={Math.max(8, (layer.replacementBox?.width ?? layer.width) + 4)}
+                        height={Math.max(8, (layer.replacementBox?.height ?? layer.height) + 4)}
                         rotation={layer.rotation}
-                        fill="#FBF7EF"
+                        fill={layer.replacementFill}
                         opacity={0.98}
                         listening={false}
                       />
                     )}
-                    {layer.dirty && layer.visible ? (() => {
+                    {layer.visible ? (() => {
                       const fittedText = getFittedTextProps(layer, layer.text)
                       return (
                         <Text
@@ -721,7 +746,7 @@ function CanvasStage({
 function PropertiesPanel({ selected, updateLayer, measurementUnit = 'in' }) {
   if (!selected) {
     return (
-      <Box sx={{ p: 3 }}>
+      <Box sx={{ p: 3, flex: 1, minHeight: 0, overflowY: 'auto' }}>
         <Typography variant="h6" sx={{ fontWeight: 800, color: '#0F172A' }}>Properties</Typography>
         <Typography variant="body2" sx={{ color: '#64748B', mt: 1 }}>Select a layer to edit its text, typography, color, position, size, rotation, and opacity.</Typography>
       </Box>
@@ -731,7 +756,7 @@ function PropertiesPanel({ selected, updateLayer, measurementUnit = 'in' }) {
   const disabled = selected.locked
 
   return (
-    <Box sx={{ p: 3, overflowY: 'auto' }}>
+    <Box sx={{ p: 3, overflowY: 'auto', flex: 1, minHeight: 0 }}>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25, mb: 2 }}>
         {selected.type === 'text' ? <TextFieldsIcon /> : <ImageOutlinedIcon />}
         <Typography variant="h6" sx={{ fontWeight: 800, color: '#0F172A' }}>{selected.name}</Typography>
@@ -876,20 +901,25 @@ export default function Etsy2CanvasEditorPage() {
       group.items.find((item) => item.coverImageUrl || item.interiorPdfUrl) ||
       group.items[0]
   }, [group, searchParams])
+  const editKind = searchParams.get('kind') === 'interior' || (!orderItem?.coverImageUrl && orderItem?.interiorPdfUrl) ? 'interior' : 'cover'
+  const isGeneratedEdit = searchParams.get('source') === 'generated'
   const selected = layers.find((layer) => layer.id === selectedId) || null
   const normalizedGeometry = pageGeometry?.geometry || pageGeometry
-  const realCoverStatuses = useMemo(() => coverValueStatusesFor(orderItem), [orderItem])
+  const realValueStatuses = useMemo(() => valueStatusesFor(orderItem, editKind), [orderItem, editKind])
   const dummyTextWarnings = useMemo(() => dummyTextWarningsFor(layers), [layers])
-  const missingCoverStatuses = realCoverStatuses.filter((field) => !field.value)
   const geometryMismatch = normalizedGeometry ? getGeometryMismatch(normalizedGeometry, pageSize) : null
-  const backToGeneratedPath = searchParams.get('source') === 'generated'
+  const editorTitle = editKind === 'interior' ? 'Inside First Page PDF Editor' : 'Cover PDF Editor'
+  const editorSubtitle = editKind === 'interior'
+    ? `Edit only the first inside page for order #${orderId}. Remaining inside pages are preserved.`
+    : `Edit the customer-specific cover PDF design for order #${orderId}.`
+  const backToGeneratedPath = isGeneratedEdit
     ? `/orders/generated/${encodeURIComponent(orderId)}`
     : `/orders/etsy2/${encodeURIComponent(orderId)}?view=generated`
 
   useEffect(() => {
     if (!orderItem || !order) return
-    const saved = parseSavedState(orderItem)
-    const savedHasBackground = saved?.layers?.some((layer) => layer.type === 'background' && layer.url)
+    const saved = parseSavedState(orderItem, editKind)
+    const savedHasBackground = saved?.layers?.some((layer) => layer.type === 'background' && layer.url && layer.textlessPreview)
     if (saved && savedHasBackground) {
       setPageSize(saved.page || DEFAULT_PAGE)
       setLayers(saved.layers)
@@ -907,9 +937,8 @@ export default function Etsy2CanvasEditorPage() {
     }
 
     let cancelled = false
-    const kind = searchParams.get('kind') === 'interior' || (!orderItem.coverImageUrl && orderItem.interiorPdfUrl) ? 'interior' : 'cover'
     setDecomposing(true)
-    api.get(`/orders/${orderItem._id}/generated-pdf-page`, { params: { kind } })
+    api.get(`/orders/${orderItem._id}/generated-pdf-page`, { params: { kind: editKind } })
       .then(({ data }) => {
         if (cancelled) return
         const page = data.page || null
@@ -917,10 +946,15 @@ export default function Etsy2CanvasEditorPage() {
           ? { width: page.pageWidth, height: page.pageHeight }
           : DEFAULT_PAGE
         setPageSize(nextPage)
-        setPageGeometry(kind === 'cover' ? data.alignment || data.geometry || null : null)
+        setPageGeometry(editKind === 'cover' ? data.alignment || data.geometry || null : null)
         const nextLayers = defaultLayers(orderItem, order, nextPage, page)
         setLayers(nextLayers)
         setSelectedId(nextLayers.find((layer) => layer.type === 'text')?.id || '')
+        if (page?.extractionWarning) {
+          setSnack({ open: true, message: page.extractionWarning, severity: 'warning' })
+        } else if (page?.textExtractionMode === 'ocr') {
+          setSnack({ open: true, message: 'OCR recovered approximate editable text from an image-only PDF.', severity: 'warning' })
+        }
       })
       .catch((err) => {
         if (cancelled) return
@@ -943,7 +977,7 @@ export default function Etsy2CanvasEditorPage() {
     return () => {
       cancelled = true
     }
-  }, [orderItem, order, searchParams])
+  }, [orderItem, order, editKind])
 
   const commitLayers = (updater) => {
     setLayers((current) => {
@@ -984,6 +1018,10 @@ export default function Etsy2CanvasEditorPage() {
         align: 'center',
         fontStyle: 'normal',
         lineHeight: 1.15,
+        maskOriginal: false,
+        replacementFill: 'transparent',
+        replacementFillMode: 'transparent',
+        dirty: true,
       },
     ])
     setSelectedId(id)
@@ -1009,6 +1047,7 @@ export default function Etsy2CanvasEditorPage() {
           height: 180,
           rotation: 0,
           opacity: 1,
+          dirty: true,
         },
       ])
       setSelectedId(id)
@@ -1021,6 +1060,13 @@ export default function Etsy2CanvasEditorPage() {
     if (!selected || selected.locked) return
     commitLayers((current) => current.filter((layer) => layer.id !== selected.id))
     setSelectedId('')
+  }
+
+  const deleteLayer = (id) => {
+    const target = layers.find((layer) => layer.id === id)
+    if (!target || target.locked || target.type === 'background') return
+    commitLayers((current) => current.filter((layer) => layer.id !== id))
+    if (selectedId === id) setSelectedId('')
   }
 
   const moveSelected = (direction) => {
@@ -1053,11 +1099,8 @@ export default function Etsy2CanvasEditorPage() {
   }
 
   const realDataIssueMessage = () => {
-    if (!normalizedGeometry) return ''
-    if (!missingCoverStatuses.length && !dummyTextWarnings.length) return ''
-    const missing = missingCoverStatuses.map((field) => field.label).join(', ')
-    const dummy = dummyTextWarnings.length ? ` Dummy text visible: ${dummyTextWarnings.join(', ')}.` : ''
-    return `${missing ? `Missing real order values: ${missing}.` : ''}${dummy}`.trim()
+    if (!dummyTextWarnings.length) return ''
+    return `Dummy text visible: ${dummyTextWarnings.join(', ')}.`
   }
 
   const validateRealDataForExport = ({ block = true } = {}) => {
@@ -1071,6 +1114,28 @@ export default function Etsy2CanvasEditorPage() {
     return !block
   }
 
+  const buildCanvasState = () => ({
+    version: 2,
+    kind: editKind,
+    page: pageSize,
+    savedAt: new Date().toISOString(),
+    orderId,
+    itemId: String(orderItem?._id || ''),
+    layers,
+    geometry: pageGeometry,
+    settings: { showAlignment, showGuides, showRulers, measurementUnit, alignmentOpacity, backgroundOpacity },
+  })
+
+  const renderGeneratedVectorPdf = async () => {
+    if (!orderItem?._id) throw new Error('Order item is not ready yet')
+    const canvasState = JSON.stringify(buildCanvasState())
+    const { data } = await api.post(`/orders/${orderItem._id}/generated-canvas-pdf`, {
+      kind: editKind,
+      canvasState,
+    })
+    return { data, canvasState }
+  }
+
   const exportPdfDataUrl = async ({ proof = false } = {}) => {
     const stage = stageRef.current
     if (!stage) return ''
@@ -1081,9 +1146,9 @@ export default function Etsy2CanvasEditorPage() {
     const overlayNodes = proof
       ? []
       : [
-          ...stage.find('.lulu-geometry-overlay'),
-          ...stage.find('.lulu-alignment-backlayer'),
-        ]
+        ...stage.find('.lulu-geometry-overlay'),
+        ...stage.find('.lulu-alignment-backlayer'),
+      ]
     try {
       overlayNodes.forEach((node) => node.hide())
       stage.batchDraw()
@@ -1109,23 +1174,19 @@ export default function Etsy2CanvasEditorPage() {
     if (!validateRealDataForExport({ block: true })) return
     setSaving(true)
     try {
-      const pdfDataUrl = await exportPdfDataUrl({ proof: false })
-      const state = {
-        version: 1,
-        page: pageSize,
-        savedAt: new Date().toISOString(),
-        orderId,
-        itemId: String(orderItem._id),
-        layers,
-        geometry: pageGeometry,
-        settings: { showAlignment, showGuides, showRulers, measurementUnit, alignmentOpacity, backgroundOpacity },
+      if (isGeneratedEdit) {
+        await renderGeneratedVectorPdf()
+      } else {
+        const pdfDataUrl = await exportPdfDataUrl({ proof: false })
+        const canvasState = JSON.stringify(buildCanvasState())
+        const templateFieldValues = {
+          ...(orderItem.templateFieldValues || {}),
+          [canvasStateKeyFor(editKind)]: canvasState,
+          [CANVAS_STATE_KEY]: canvasState,
+          [CANVAS_PDF_KEY]: pdfDataUrl,
+        }
+        await api.patch(`/orders/${orderItem._id}`, { templateFieldValues })
       }
-      const templateFieldValues = {
-        ...(orderItem.templateFieldValues || {}),
-        [CANVAS_STATE_KEY]: JSON.stringify(state),
-        [CANVAS_PDF_KEY]: pdfDataUrl,
-      }
-      await api.patch(`/orders/${orderItem._id}`, { templateFieldValues })
       setSnack({ open: true, message: 'Canvas PDF saved for this customer order.', severity: 'success' })
     } catch (err) {
       setSnack({ open: true, message: err.response?.data?.message || 'Failed to save canvas changes', severity: 'error' })
@@ -1138,6 +1199,13 @@ export default function Etsy2CanvasEditorPage() {
     if (!validateRealDataForExport({ block: false })) return
     setExportingPdf(proof ? 'proof' : 'print')
     try {
+      if (!proof && isGeneratedEdit) {
+        const { data } = await renderGeneratedVectorPdf()
+        if (!data?.pdfUrl) throw new Error('The vector PDF render did not return a file URL')
+        downloadUrl(data.pdfUrl, `order-${orderId}-${editKind === 'interior' ? 'inside-first-page' : 'cover'}-print.pdf`)
+        setSnack({ open: true, message: 'Editable print PDF download started.', severity: 'success' })
+        return
+      }
       const pdfDataUrl = await exportPdfDataUrl({ proof })
       if (!pdfDataUrl) throw new Error('Canvas is not ready yet')
       downloadDataUrl(pdfDataUrl, `order-${orderId}-canvas-${proof ? 'proof' : 'print'}.pdf`)
@@ -1173,17 +1241,17 @@ export default function Etsy2CanvasEditorPage() {
   }
 
   return (
-    <Box sx={{ height: '100vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: 1.5, p: { xs: 1.25, md: 2 }, bgcolor: '#FFFFFF' }}>
+    <Box sx={{ minHeight: '100vh', overflow: 'auto', display: 'flex', flexDirection: 'column', gap: 1.5, p: { xs: 1.25, md: 2 }, bgcolor: '#FFFFFF' }}>
       <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 2, flexWrap: 'wrap' }}>
         <Box>
           <Button startIcon={<ArrowBackIcon />} onClick={() => navigate(backToGeneratedPath)} sx={{ color: '#5B21D6', fontWeight: 800, textTransform: 'none', mb: 1 }}>
             Back to Generated Orders
           </Button>
           <Typography variant="h4" sx={{ color: '#0F172A', fontWeight: 900, fontSize: { xs: '1.7rem', md: '2.25rem' } }}>
-            Canvas PDF Editor
+            {editorTitle}
           </Typography>
           <Typography variant="body2" sx={{ color: '#64748B', mt: 0.5 }}>
-            Edit the customer-specific PDF design for order #{orderId}.
+            {editorSubtitle}
           </Typography>
         </Box>
         <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -1214,9 +1282,9 @@ export default function Etsy2CanvasEditorPage() {
         </Box>
       </Box>
 
-      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', xl: '250px minmax(0, 1fr) 360px' }, gap: 2, minHeight: 0, flex: 1 }}>
-        <Paper sx={{ borderRadius: '10px', border: '1px solid #E5E7EB', boxShadow: 'none', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-          <Box sx={{ p: 2 }}>
+      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', xl: '250px minmax(0, 1fr) 360px' }, gap: 2, minHeight: 0, height: { xl: 'calc(100vh - 156px)' } }}>
+        <Paper sx={{ borderRadius: '10px', border: '1px solid #E5E7EB', boxShadow: 'none', overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+          <Box sx={{ p: 2, flex: 1, minHeight: 0, overflowY: 'auto' }}>
             <input ref={imageInputRef} type="file" accept="image/*" hidden onChange={(event) => addImageLayer(event.target.files?.[0])} />
             <Typography variant="h6" sx={{ fontWeight: 900, color: '#0F172A', mb: 2 }}>Layers</Typography>
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.25 }}>
@@ -1227,11 +1295,11 @@ export default function Etsy2CanvasEditorPage() {
                   active={layer.id === selectedId}
                   onSelect={() => setSelectedId(layer.id)}
                   onToggleVisibility={() => updateLayer(layer.id, { visible: !layer.visible })}
+                  onDelete={() => deleteLayer(layer.id)}
                 />
               ))}
             </Box>
           </Box>
-          <Box sx={{ flex: 1 }} />
           <Divider />
           <Box sx={{ display: 'flex', justifyContent: 'space-around', p: 1 }}>
             <Tooltip title="Add text"><IconButton onClick={addTextLayer}><TextFieldsIcon /></IconButton></Tooltip>
@@ -1242,7 +1310,7 @@ export default function Etsy2CanvasEditorPage() {
           </Box>
         </Paper>
 
-        <Paper sx={{ position: 'relative', borderRadius: '10px', border: '1px solid #E5E7EB', boxShadow: 'none', overflow: 'hidden', display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+        <Paper sx={{ position: 'relative', borderRadius: '10px', border: '1px solid #E5E7EB', boxShadow: 'none', overflow: 'hidden', display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0 }}>
           {decomposing && (
             <Box sx={{ position: 'absolute', inset: 0, zIndex: 8, bgcolor: 'rgba(248,250,252,0.72)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Paper sx={{ px: 2, py: 1.5, borderRadius: '8px', display: 'flex', alignItems: 'center', gap: 1.25, boxShadow: '0 12px 34px rgba(15,23,42,0.16)' }}>
@@ -1295,7 +1363,7 @@ export default function Etsy2CanvasEditorPage() {
             onSave={saveCanvas}
           />
           {normalizedGeometry && (
-            <RealDataStatus statuses={realCoverStatuses} dummyWarnings={dummyTextWarnings} />
+            <RealDataStatus statuses={realValueStatuses} dummyWarnings={dummyTextWarnings} />
           )}
 
           <CanvasStage
@@ -1346,7 +1414,7 @@ export default function Etsy2CanvasEditorPage() {
           </Box>
         </Paper>
 
-        <Paper sx={{ borderRadius: '10px', border: '1px solid #E5E7EB', boxShadow: 'none', overflow: 'hidden' }}>
+        <Paper sx={{ borderRadius: '10px', border: '1px solid #E5E7EB', boxShadow: 'none', overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
           <PropertiesPanel selected={selected} updateLayer={updateLayer} measurementUnit={measurementUnit} />
         </Paper>
       </Box>

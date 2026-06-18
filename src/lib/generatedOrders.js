@@ -6,7 +6,18 @@ export const GENERATED_ORDER_STATUSES = [
   ITEM_STATUSES.SHIPPED,
 ]
 
-export const isGeneratedOrderItem = (item) => GENERATED_ORDER_STATUSES.includes(item?.status)
+const isGeneratedPdfUrl = (value = '') =>
+  /(?:^|[/\\])generated-pdfs(?:[/\\]|$)/i.test(String(value || ''))
+
+export const hasGeneratedPdfFiles = (item) => {
+  const source = item?.sourceOrder || item || {}
+  const hasSavedGeneratedUrl = isGeneratedPdfUrl(source.coverImageUrl) || isGeneratedPdfUrl(source.interiorPdfUrl)
+  const hasSavedPdf = Boolean(source.coverImageUrl || source.interiorPdfUrl)
+  return hasSavedGeneratedUrl || (hasSavedPdf && source.templateFinalizedAt && !source.requiresTemplateFinalization)
+}
+
+export const isGeneratedOrderItem = (item) =>
+  GENERATED_ORDER_STATUSES.includes(item?.status) || hasGeneratedPdfFiles(item)
 
 export const getGeneratedOrderItems = (order) =>
   (order?.items || []).filter(isGeneratedOrderItem)
