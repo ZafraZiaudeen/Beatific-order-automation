@@ -21,8 +21,45 @@ import { getFixedPersonalizationField } from '../../lib/fixedPersonalizationFiel
 
 const targetLabel = (target) => target === 'cover' ? 'Cover' : 'Inside First Page'
 const DEFAULT_TEMPLATE_POLICY = { cover: 'inherit', interior: 'inherit', fields: 'inherit' }
+const FIRST_PAGE_MESSAGE_KEYS = [
+  'first_page_message',
+  'First Page Message',
+  'gift_message',
+  'Gift Message',
+  'special_message',
+  'Special Message',
+  'message',
+  'Message',
+  'quote',
+  'Quote',
+  'inside_page_quote',
+  'Inside Page Quote',
+  'inside_quote',
+  'page_1_quote',
+  'inside_page_name',
+  'Inside Page Name',
+  'name_for_inside_page',
+  'inside_page_valediction',
+  'valediction_text',
+  'Inside Page Valediction',
+  'valediction',
+]
 
 const variantId = (variant) => String(variant?._id || variant?.id || '')
+const compactKey = (value = '') => String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '')
+const isFirstPageMessageField = (field) => {
+  const aliases = FIRST_PAGE_MESSAGE_KEYS.map(compactKey)
+  return [field?.key, field?.label].some((value) => aliases.includes(compactKey(value)))
+}
+
+const valueForAliases = (record, aliases) => {
+  const entries = Object.entries(record || {})
+  for (const alias of aliases) {
+    const found = entries.find(([key]) => compactKey(key) === compactKey(alias))
+    if (found && found[1] !== undefined && found[1] !== null) return String(found[1])
+  }
+  return ''
+}
 
 const resolveEffectiveFields = (product, order) => {
   const baseFields = product?.printTemplate?.fields || []
@@ -50,10 +87,13 @@ export default function TemplatePersonalizationDialog({ open, order, product, on
     if (!open || !order) return
     const next = {}
     for (const field of fields) {
-      next[field.key] =
-        order.templateFieldValues?.[field.key] ??
-        order.templateAiSuggestions?.[field.key] ??
-        ''
+      next[field.key] = isFirstPageMessageField(field)
+        ? valueForAliases(order.templateFieldValues, [field.key, ...FIRST_PAGE_MESSAGE_KEYS]) ||
+          valueForAliases(order.templateAiSuggestions, [field.key, ...FIRST_PAGE_MESSAGE_KEYS]) ||
+          valueForAliases(order.personalization, [field.key, ...FIRST_PAGE_MESSAGE_KEYS])
+        : order.templateFieldValues?.[field.key] ??
+          order.templateAiSuggestions?.[field.key] ??
+          ''
     }
     setValues(next)
     setPreview(null)

@@ -26,7 +26,7 @@ import { canManageWorkspace } from '../lib/permissions'
 import Etsy2GeneratedOrdersTable from '../components/etsy2/Etsy2GeneratedOrdersTable'
 import { ITEM_STATUSES } from '../lib/etsy2Constants'
 import {
-  getGeneratedOrderItem,
+  getGeneratedOrderItems,
   getGeneratedOrderSourceIds,
   hasGeneratedOrderItems,
 } from '../lib/generatedOrders'
@@ -193,10 +193,16 @@ export default function GeneratedOrdersPage() {
 
   const handleEditCanvas = (order) => {
     const etsyOrderId = order?.orderId || order?.etsyOrderId || order?.firstOrder?.etsyOrderId
-    const itemId = getGeneratedOrderItem(order)?.sourceOrder?._id
     if (!etsyOrderId) return
-    const itemQuery = itemId ? `?source=generated&itemId=${encodeURIComponent(itemId)}` : '?source=generated'
-    navigate(`/orders/etsy2/${encodeURIComponent(etsyOrderId)}/canvas${itemQuery}`)
+    const firstGeneratedItem = getGeneratedOrderItems(order)[0]
+    const source = firstGeneratedItem?.sourceOrder || firstGeneratedItem || {}
+    const itemId = source?._id || firstGeneratedItem?.id
+    if (!itemId) {
+      navigate(`/orders/generated/${encodeURIComponent(etsyOrderId)}`)
+      return
+    }
+    const kind = source.coverImageUrl ? 'cover' : 'interior'
+    navigate(`/orders/etsy2/${encodeURIComponent(etsyOrderId)}/canvas?source=generated&itemId=${encodeURIComponent(itemId)}&kind=${kind}`)
   }
 
   const handleSendToLulu = async (order) => {

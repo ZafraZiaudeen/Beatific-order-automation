@@ -286,8 +286,13 @@ export default function GeneratedOrderDetailPage() {
   const tax = Number(group?.pricing?.tax || 0)
 
   const handleEditPdf = () => {
-    const itemQuery = activeAsset?.itemId ? `?source=generated&itemId=${encodeURIComponent(activeAsset.itemId)}` : '?source=generated'
-    navigate(`/orders/etsy2/${encodeURIComponent(order.orderId)}/canvas${itemQuery}`)
+    const itemId = activeSource?._id || activeItem?.sourceOrder?._id || activeItem?.id
+    if (!itemId) {
+      setSnack({ open: true, message: 'This generated item could not be opened for editing.', severity: 'warning' })
+      return
+    }
+    const kind = activeAsset?.kind === 'interior' ? 'interior' : 'cover'
+    navigate(`/orders/etsy2/${encodeURIComponent(order.orderId)}/canvas?source=generated&itemId=${encodeURIComponent(itemId)}&kind=${kind}`)
   }
 
   const handleSendToLulu = async () => {

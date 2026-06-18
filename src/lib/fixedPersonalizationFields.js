@@ -22,25 +22,11 @@ export const FIXED_PERSONALIZATION_FIELDS = [
     sampleValue: 'Made with love',
   },
   {
-    key: 'quote',
-    label: 'Inside Page Quote',
+    key: 'first_page_message',
+    label: 'First Page Message',
     target: 'interiorFirstPage',
-    prompt: 'quote: add a quote to the inside page:',
-    sampleValue: 'Bloom where you are planted',
-  },
-  {
-    key: 'inside_page_name',
-    label: 'Inside Page Name',
-    target: 'interiorFirstPage',
-    prompt: 'name for inside page : add a name for inside page',
-    sampleValue: 'Stephanie',
-  },
-  {
-    key: 'valediction_text',
-    label: 'Inside Page Valediction',
-    target: 'interiorFirstPage',
-    prompt: 'valedicatation for inside page: add a valediction text',
-    sampleValue: 'With love,',
+    prompt: 'First Page Message: Add a special message:',
+    sampleValue: 'Write something meaningful here',
   },
 ]
 
