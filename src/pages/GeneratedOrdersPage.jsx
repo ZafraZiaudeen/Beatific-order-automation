@@ -20,6 +20,7 @@ import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined'
 import LocalShippingOutlinedIcon from '@mui/icons-material/LocalShippingOutlined'
 import PrintIcon from '@mui/icons-material/Print'
 import CircularProgressIcon from '@mui/icons-material/AutorenewOutlined'
+import CancelOutlinedIcon from '@mui/icons-material/CancelOutlined'
 import api from '../lib/api'
 import useAuthStore from '../stores/authStore'
 import { canManageWorkspace } from '../lib/permissions'
@@ -29,7 +30,9 @@ import {
   getGeneratedOrderItems,
   getGeneratedOrderSourceIds,
   hasGeneratedOrderItems,
+  isGeneratedPdfUrl,
 } from '../lib/generatedOrders'
+import { getCancelableLuluSourceIds } from '../lib/luluOrders'
 import { buildOrderGroups, getPresetDateRange, toEtsy2Order } from '../lib/etsy2Orders'
 import {
   cancelPdfGenerationJob,
@@ -71,7 +74,9 @@ export default function GeneratedOrdersPage() {
   const completedGenerationJobIdsRef = useRef(new Set())
   const [bulkGenerating, setBulkGenerating] = useState(false)
   const [bulkSending, setBulkSending] = useState(false)
+  const [bulkCancelling, setBulkCancelling] = useState(false)
   const [sendingOrderIds, setSendingOrderIds] = useState({})
+  const [cancellingOrderIds, setCancellingOrderIds] = useState({})
   const [snack, setSnack] = useState({ open: false, message: '', severity: 'success' })
 
   const fetchOrders = useCallback(async () => {
@@ -81,11 +86,35 @@ export default function GeneratedOrdersPage() {
         params: {
           page: 1,
           limit: ORDER_FETCH_LIMIT,
+          generatedOnly: true,
           ...(search ? { search } : {}),
           ...getPresetDateRange(dateRange),
         },
       })
-      setOrders(data.orders || [])
+      const firstPageOrders = data.orders || []
+      const totalPages = Math.max(1, Number(data.totalPages || 1))
+      if (totalPages === 1) {
+        setOrders(firstPageOrders)
+        return
+      }
+
+      const remainingPages = await Promise.all(
+        Array.from({ length: totalPages - 1 }, (_, index) =>
+          api.get('/orders', {
+            params: {
+              page: index + 2,
+              limit: ORDER_FETCH_LIMIT,
+              generatedOnly: true,
+              ...(search ? { search } : {}),
+              ...getPresetDateRange(dateRange),
+            },
+          })
+        )
+      )
+      setOrders([
+        ...firstPageOrders,
+        ...remainingPages.flatMap((response) => response.data.orders || []),
+      ])
     } catch {
       setSnack({ open: true, message: 'Failed to load generated PDFs', severity: 'error' })
     } finally {
@@ -201,7 +230,7 @@ export default function GeneratedOrdersPage() {
       navigate(`/orders/generated/${encodeURIComponent(etsyOrderId)}`)
       return
     }
-    const kind = source.coverImageUrl ? 'cover' : 'interior'
+    const kind = isGeneratedPdfUrl(source.coverImageUrl) ? 'cover' : 'interior'
     navigate(`/orders/etsy2/${encodeURIComponent(etsyOrderId)}/canvas?source=generated&itemId=${encodeURIComponent(itemId)}&kind=${kind}`)
   }
 
@@ -360,6 +389,73 @@ export default function GeneratedOrdersPage() {
     }
   }
 
+  const handleCancelLulu = async (order) => {
+    const sourceIds = getCancelableLuluSourceIds(order)
+    if (sourceIds.length === 0) {
+      setSnack({ open: true, message: 'This order has no Lulu jobs that can still be cancelled.', severity: 'warning' })
+      return
+    }
+    if (!window.confirm(`Cancel ${sourceIds.length} Lulu print job${sourceIds.length === 1 ? '' : 's'} for order #${order.orderId}?`)) return
+
+    setCancellingOrderIds((current) => ({ ...current, [order.orderId]: true }))
+    try {
+      const { data } = await api.post('/lulu/bulk-cancel', { orderIds: sourceIds })
+      await fetchOrders()
+      setSnack({
+        open: true,
+        message: `${data.cancelled || 0} of ${sourceIds.length} Lulu job${sourceIds.length === 1 ? '' : 's'} cancelled.`,
+        severity: data.failed > 0 ? 'warning' : 'success',
+      })
+    } catch (err) {
+      setSnack({
+        open: true,
+        message: err.response?.data?.message || err.response?.data?.error || 'Failed to cancel Lulu order',
+        severity: 'error',
+      })
+    } finally {
+      setCancellingOrderIds((current) => {
+        const next = { ...current }
+        delete next[order.orderId]
+        return next
+      })
+    }
+  }
+
+  const selectedCancelableSourceIds = useMemo(
+    () => filteredOrders
+      .filter((order) => selectedOrderIds.includes(order.orderId))
+      .flatMap(getCancelableLuluSourceIds),
+    [filteredOrders, selectedOrderIds]
+  )
+
+  const handleBulkCancelLulu = async () => {
+    if (selectedCancelableSourceIds.length === 0) {
+      setSnack({ open: true, message: 'Select generated orders with cancelable Lulu jobs first.', severity: 'warning' })
+      return
+    }
+    if (!window.confirm(`Cancel ${selectedCancelableSourceIds.length} selected Lulu print job${selectedCancelableSourceIds.length === 1 ? '' : 's'}?`)) return
+
+    setBulkCancelling(true)
+    try {
+      const { data } = await api.post('/lulu/bulk-cancel', { orderIds: selectedCancelableSourceIds })
+      await fetchOrders()
+      setSelectedOrderIds([])
+      setSnack({
+        open: true,
+        message: `${data.cancelled || 0} of ${selectedCancelableSourceIds.length} Lulu job${selectedCancelableSourceIds.length === 1 ? '' : 's'} cancelled.`,
+        severity: data.failed > 0 ? 'warning' : 'success',
+      })
+    } catch (err) {
+      setSnack({
+        open: true,
+        message: err.response?.data?.message || err.response?.data?.error || 'Failed to cancel selected Lulu orders',
+        severity: 'error',
+      })
+    } finally {
+      setBulkCancelling(false)
+    }
+  }
+
   return (
     <Box sx={{ p: 3 }}>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 2, flexWrap: 'wrap', mb: 3 }}>
@@ -407,6 +503,18 @@ export default function GeneratedOrdersPage() {
               sx={{ bgcolor: '#5B21D6', '&:hover': { bgcolor: '#4C1D95' }, fontWeight: 800 }}
             >
               {bulkSending ? 'Sending...' : 'Send Selected'}
+            </Button>
+          )}
+          {canManage && (
+            <Button
+              variant="outlined"
+              color="error"
+              startIcon={bulkCancelling ? <CircularProgress size={16} /> : <CancelOutlinedIcon />}
+              onClick={handleBulkCancelLulu}
+              disabled={selectedCancelableSourceIds.length === 0 || bulkCancelling}
+              sx={{ fontWeight: 800 }}
+            >
+              {bulkCancelling ? 'Cancelling...' : 'Cancel Selected Lulu'}
             </Button>
           )}
           <Button
@@ -480,6 +588,7 @@ export default function GeneratedOrdersPage() {
               onGenerateOrder={handleGenerate}
               onCancelGeneration={handleCancelGeneration}
               onSendToLulu={handleSendToLulu}
+              onCancelLulu={handleCancelLulu}
               canManage={canManage}
               selectedOrderIds={selectedOrderIds}
               onToggleOrder={handleToggleOrder}
@@ -488,6 +597,7 @@ export default function GeneratedOrdersPage() {
               partiallyVisibleSelected={selectedVisibleCount > 0 && selectedVisibleCount < paginatedOrders.length}
               generatingOrderIds={activeGeneratingOrderIds}
               sendingOrderIds={sendingOrderIds}
+              cancellingOrderIds={cancellingOrderIds}
             />
           </Box>
 

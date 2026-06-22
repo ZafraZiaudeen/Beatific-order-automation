@@ -86,6 +86,7 @@ const pageFromLibraryItem = (item) => {
   return {
     sourcePdfUrl: item.pdfUrl || item.sourceUrl || null,
     previewImageUrl: item.imageUrl || null,
+    textlessPreviewImageUrl: item.textlessPreviewImageUrl || null,
     pageWidth: item.pageWidth || 0,
     pageHeight: item.pageHeight || 0,
     pageCount: item.pageCount || 0,
@@ -141,7 +142,6 @@ const uniqueKey = (base, fields) => {
 }
 
 const draftMaxLines = (draft) => {
-  if (Number(draft.maxLines) > 1) return draft.maxLines
   const fontSize = Number(draft.fontSize) || 24
   const lineHeight = Number(draft.lineHeight) || 1.2
   const height = Number(draft.height) || fontSize * lineHeight
@@ -477,6 +477,7 @@ function TemplateStage({
   stageRef: externalStageRef = null,
 }) {
   const image = useLoadedImage(page?.previewImageUrl)
+  const textlessImage = useLoadedImage(page?.textlessPreviewImageUrl)
   const alignmentImage = useLoadedImage(alignmentImageUrl)
   const localStageRef = useRef(null)
   const stageRef = externalStageRef || localStageRef
@@ -672,21 +673,40 @@ function TemplateStage({
                 const fieldLocked = Boolean(field.locked)
                 const previewMode = previewModes[field.id] || 'sample'
                 const showSample = previewMode !== 'original'
-                const maskOriginal = previewMode === 'sample' && field.replacementBox && isSolidReplacementFill(field)
-                const useReplacementBox = Boolean(field.replacementBox && !(field.rotation || 0))
-                const box = useReplacementBox ? field.replacementBox : field
+                const maskOriginal = previewMode === 'sample' && field.replacementBox
+                const maskBox = field.replacementBox || field
+                const hasTextlessPreview = Boolean(page?.textlessPreviewImageUrl)
                 const sampleText = field.sampleValue || field.label
                 const fittedSample = getFittedTextProps(field, sampleText, { paddingX: 6, paddingY: 4 })
                 const replacementFill = getReplacementFill(field)
+                const textlessCrop = textlessImage && maskOriginal
+                  ? {
+                      x: (maskBox.x / pageWidth) * textlessImage.width,
+                      y: (maskBox.y / pageHeight) * textlessImage.height,
+                      width: (Math.max(1, maskBox.width) / pageWidth) * textlessImage.width,
+                      height: (Math.max(1, maskBox.height) / pageHeight) * textlessImage.height,
+                    }
+                  : null
                 return (
                   <React.Fragment key={field.id}>
-                    {maskOriginal && (
+                    {maskOriginal && textlessCrop && (
+                      <KonvaImage
+                        image={textlessImage}
+                        x={maskBox.x}
+                        y={maskBox.y}
+                        width={Math.max(1, maskBox.width)}
+                        height={Math.max(1, maskBox.height)}
+                        crop={textlessCrop}
+                        opacity={backgroundOpacity}
+                        listening={false}
+                      />
+                    )}
+                    {maskOriginal && !hasTextlessPreview && !textlessCrop && (
                       <Rect
-                        x={box.x}
-                        y={box.y}
-                        width={Math.max(1, box.width)}
-                        height={Math.max(1, box.height)}
-                        rotation={field.rotation || 0}
+                        x={maskBox.x}
+                        y={maskBox.y}
+                        width={Math.max(1, maskBox.width)}
+                        height={Math.max(1, maskBox.height)}
                         fill={replacementFill}
                         listening={false}
                       />

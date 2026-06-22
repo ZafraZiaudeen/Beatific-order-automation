@@ -25,6 +25,7 @@ import PersonOutlineOutlinedIcon from '@mui/icons-material/PersonOutlineOutlined
 import ReceiptLongOutlinedIcon from '@mui/icons-material/ReceiptLongOutlined'
 import SyncIcon from '@mui/icons-material/Sync'
 import WarningAmberOutlinedIcon from '@mui/icons-material/WarningAmberOutlined'
+import CancelOutlinedIcon from '@mui/icons-material/CancelOutlined'
 import api from '../lib/api'
 import OrderFormDialog from '../components/orders/OrderFormDialog'
 import Etsy2StatusBadge from '../components/etsy2/Etsy2StatusBadge'
@@ -32,7 +33,9 @@ import { buildAssetThumbnailUrl } from '../lib/assets'
 import {
   getGeneratedOrderItems,
   getGeneratedOrderSourceIds,
+  isGeneratedPdfUrl,
 } from '../lib/generatedOrders'
+import { getCancelableLuluSourceIds, isLuluCancelable } from '../lib/luluOrders'
 import {
   isPdfGenerationJobActive,
   listPdfGenerationJobs,
@@ -52,6 +55,31 @@ import { canManageWorkspace } from '../lib/permissions'
 
 const isImageUrl = (value = '') => /\.(png|jpe?g|webp|gif|svg)(\?.*)?$/i.test(value)
 const valueOrDash = (value) => value || '-'
+
+const buildGeneratedPreviewAssets = (order) =>
+  getGeneratedOrderItems(order).flatMap((item) => {
+    const source = item.sourceOrder || {}
+    return [
+      isGeneratedPdfUrl(source.coverImageUrl) ? {
+        id: `${item.id}-cover`,
+        itemId: source._id,
+        item,
+        kind: 'cover',
+        label: `${item.name} Cover`,
+        url: buildOrderFileUrl(source.coverImageUrl),
+        fileName: `${item.name || 'Cover'}.pdf`,
+      } : null,
+      isGeneratedPdfUrl(source.interiorPdfUrl) ? {
+        id: `${item.id}-interior`,
+        itemId: source._id,
+        item,
+        kind: 'interior',
+        label: `${item.name} Inside`,
+        url: buildOrderFileUrl(source.interiorPdfUrl),
+        fileName: `${item.name || 'Inside Pages'} inside.pdf`,
+      } : null,
+    ].filter(Boolean)
+  })
 
 function GeneratedPdfPreview({ asset }) {
   if (!asset?.url) {
@@ -145,6 +173,13 @@ function ItemSummary({ item, index }) {
               {flags.join(' | ')}
             </Alert>
           )}
+          {source.luluStatus && (
+            <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mt: 1.25 }}>
+              <Chip size="small" variant="outlined" label={`Lulu: ${source.luluStatus}`} />
+              {source.luluRawStatusName && <Chip size="small" variant="outlined" label={`Raw: ${source.luluRawStatusName}`} />}
+              {isLuluCancelable(source) && <Chip size="small" color="warning" label="Cancelable" />}
+            </Box>
+          )}
           {source.luluStatus === 'failed' && source.luluErrorMessage && (
             <Alert severity="error" icon={<WarningAmberOutlinedIcon />} sx={{ mt: 1.5, borderRadius: '8px' }}>
               {source.luluErrorMessage}
@@ -174,6 +209,7 @@ export default function GeneratedOrderDetailPage() {
   const [group, setGroup] = useState(null)
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
+  const [cancelling, setCancelling] = useState(false)
   const [activeAssetId, setActiveAssetId] = useState('')
   const [editOpen, setEditOpen] = useState(false)
   const [regenerateConfirmOpen, setRegenerateConfirmOpen] = useState(false)
@@ -181,20 +217,34 @@ export default function GeneratedOrderDetailPage() {
   const completedGenerationJobIdsRef = useRef(new Set())
   const [snack, setSnack] = useState({ open: false, message: '', severity: 'success' })
 
-  const fetchGroup = useCallback(async () => {
-    setLoading(true)
+  const fetchGroup = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) setLoading(true)
     try {
       const { data } = await api.get(`/orders/group/${encodeURIComponent(orderId)}`)
       setGroup(data)
+      return data
     } catch (err) {
       setSnack({ open: true, message: err.response?.data?.message || 'Failed to load generated order', severity: 'error' })
+      return null
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   }, [orderId])
 
   useEffect(() => {
     fetchGroup()
+  }, [fetchGroup])
+
+  useEffect(() => {
+    const refreshIfVisible = () => {
+      if (document.visibilityState === 'visible') fetchGroup({ silent: true })
+    }
+    window.addEventListener('focus', refreshIfVisible)
+    document.addEventListener('visibilitychange', refreshIfVisible)
+    return () => {
+      window.removeEventListener('focus', refreshIfVisible)
+      document.removeEventListener('visibilitychange', refreshIfVisible)
+    }
   }, [fetchGroup])
 
   const refreshGenerationJob = useCallback(async () => {
@@ -229,6 +279,7 @@ export default function GeneratedOrderDetailPage() {
   const generatedItems = useMemo(() => getGeneratedOrderItems(order), [order])
   const regenerating = isPdfGenerationJobActive(generationJob)
   const canRegenerate = canManage && generatedItems.some((item) => item.sourceOrder?.isProductMapped)
+  const cancelableLuluSourceIds = useMemo(() => getCancelableLuluSourceIds(order), [order])
 
   useEffect(() => {
     refreshGenerationJob()
@@ -240,32 +291,7 @@ export default function GeneratedOrderDetailPage() {
     return () => window.clearInterval(timer)
   }, [regenerating, refreshGenerationJob])
 
-  const previewAssets = useMemo(
-    () => generatedItems.flatMap((item) => {
-      const source = item.sourceOrder || {}
-      return [
-        source.coverImageUrl ? {
-          id: `${item.id}-cover`,
-          itemId: source._id,
-          item,
-          kind: 'cover',
-          label: `${item.name} Cover`,
-          url: buildOrderFileUrl(source.coverImageUrl),
-          fileName: `${item.name || 'Cover'}.pdf`,
-        } : null,
-        source.interiorPdfUrl ? {
-          id: `${item.id}-interior`,
-          itemId: source._id,
-          item,
-          kind: 'interior',
-          label: `${item.name} Inside`,
-          url: buildOrderFileUrl(source.interiorPdfUrl),
-          fileName: `${item.name || 'Inside Pages'} inside.pdf`,
-        } : null,
-      ].filter(Boolean)
-    }),
-    [generatedItems]
-  )
+  const previewAssets = useMemo(() => buildGeneratedPreviewAssets(order), [order])
 
   useEffect(() => {
     if (!previewAssets.length) {
@@ -322,13 +348,44 @@ export default function GeneratedOrderDetailPage() {
     }
   }
 
-  const handleDownloadPdfs = () => {
-    if (previewAssets.length === 0) {
+  const handleCancelLulu = async () => {
+    if (cancelableLuluSourceIds.length === 0) {
+      setSnack({ open: true, message: 'This order has no Lulu jobs that can still be cancelled.', severity: 'warning' })
+      return
+    }
+    if (!window.confirm(`Cancel ${cancelableLuluSourceIds.length} Lulu print job${cancelableLuluSourceIds.length === 1 ? '' : 's'} for order #${order.orderId}?`)) return
+
+    setCancelling(true)
+    try {
+      const { data } = await api.post('/lulu/bulk-cancel', { orderIds: cancelableLuluSourceIds })
+      await fetchGroup()
+      setSnack({
+        open: true,
+        message: `${data.cancelled || 0} of ${cancelableLuluSourceIds.length} Lulu job${cancelableLuluSourceIds.length === 1 ? '' : 's'} cancelled.`,
+        severity: data.failed > 0 ? 'warning' : 'success',
+      })
+    } catch (err) {
+      setSnack({
+        open: true,
+        message: err.response?.data?.message || err.response?.data?.error || 'Failed to cancel Lulu order',
+        severity: 'error',
+      })
+    } finally {
+      setCancelling(false)
+    }
+  }
+
+  const handleDownloadPdfs = async () => {
+    const freshGroup = await fetchGroup({ silent: true })
+    const freshOrder = freshGroup ? toEtsy2GroupOrder(freshGroup) : order
+    const freshAssets = buildGeneratedPreviewAssets(freshOrder)
+
+    if (freshAssets.length === 0) {
       setSnack({ open: true, message: 'No generated PDFs are available to download.', severity: 'warning' })
       return
     }
 
-    previewAssets.forEach((asset) => {
+    freshAssets.forEach((asset) => {
       const link = document.createElement('a')
       link.href = asset.url
       link.target = '_blank'
@@ -479,6 +536,18 @@ export default function GeneratedOrderDetailPage() {
                   sx={{ bgcolor: activeItem?.status === 'failed' ? '#DC2626' : '#16A34A', borderRadius: '6px', fontWeight: 800, '&:hover': { bgcolor: activeItem?.status === 'failed' ? '#B91C1C' : '#15803D' } }}
                 >
                   {sending ? 'Sending...' : activeItem?.status === 'failed' ? 'Resend to Lulu' : 'Send to Lulu'}
+                </Button>
+              )}
+              {canManage && cancelableLuluSourceIds.length > 0 && (
+                <Button
+                  variant="outlined"
+                  color="error"
+                  startIcon={cancelling ? <CircularProgress size={16} /> : <CancelOutlinedIcon />}
+                  onClick={handleCancelLulu}
+                  disabled={cancelling}
+                  sx={{ borderRadius: '6px', fontWeight: 800 }}
+                >
+                  {cancelling ? 'Cancelling Lulu...' : 'Cancel Lulu'}
                 </Button>
               )}
               <Button variant="outlined" startIcon={<OpenInNewOutlinedIcon />} onClick={() => activeAsset?.url && window.open(activeAsset.url, '_blank', 'noopener,noreferrer')} disabled={!activeAsset?.url} sx={{ borderColor: '#E5E7EB', color: '#111827', borderRadius: '6px', fontWeight: 800 }}>
