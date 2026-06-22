@@ -30,6 +30,7 @@ import {
   getGeneratedOrderItems,
   getGeneratedOrderSourceIds,
   hasGeneratedOrderItems,
+  isGeneratedPdfUrl,
 } from '../lib/generatedOrders'
 import { getCancelableLuluSourceIds } from '../lib/luluOrders'
 import { buildOrderGroups, getPresetDateRange, toEtsy2Order } from '../lib/etsy2Orders'
@@ -85,11 +86,35 @@ export default function GeneratedOrdersPage() {
         params: {
           page: 1,
           limit: ORDER_FETCH_LIMIT,
+          generatedOnly: true,
           ...(search ? { search } : {}),
           ...getPresetDateRange(dateRange),
         },
       })
-      setOrders(data.orders || [])
+      const firstPageOrders = data.orders || []
+      const totalPages = Math.max(1, Number(data.totalPages || 1))
+      if (totalPages === 1) {
+        setOrders(firstPageOrders)
+        return
+      }
+
+      const remainingPages = await Promise.all(
+        Array.from({ length: totalPages - 1 }, (_, index) =>
+          api.get('/orders', {
+            params: {
+              page: index + 2,
+              limit: ORDER_FETCH_LIMIT,
+              generatedOnly: true,
+              ...(search ? { search } : {}),
+              ...getPresetDateRange(dateRange),
+            },
+          })
+        )
+      )
+      setOrders([
+        ...firstPageOrders,
+        ...remainingPages.flatMap((response) => response.data.orders || []),
+      ])
     } catch {
       setSnack({ open: true, message: 'Failed to load generated PDFs', severity: 'error' })
     } finally {
@@ -205,7 +230,7 @@ export default function GeneratedOrdersPage() {
       navigate(`/orders/generated/${encodeURIComponent(etsyOrderId)}`)
       return
     }
-    const kind = source.coverImageUrl ? 'cover' : 'interior'
+    const kind = isGeneratedPdfUrl(source.coverImageUrl) ? 'cover' : 'interior'
     navigate(`/orders/etsy2/${encodeURIComponent(etsyOrderId)}/canvas?source=generated&itemId=${encodeURIComponent(itemId)}&kind=${kind}`)
   }
 

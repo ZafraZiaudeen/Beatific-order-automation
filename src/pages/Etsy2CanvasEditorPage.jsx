@@ -47,6 +47,7 @@ import { v4 as uuidv4 } from 'uuid'
 import api from '../lib/api'
 import { buildAssetThumbnailUrl } from '../lib/assets'
 import { toEtsy2GroupOrder } from '../lib/etsy2Orders'
+import { isGeneratedPdfUrl } from '../lib/generatedOrders'
 import { FONT_OPTIONS, ensureFontFaces, normalizeFontStyle } from '../lib/fonts'
 import { getFittedTextProps } from '../lib/textFitting'
 import { FIXED_PERSONALIZATION_FIELDS } from '../lib/fixedPersonalizationFields'
@@ -60,6 +61,7 @@ import {
 
 const CANVAS_STATE_KEY = '_canvasEditorState'
 const CANVAS_PDF_KEY = '_canvasPdfDataUrl'
+const CANVAS_STATE_VERSION = 4
 const canvasStateKeyFor = (kind) => `_canvasEditorState:${kind === 'interior' ? 'interior' : 'cover'}`
 const DEFAULT_PAGE = { width: 612, height: 792 }
 const DEFAULT_TEXT_MIN_FONT_SIZE = 8
@@ -146,7 +148,8 @@ function parseSavedState(orderItem, kind = 'cover') {
 }
 
 function defaultLayers(orderItem, order, page = DEFAULT_PAGE, decomposedPage = null) {
-  const backgroundUrl = decomposedPage?.previewImageUrl ||
+  const backgroundUrl = decomposedPage?.textlessPreviewImageUrl ||
+    decomposedPage?.previewImageUrl ||
     (orderItem?.coverImageUrl && isImageUrl(orderItem.coverImageUrl)
       ? buildAssetThumbnailUrl(orderItem.coverImageUrl, 1400)
       : '')
@@ -185,6 +188,14 @@ function defaultLayers(orderItem, order, page = DEFAULT_PAGE, decomposedPage = n
       writingMode: text.writingMode || 'horizontal',
       rawFontFamily: text.rawFontFamily || text.fontFamily || '',
       source: text.source || 'pdf',
+      sourceTextLayer: true,
+      originalText: text.text,
+      originalBox: {
+        x: text.x,
+        y: text.y,
+        width: Math.max(4, text.width || 180),
+        height: Math.max(4, text.height || text.fontSize || 24),
+      },
       confidence: text.confidence,
       dirty: false,
     }))
@@ -203,7 +214,7 @@ function defaultLayers(orderItem, order, page = DEFAULT_PAGE, decomposedPage = n
       rotation: 0,
       opacity: 1,
       url: backgroundUrl,
-      textlessPreview: Boolean(decomposedPage?.previewImageUrl),
+      textlessPreview: Boolean(decomposedPage?.textlessPreviewImageUrl),
     },
     ...textLayers,
   ]
@@ -729,7 +740,7 @@ function CanvasStage({
                 proofLabel="Customer order proof"
               />
 
-              {layers.filter((layer) => layer.type !== 'background' && (layer.visible || (layer.maskOriginal && layer.dirty))).map((layer) => (
+              {layers.filter((layer) => !layer.redactionOnly && layer.type !== 'background' && (layer.visible || (layer.maskOriginal && layer.dirty))).map((layer) => (
                 layer.type === 'image' ? (
                   <ImageCanvasNode key={layer.id} layer={layer} setSelectedId={setSelectedId} updateLayer={updateLayer} setLiveBox={setLiveBox} />
                 ) : (
@@ -1027,12 +1038,26 @@ export default function Etsy2CanvasEditorPage() {
   const orderItem = useMemo(() => {
     if (!group?.items?.length) return null
     const itemId = searchParams.get('itemId')
-    return group.items.find((item) => String(item._id) === itemId) ||
-      group.items.find((item) => item.coverImageUrl || item.interiorPdfUrl) ||
-      group.items[0]
+    const isGenerated = searchParams.get('source') === 'generated'
+    const generatedItem = (item) => isGeneratedPdfUrl(item.coverImageUrl) || isGeneratedPdfUrl(item.interiorPdfUrl)
+    if (itemId) {
+      const exact = group.items.find((item) => String(item._id) === itemId)
+      if (exact) return exact
+    }
+    if (isGenerated) return group.items.find(generatedItem) || null
+    return group.items.find((item) => item.coverImageUrl || item.interiorPdfUrl) || group.items[0]
   }, [group, searchParams])
-  const editKind = searchParams.get('kind') === 'interior' || (!orderItem?.coverImageUrl && orderItem?.interiorPdfUrl) ? 'interior' : 'cover'
   const isGeneratedEdit = searchParams.get('source') === 'generated'
+  const editKind = searchParams.get('kind') === 'interior' ||
+    (isGeneratedEdit
+      ? !isGeneratedPdfUrl(orderItem?.coverImageUrl) && isGeneratedPdfUrl(orderItem?.interiorPdfUrl)
+      : !orderItem?.coverImageUrl && orderItem?.interiorPdfUrl)
+    ? 'interior'
+    : 'cover'
+  const generatedEditPdfUrl = isGeneratedEdit
+    ? (editKind === 'interior' ? orderItem?.interiorPdfUrl : orderItem?.coverImageUrl)
+    : ''
+  const generatedEditReady = !isGeneratedEdit || isGeneratedPdfUrl(generatedEditPdfUrl)
   const selected = layers.find((layer) => layer.id === selectedId) || null
   const normalizedGeometry = pageGeometry?.geometry || pageGeometry
   const realValueStatuses = useMemo(() => valueStatusesFor(orderItem, editKind), [orderItem, editKind])
@@ -1049,22 +1074,39 @@ export default function Etsy2CanvasEditorPage() {
 
   useEffect(() => {
     if (!orderItem || !order) return
+    if (!generatedEditReady) {
+      setPageSize(DEFAULT_PAGE)
+      setLayers([])
+      setPageGeometry(null)
+      setSelectedId('')
+      setDecomposing(false)
+      setSnack({
+        open: true,
+        message: 'Generate this order PDF before editing. Product library PDFs cannot be edited as generated order PDFs.',
+        severity: 'warning',
+      })
+      return
+    }
     const saved = parseSavedState(orderItem, editKind)
     const savedHasBackground = saved?.layers?.some((layer) => layer.type === 'background' && layer.url && layer.textlessPreview)
+    const savedIsCurrent = !isGeneratedEdit ||
+      (Number(saved?.version || 0) >= CANVAS_STATE_VERSION && saved?.sourcePdfUrl === generatedEditPdfUrl)
     if (saved && savedHasBackground) {
-      setPageSize(saved.page || DEFAULT_PAGE)
-      setLayers(saved.layers)
-      setPageGeometry(saved.geometry || null)
-      setShowAlignment(saved.settings?.showAlignment ?? true)
-      setShowGuides(saved.settings?.showGuides ?? true)
-      setShowRulers(saved.settings?.showRulers ?? true)
-      setMeasurementUnit(saved.settings?.measurementUnit || 'in')
-      setAlignmentOpacity(saved.settings?.alignmentOpacity ?? 0.62)
-      setBackgroundOpacity(saved.settings?.backgroundOpacity ?? 1)
-      setSelectedId((saved.layers || []).find((layer) => layer.type === 'text')?.id || '')
-      setHistory([])
-      setFuture([])
-      return
+      if (savedIsCurrent) {
+        setPageSize(saved.page || DEFAULT_PAGE)
+        setLayers(saved.layers)
+        setPageGeometry(saved.geometry || null)
+        setShowAlignment(saved.settings?.showAlignment ?? true)
+        setShowGuides(saved.settings?.showGuides ?? true)
+        setShowRulers(saved.settings?.showRulers ?? true)
+        setMeasurementUnit(saved.settings?.measurementUnit || 'in')
+        setAlignmentOpacity(saved.settings?.alignmentOpacity ?? 0.62)
+        setBackgroundOpacity(saved.settings?.backgroundOpacity ?? 1)
+        setSelectedId((saved.layers || []).find((layer) => layer.type === 'text' && !layer.redactionOnly)?.id || '')
+        setHistory([])
+        setFuture([])
+        return
+      }
     }
 
     let cancelled = false
@@ -1108,7 +1150,7 @@ export default function Etsy2CanvasEditorPage() {
     return () => {
       cancelled = true
     }
-  }, [orderItem, order, editKind])
+  }, [orderItem, order, editKind, isGeneratedEdit, generatedEditReady, generatedEditPdfUrl])
 
   const commitLayers = (updater) => {
     setLayers((current) => {
@@ -1188,17 +1230,41 @@ export default function Etsy2CanvasEditorPage() {
     reader.readAsDataURL(file)
   }
 
+  const deleteCanvasLayer = (target) => {
+    if (!target || target.locked || target.type === 'background') return
+    if (target.sourceTextLayer && target.maskOriginal) {
+      commitLayers((current) => current.map((layer) => (
+        layer.id === target.id
+          ? {
+              ...layer,
+              visible: false,
+              text: '',
+              dirty: true,
+              redactionOnly: true,
+              replacementBox: layer.originalBox || layer.replacementBox || {
+                x: layer.x,
+                y: layer.y,
+                width: Math.max(4, layer.width || 1),
+                height: Math.max(4, layer.height || layer.fontSize || 1),
+              },
+            }
+          : layer
+      )))
+    } else {
+      commitLayers((current) => current.filter((layer) => layer.id !== target.id))
+    }
+    setSelectedId('')
+  }
+
   const deleteSelected = () => {
     if (!selected || selected.locked) return
-    commitLayers((current) => current.filter((layer) => layer.id !== selected.id))
-    setSelectedId('')
+    deleteCanvasLayer(selected)
   }
 
   const deleteLayer = (id) => {
     const target = layers.find((layer) => layer.id === id)
     if (!target || target.locked || target.type === 'background') return
-    commitLayers((current) => current.filter((layer) => layer.id !== id))
-    if (selectedId === id) setSelectedId('')
+    deleteCanvasLayer(target)
   }
 
   const moveSelected = (direction) => {
@@ -1252,8 +1318,9 @@ export default function Etsy2CanvasEditorPage() {
   }
 
   const buildCanvasState = () => ({
-    version: 2,
+    version: CANVAS_STATE_VERSION,
     kind: editKind,
+    sourcePdfUrl: isGeneratedEdit ? generatedEditPdfUrl : '',
     page: pageSize,
     savedAt: new Date().toISOString(),
     orderId,
@@ -1263,13 +1330,27 @@ export default function Etsy2CanvasEditorPage() {
     settings: { showAlignment, showGuides, showRulers, measurementUnit, alignmentOpacity, backgroundOpacity },
   })
 
+  const applySavedGeneratedOrder = (savedOrder) => {
+    if (!savedOrder?._id) return
+    setGroup((current) => current
+      ? {
+          ...current,
+          items: (current.items || []).map((item) => (
+            String(item._id) === String(savedOrder._id) ? { ...item, ...savedOrder } : item
+          )),
+        }
+      : current)
+  }
+
   const renderGeneratedVectorPdf = async () => {
     if (!orderItem?._id) throw new Error('Order item is not ready yet')
+    if (!generatedEditReady) throw new Error('Generate this order PDF before editing it.')
     const canvasState = JSON.stringify(buildCanvasState())
     const { data } = await api.post(`/orders/${orderItem._id}/generated-canvas-pdf`, {
       kind: editKind,
       canvasState,
     })
+    applySavedGeneratedOrder(data?.order)
     return { data, canvasState }
   }
 
@@ -1377,6 +1458,17 @@ export default function Etsy2CanvasEditorPage() {
     )
   }
 
+  if (isGeneratedEdit && !generatedEditReady) {
+    return (
+      <Box sx={{ p: 3 }}>
+        <Button startIcon={<ArrowBackIcon />} onClick={() => navigate(backToGeneratedPath)}>Back to Generated Orders</Button>
+        <Alert severity="warning" sx={{ mt: 2 }}>
+          Generate this order PDF before editing. Product library PDFs cannot be edited as generated order PDFs.
+        </Alert>
+      </Box>
+    )
+  }
+
   return (
     <Box sx={{ minHeight: '100vh', overflow: 'auto', display: 'flex', flexDirection: 'column', gap: 1.5, p: { xs: 1.25, md: 2 }, bgcolor: '#FFFFFF' }}>
       <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 2, flexWrap: 'wrap' }}>
@@ -1425,7 +1517,7 @@ export default function Etsy2CanvasEditorPage() {
             <input ref={imageInputRef} type="file" accept="image/*" hidden onChange={(event) => addImageLayer(event.target.files?.[0])} />
             <Typography variant="h6" sx={{ fontWeight: 900, color: '#0F172A', mb: 2 }}>Layers</Typography>
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.25 }}>
-              {[...layers].reverse().map((layer) => (
+              {[...layers].filter((layer) => !layer.redactionOnly).reverse().map((layer) => (
                 <LayerRow
                   key={layer.id}
                   layer={layer}

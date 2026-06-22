@@ -39,7 +39,7 @@ import { buildAssetThumbnailUrl } from '../lib/assets'
 import OrderFormDialog from '../components/orders/OrderFormDialog'
 import Etsy2StatusBadge from '../components/etsy2/Etsy2StatusBadge'
 import { deriveBatchStatus, ITEM_STATUSES } from '../lib/etsy2Constants'
-import { getGeneratedOrderItems, getGeneratedOrderSourceIds } from '../lib/generatedOrders'
+import { getGeneratedOrderItems, getGeneratedOrderSourceIds, isGeneratedPdfUrl } from '../lib/generatedOrders'
 import {
   addressLines,
   buildOrderFileUrl,
@@ -331,20 +331,34 @@ export default function Etsy2OrderDetailPage() {
   const [editOpen, setEditOpen] = useState(false)
   const [snack, setSnack] = useState({ open: false, message: '', severity: 'success' })
 
-  const fetchGroup = useCallback(async () => {
-    setLoading(true)
+  const fetchGroup = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) setLoading(true)
     try {
       const { data } = await api.get(`/orders/group/${encodeURIComponent(orderId)}`)
       setGroup(data)
+      return data
     } catch (err) {
       setSnack({ open: true, message: err.response?.data?.message || 'Failed to load order', severity: 'error' })
+      return null
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   }, [orderId])
 
   useEffect(() => {
     fetchGroup()
+  }, [fetchGroup])
+
+  useEffect(() => {
+    const refreshIfVisible = () => {
+      if (document.visibilityState === 'visible') fetchGroup({ silent: true })
+    }
+    window.addEventListener('focus', refreshIfVisible)
+    document.addEventListener('visibilitychange', refreshIfVisible)
+    return () => {
+      window.removeEventListener('focus', refreshIfVisible)
+      document.removeEventListener('visibilitychange', refreshIfVisible)
+    }
   }, [fetchGroup])
 
   const refreshGenerationJob = useCallback(async () => {
@@ -387,14 +401,14 @@ export default function Etsy2OrderDetailPage() {
   const previewItem = generatedItems[0] || order?.items?.[0] || null
   const previewSource = previewItem?.sourceOrder || {}
   const previewAssets = [
-    previewSource.coverImageUrl ? {
+    isGeneratedPdfUrl(previewSource.coverImageUrl) ? {
       kind: 'cover',
       label: 'Cover PDF',
       title: 'Cover Preview',
       fileName: `${previewItem?.name || 'Cover'}.pdf`,
       url: buildOrderFileUrl(previewSource.coverImageUrl),
     } : null,
-    previewSource.interiorPdfUrl ? {
+    isGeneratedPdfUrl(previewSource.interiorPdfUrl) ? {
       kind: 'interior',
       label: 'Inside Pages',
       title: 'Inside Page Preview',
@@ -500,13 +514,35 @@ export default function Etsy2OrderDetailPage() {
     }
   }
 
-  const handleDownloadGeneratedPdfs = () => {
-    if (previewAssets.length === 0) {
+  const handleDownloadGeneratedPdfs = async () => {
+    const freshGroup = await fetchGroup({ silent: true })
+    const freshOrder = freshGroup ? toEtsy2GroupOrder(freshGroup) : order
+    const freshGeneratedItems = getGeneratedOrderItems(freshOrder)
+    const freshPreviewItem = freshGeneratedItems[0] || freshOrder?.items?.[0] || null
+    const freshPreviewSource = freshPreviewItem?.sourceOrder || {}
+    const freshPreviewAssets = [
+      isGeneratedPdfUrl(freshPreviewSource.coverImageUrl) ? {
+        kind: 'cover',
+        label: 'Cover PDF',
+        title: 'Cover Preview',
+        fileName: `${freshPreviewItem?.name || 'Cover'}.pdf`,
+        url: buildOrderFileUrl(freshPreviewSource.coverImageUrl),
+      } : null,
+      isGeneratedPdfUrl(freshPreviewSource.interiorPdfUrl) ? {
+        kind: 'interior',
+        label: 'Inside Pages',
+        title: 'Inside Page Preview',
+        fileName: `${freshPreviewItem?.name || 'Inside Pages'} inside.pdf`,
+        url: buildOrderFileUrl(freshPreviewSource.interiorPdfUrl),
+      } : null,
+    ].filter(Boolean)
+
+    if (freshPreviewAssets.length === 0) {
       setSnack({ open: true, message: 'No generated PDFs are available to download.', severity: 'warning' })
       return
     }
 
-    previewAssets.forEach((asset) => {
+    freshPreviewAssets.forEach((asset) => {
       const link = document.createElement('a')
       link.href = asset.url
       link.target = '_blank'
@@ -519,7 +555,10 @@ export default function Etsy2OrderDetailPage() {
   }
 
   const handleEditInCanvas = () => {
-    const itemQuery = previewSource?._id ? `?source=generated&itemId=${encodeURIComponent(previewSource._id)}` : '?source=generated'
+    const kind = activeAsset?.kind === 'interior' ? 'interior' : 'cover'
+    const itemQuery = previewSource?._id
+      ? `?source=generated&itemId=${encodeURIComponent(previewSource._id)}&kind=${kind}`
+      : `?source=generated&kind=${kind}`
     navigate(`/orders/etsy2/${encodeURIComponent(order.orderId)}/canvas${itemQuery}`)
   }
 

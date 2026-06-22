@@ -33,6 +33,7 @@ import { buildAssetThumbnailUrl } from '../lib/assets'
 import {
   getGeneratedOrderItems,
   getGeneratedOrderSourceIds,
+  isGeneratedPdfUrl,
 } from '../lib/generatedOrders'
 import { getCancelableLuluSourceIds, isLuluCancelable } from '../lib/luluOrders'
 import {
@@ -54,6 +55,31 @@ import { canManageWorkspace } from '../lib/permissions'
 
 const isImageUrl = (value = '') => /\.(png|jpe?g|webp|gif|svg)(\?.*)?$/i.test(value)
 const valueOrDash = (value) => value || '-'
+
+const buildGeneratedPreviewAssets = (order) =>
+  getGeneratedOrderItems(order).flatMap((item) => {
+    const source = item.sourceOrder || {}
+    return [
+      isGeneratedPdfUrl(source.coverImageUrl) ? {
+        id: `${item.id}-cover`,
+        itemId: source._id,
+        item,
+        kind: 'cover',
+        label: `${item.name} Cover`,
+        url: buildOrderFileUrl(source.coverImageUrl),
+        fileName: `${item.name || 'Cover'}.pdf`,
+      } : null,
+      isGeneratedPdfUrl(source.interiorPdfUrl) ? {
+        id: `${item.id}-interior`,
+        itemId: source._id,
+        item,
+        kind: 'interior',
+        label: `${item.name} Inside`,
+        url: buildOrderFileUrl(source.interiorPdfUrl),
+        fileName: `${item.name || 'Inside Pages'} inside.pdf`,
+      } : null,
+    ].filter(Boolean)
+  })
 
 function GeneratedPdfPreview({ asset }) {
   if (!asset?.url) {
@@ -191,20 +217,34 @@ export default function GeneratedOrderDetailPage() {
   const completedGenerationJobIdsRef = useRef(new Set())
   const [snack, setSnack] = useState({ open: false, message: '', severity: 'success' })
 
-  const fetchGroup = useCallback(async () => {
-    setLoading(true)
+  const fetchGroup = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) setLoading(true)
     try {
       const { data } = await api.get(`/orders/group/${encodeURIComponent(orderId)}`)
       setGroup(data)
+      return data
     } catch (err) {
       setSnack({ open: true, message: err.response?.data?.message || 'Failed to load generated order', severity: 'error' })
+      return null
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   }, [orderId])
 
   useEffect(() => {
     fetchGroup()
+  }, [fetchGroup])
+
+  useEffect(() => {
+    const refreshIfVisible = () => {
+      if (document.visibilityState === 'visible') fetchGroup({ silent: true })
+    }
+    window.addEventListener('focus', refreshIfVisible)
+    document.addEventListener('visibilitychange', refreshIfVisible)
+    return () => {
+      window.removeEventListener('focus', refreshIfVisible)
+      document.removeEventListener('visibilitychange', refreshIfVisible)
+    }
   }, [fetchGroup])
 
   const refreshGenerationJob = useCallback(async () => {
@@ -251,32 +291,7 @@ export default function GeneratedOrderDetailPage() {
     return () => window.clearInterval(timer)
   }, [regenerating, refreshGenerationJob])
 
-  const previewAssets = useMemo(
-    () => generatedItems.flatMap((item) => {
-      const source = item.sourceOrder || {}
-      return [
-        source.coverImageUrl ? {
-          id: `${item.id}-cover`,
-          itemId: source._id,
-          item,
-          kind: 'cover',
-          label: `${item.name} Cover`,
-          url: buildOrderFileUrl(source.coverImageUrl),
-          fileName: `${item.name || 'Cover'}.pdf`,
-        } : null,
-        source.interiorPdfUrl ? {
-          id: `${item.id}-interior`,
-          itemId: source._id,
-          item,
-          kind: 'interior',
-          label: `${item.name} Inside`,
-          url: buildOrderFileUrl(source.interiorPdfUrl),
-          fileName: `${item.name || 'Inside Pages'} inside.pdf`,
-        } : null,
-      ].filter(Boolean)
-    }),
-    [generatedItems]
-  )
+  const previewAssets = useMemo(() => buildGeneratedPreviewAssets(order), [order])
 
   useEffect(() => {
     if (!previewAssets.length) {
@@ -360,13 +375,17 @@ export default function GeneratedOrderDetailPage() {
     }
   }
 
-  const handleDownloadPdfs = () => {
-    if (previewAssets.length === 0) {
+  const handleDownloadPdfs = async () => {
+    const freshGroup = await fetchGroup({ silent: true })
+    const freshOrder = freshGroup ? toEtsy2GroupOrder(freshGroup) : order
+    const freshAssets = buildGeneratedPreviewAssets(freshOrder)
+
+    if (freshAssets.length === 0) {
       setSnack({ open: true, message: 'No generated PDFs are available to download.', severity: 'warning' })
       return
     }
 
-    previewAssets.forEach((asset) => {
+    freshAssets.forEach((asset) => {
       const link = document.createElement('a')
       link.href = asset.url
       link.target = '_blank'
