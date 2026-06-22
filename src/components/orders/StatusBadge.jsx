@@ -10,6 +10,7 @@ const STATUS_COLORS = {
   submitted: { color: 'info', label: 'Submitted' },
   in_production: { color: 'warning', label: 'In Production' },
   shipped: { color: 'success', label: 'Shipped' },
+  cancelled: { color: 'default', label: 'Cancelled' },
   failed: { color: 'error', label: 'Failed' },
 }
 

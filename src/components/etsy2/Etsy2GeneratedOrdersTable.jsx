@@ -25,6 +25,7 @@ import Etsy2StatusBadge from './Etsy2StatusBadge'
 import { buildAssetThumbnailUrl } from '../../lib/assets'
 import { getGeneratedOrderItem } from '../../lib/generatedOrders'
 import { formatDate, optionText } from '../../lib/etsy2Orders'
+import { getCancelableLuluSourceIds } from '../../lib/luluOrders'
 
 const isImageUrl = (value = '') => /\.(png|jpe?g|webp|gif|svg)(\?.*)?$/i.test(value)
 
@@ -73,8 +74,10 @@ export default function Etsy2GeneratedOrdersTable({
   onGenerateOrder,
   onCancelGeneration,
   onSendToLulu,
+  onCancelLulu,
   generatingOrderIds = {},
   sendingOrderIds = {},
+  cancellingOrderIds = {},
   onDeleteOrder,
 }) {
   return (
@@ -110,8 +113,10 @@ export default function Etsy2GeneratedOrdersTable({
             const templateName = source.matchedVariantName || source.projectName || 'Print Template'
             const generating = Boolean(generatingOrderIds[order.orderId])
             const sending = Boolean(sendingOrderIds[order.orderId])
+            const cancelling = Boolean(cancellingOrderIds[order.orderId])
             const orderStatus = item?.status || order?.status
             const canGenerate = Boolean(item?.sourceOrder?.isProductMapped)
+            const canCancelLulu = getCancelableLuluSourceIds(order).length > 0
 
             return (
               <TableRow key={order.orderId} hover sx={{ '& td': { borderColor: '#EEF2F7', py: 2 } }}>
@@ -217,6 +222,19 @@ export default function Etsy2GeneratedOrdersTable({
                         sx={{ borderColor: '#E5E7EB', color: '#111827', fontWeight: 700, borderRadius: '6px' }}
                       >
                         {orderStatus === 'failed' ? 'Resend to Lulu' : 'Send to Lulu'}
+                      </Button>
+                    )}
+                    {canManage && canCancelLulu && (
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        color="error"
+                        startIcon={cancelling ? <CircularProgress size={14} /> : <CancelOutlinedIcon />}
+                        disabled={cancelling}
+                        onClick={() => onCancelLulu?.(order)}
+                        sx={{ fontWeight: 700, borderRadius: '6px' }}
+                      >
+                        {cancelling ? 'Cancelling...' : 'Cancel Lulu'}
                       </Button>
                     )}
                     {canManage && onDeleteOrder && (

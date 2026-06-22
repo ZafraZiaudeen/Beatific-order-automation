@@ -1,4 +1,4 @@
-const DEFAULT_MIN_FONT_SIZE = 6
+export const DEFAULT_MIN_FONT_SIZE = 8
 const MAX_CONFIGURED_LINES = 12
 
 let measureCanvas = null
@@ -32,7 +32,7 @@ const measure = (ctx, value) => ctx.measureText(String(value || '')).width
 const splitLongToken = (ctx, token, maxWidth) => {
   const chunks = []
   let current = ''
-  for (const char of token) {
+  for (const char of String(token || '')) {
     const next = `${current}${char}`
     if (current && measure(ctx, next) > maxWidth) {
       chunks.push(current)
@@ -42,14 +42,15 @@ const splitLongToken = (ctx, token, maxWidth) => {
     }
   }
   if (current) chunks.push(current)
-  return chunks
+  return chunks.length ? chunks : [String(token || '')]
 }
 
 const wrapParagraph = (ctx, paragraph, maxWidth) => {
-  if (!paragraph) return ['']
+  if (!paragraph) return { lines: [''], brokeLongWord: false }
 
   const lines = []
   let current = ''
+  let brokeLongWord = false
   const tokens = String(paragraph).split(/(\s+)/)
 
   for (const token of tokens) {
@@ -67,6 +68,7 @@ const wrapParagraph = (ctx, paragraph, maxWidth) => {
 
     if (!isSpace && measure(ctx, token) > maxWidth) {
       const chunks = splitLongToken(ctx, token, maxWidth)
+      brokeLongWord = brokeLongWord || chunks.length > 1
       lines.push(...chunks.slice(0, -1))
       current = chunks[chunks.length - 1] || ''
     } else {
@@ -75,27 +77,33 @@ const wrapParagraph = (ctx, paragraph, maxWidth) => {
   }
 
   if (current.trim() || !lines.length) lines.push(current.trimEnd())
-  return lines
+  return { lines, brokeLongWord }
 }
 
 const wrapText = (ctx, text, maxWidth, maxLines) => {
-  if (maxLines <= 1) return String(text || '').split(/\r?\n/)
-  return String(text || '')
-    .split(/\r?\n/)
-    .flatMap((paragraph) => wrapParagraph(ctx, paragraph, maxWidth))
+  const rawLines = String(text || '').split(/\r?\n/)
+  if (maxLines <= 1) {
+    return {
+      lines: rawLines.length ? rawLines : [''],
+      brokeLongWord: false,
+    }
+  }
+
+  const wrapped = []
+  let brokeLongWord = false
+  for (const paragraph of rawLines) {
+    const result = wrapParagraph(ctx, paragraph, maxWidth)
+    wrapped.push(...result.lines)
+    brokeLongWord = brokeLongWord || result.brokeLongWord
+  }
+  return { lines: wrapped.length ? wrapped : [''], brokeLongWord }
 }
 
-const getRenderedLineCount = ({ text, width, fontSize, fontFamily, fontStyle, fontWeight, maxLines }) => {
-  const ctx = getMeasureContext()
-  if (!ctx) return Math.max(1, String(text || '').split(/\r?\n/).length)
-
-  setCanvasFont(ctx, fontSize, fontFamily, fontStyle, fontWeight)
-  return Math.max(1, wrapText(ctx, text, Math.max(1, width), maxLines).length)
-}
+const resolveMaxLines = (value) => Math.max(1, Math.min(MAX_CONFIGURED_LINES, Math.floor(positiveNumber(value, 1))))
 
 export const getFieldMaxLines = (field = {}) => {
   const explicit = Number(field.maxLines)
-  if (Number.isFinite(explicit) && explicit > 1) {
+  if (Number.isFinite(explicit) && explicit >= 1) {
     return Math.min(MAX_CONFIGURED_LINES, Math.floor(explicit))
   }
 
@@ -103,6 +111,47 @@ export const getFieldMaxLines = (field = {}) => {
   const lineHeight = positiveNumber(field.lineHeight, 1.2)
   const height = positiveNumber(field.height, fontSize * lineHeight)
   return Math.max(1, Math.min(MAX_CONFIGURED_LINES, Math.floor(height / (fontSize * lineHeight))))
+}
+
+export const getFieldMinFontSize = (field = {}) => {
+  const configuredFontSize = positiveNumber(field.fontSize, 12)
+  const configuredMinimum = positiveNumber(field.minFontSize, DEFAULT_MIN_FONT_SIZE)
+  return Math.max(4, Math.min(configuredFontSize, configuredMinimum))
+}
+
+const measureFit = ({
+  ctx,
+  text,
+  width,
+  height,
+  fontSize,
+  fontFamily,
+  fontStyle,
+  fontWeight,
+  lineHeight,
+  maxLines,
+  preserveFontSizeOnWrap,
+}) => {
+  setCanvasFont(ctx, fontSize, fontFamily, fontStyle, fontWeight)
+  const { lines, brokeLongWord } = wrapText(ctx, text, Math.max(1, width), maxLines)
+  const widest = lines.reduce((max, line) => Math.max(max, measure(ctx, line)), 0)
+  const lineCount = Math.max(1, lines.length)
+  const textHeight = lineCount * fontSize * lineHeight
+  const effectiveHeight = preserveFontSizeOnWrap && maxLines > 1
+    ? Math.max(height, fontSize * lineHeight * maxLines)
+    : height
+  const fits = lineCount <= maxLines && widest <= width + 0.5 && textHeight <= effectiveHeight + 0.5
+
+  return {
+    fits,
+    lines,
+    lineCount,
+    brokeLongWord,
+    widest,
+    textHeight,
+    availableWidth: width,
+    availableHeight: effectiveHeight,
+  }
 }
 
 export const fitTextToBox = ({
@@ -123,28 +172,123 @@ export const fitTextToBox = ({
   const boxHeight = positiveNumber(height, 1)
   const startSize = positiveNumber(fontSize, 12)
   const resolvedLineHeight = positiveNumber(lineHeight, 1.2)
-  const resolvedMaxLines = Math.max(1, Math.min(MAX_CONFIGURED_LINES, Math.floor(positiveNumber(maxLines, 1))))
-  const effectiveHeight = preserveFontSizeOnWrap && resolvedMaxLines > 1
-    ? Math.max(boxHeight, startSize * resolvedLineHeight * resolvedMaxLines)
-    : boxHeight
+  const resolvedMaxLines = resolveMaxLines(maxLines)
+  const resolvedMinSize = Math.max(4, Math.min(startSize, positiveNumber(minFontSize, DEFAULT_MIN_FONT_SIZE)))
 
-  if (!ctx) return startSize
-
-  let size = startSize
-  while (size >= minFontSize - 0.01) {
-    setCanvasFont(ctx, size, fontFamily, fontStyle, fontWeight)
-    const lines = wrapText(ctx, text, boxWidth, resolvedMaxLines)
-    const widest = lines.reduce((max, line) => Math.max(max, measure(ctx, line)), 0)
-    const textHeight = lines.length * size * resolvedLineHeight
-
-    if (lines.length <= resolvedMaxLines && widest <= boxWidth + 0.5 && textHeight <= effectiveHeight + 0.5) {
-      return Math.round(size * 100) / 100
+  if (!ctx) {
+    const fallbackLines = String(text || '').split(/\r?\n/)
+    return {
+      fontSize: startSize,
+      minFontSize: resolvedMinSize,
+      fits: true,
+      reduced: false,
+      belowMinimum: false,
+      lines: fallbackLines.length ? fallbackLines : [''],
+      lineCount: Math.max(1, fallbackLines.length),
+      brokeLongWord: false,
+      wrap: resolvedMaxLines <= 1 ? 'none' : 'word',
     }
-
-    size -= 0.5
   }
 
-  return minFontSize
+  if (preserveFontSizeOnWrap) {
+    const metrics = measureFit({
+      ctx,
+      text,
+      width: boxWidth,
+      height: boxHeight,
+      fontSize: startSize,
+      fontFamily,
+      fontStyle,
+      fontWeight,
+      lineHeight: resolvedLineHeight,
+      maxLines: resolvedMaxLines,
+      preserveFontSizeOnWrap,
+    })
+    return {
+      ...metrics,
+      fontSize: startSize,
+      minFontSize: resolvedMinSize,
+      reduced: false,
+      belowMinimum: !metrics.fits,
+      wrap: metrics.brokeLongWord ? 'char' : (resolvedMaxLines <= 1 ? 'none' : 'word'),
+    }
+  }
+
+  let best = null
+  let low = resolvedMinSize
+  let high = startSize
+
+  for (let i = 0; i < 14; i += 1) {
+    const candidate = Math.round(((low + high) / 2) * 1000) / 1000
+    const metrics = measureFit({
+      ctx,
+      text,
+      width: boxWidth,
+      height: boxHeight,
+      fontSize: candidate,
+      fontFamily,
+      fontStyle,
+      fontWeight,
+      lineHeight: resolvedLineHeight,
+      maxLines: resolvedMaxLines,
+      preserveFontSizeOnWrap,
+    })
+
+    if (metrics.fits) {
+      best = { ...metrics, fontSize: candidate }
+      low = candidate
+    } else {
+      high = candidate
+    }
+  }
+
+  if (best) {
+    const fittedSize = Math.min(startSize, Math.floor(best.fontSize * 100) / 100)
+    const finalMetrics = measureFit({
+      ctx,
+      text,
+      width: boxWidth,
+      height: boxHeight,
+      fontSize: fittedSize,
+      fontFamily,
+      fontStyle,
+      fontWeight,
+      lineHeight: resolvedLineHeight,
+      maxLines: resolvedMaxLines,
+      preserveFontSizeOnWrap,
+    })
+    return {
+      ...finalMetrics,
+      fontSize: fittedSize,
+      minFontSize: resolvedMinSize,
+      reduced: fittedSize < startSize - 0.01,
+      belowMinimum: false,
+      wrap: finalMetrics.brokeLongWord ? 'char' : (resolvedMaxLines <= 1 ? 'none' : 'word'),
+    }
+  }
+
+  const metrics = measureFit({
+    ctx,
+    text,
+    width: boxWidth,
+    height: boxHeight,
+    fontSize: resolvedMinSize,
+    fontFamily,
+    fontStyle,
+    fontWeight,
+    lineHeight: resolvedLineHeight,
+    maxLines: resolvedMaxLines,
+    preserveFontSizeOnWrap,
+  })
+
+  return {
+    ...metrics,
+    fontSize: Math.round(resolvedMinSize * 100) / 100,
+    minFontSize: resolvedMinSize,
+    reduced: resolvedMinSize < startSize - 0.01,
+    belowMinimum: true,
+    wrap: metrics.brokeLongWord ? 'char' : (resolvedMaxLines <= 1 ? 'none' : 'word'),
+  }
 }
 
 export const getFittedTextProps = (field, text, { paddingX = 0, paddingY = 0 } = {}) => {
@@ -154,37 +298,8 @@ export const getFittedTextProps = (field, text, { paddingX = 0, paddingY = 0 } =
   const boxHeight = Math.max(1, positiveNumber(field?.height, 1) - paddingY)
   const boxWidth = Math.max(1, positiveNumber(field?.width, 1) - paddingX)
   const preserveFontSizeOnWrap = Boolean(field?.preserveFontSizeOnWrap)
-  const wrap = maxLines <= 1 ? 'none' : 'word'
-
-  if (maxLines <= 1) {
-    return {
-      fontSize: configuredFontSize,
-      height: boxHeight,
-      maxLines,
-      wrap,
-    }
-  }
-
-  if (preserveFontSizeOnWrap) {
-    const renderedLines = getRenderedLineCount({
-      text,
-      width: boxWidth,
-      fontSize: configuredFontSize,
-      fontFamily: field?.fontFamily,
-      fontStyle: field?.fontStyle,
-      fontWeight: field?.fontWeight,
-      maxLines,
-    })
-
-    return {
-      fontSize: configuredFontSize,
-      height: Math.max(boxHeight, renderedLines * configuredFontSize * lineHeight),
-      maxLines,
-      wrap,
-    }
-  }
-
-  const fontSize = fitTextToBox({
+  const minFontSize = getFieldMinFontSize(field)
+  const fit = fitTextToBox({
     text,
     width: boxWidth,
     height: boxHeight,
@@ -195,12 +310,16 @@ export const getFittedTextProps = (field, text, { paddingX = 0, paddingY = 0 } =
     lineHeight,
     maxLines,
     preserveFontSizeOnWrap,
+    minFontSize,
   })
 
   return {
-    fontSize,
-    height: boxHeight,
+    ...fit,
+    height: preserveFontSizeOnWrap && maxLines > 1
+      ? Math.max(boxHeight, fit.lineCount * fit.fontSize * lineHeight)
+      : boxHeight,
     maxLines,
-    wrap,
+    lineHeight,
+    renderText: (fit.lines || [String(text || '')]).join('\n'),
   }
 }

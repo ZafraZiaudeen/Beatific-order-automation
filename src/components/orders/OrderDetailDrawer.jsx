@@ -16,6 +16,7 @@ import MenuItem from '@mui/material/MenuItem'
 import InputLabel from '@mui/material/InputLabel'
 import Alert from '@mui/material/Alert'
 import LinearProgress from '@mui/material/LinearProgress'
+import CircularProgress from '@mui/material/CircularProgress'
 import Skeleton from '@mui/material/Skeleton'
 import { alpha } from '@mui/material/styles'
 import CloseIcon from '@mui/icons-material/Close'
@@ -29,6 +30,7 @@ import ImageOutlinedIcon from '@mui/icons-material/ImageOutlined'
 import PictureAsPdfOutlinedIcon from '@mui/icons-material/PictureAsPdfOutlined'
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutlined'
 import DesignServicesIcon from '@mui/icons-material/DesignServicesOutlined'
+import CancelOutlinedIcon from '@mui/icons-material/CancelOutlined'
 import api from '../../lib/api'
 import { buildAssetThumbnailUrl, uploadAssetFile } from '../../lib/assets'
 import StatusBadge from './StatusBadge'
@@ -36,6 +38,7 @@ import LuluReviewDialog from './LuluReviewDialog'
 import AssetInputField from '../common/AssetInputField'
 import { ETSY_ORDER_STATUSES } from '../../lib/constants'
 import TemplatePersonalizationDialog from './TemplatePersonalizationDialog'
+import { isLuluCancelable } from '../../lib/luluOrders'
 
 const DEFAULT_TEMPLATE_POLICY = { cover: 'inherit', interior: 'inherit', fields: 'inherit' }
 const variantId = (variant) => String(variant?._id || variant?.id || '')
@@ -225,6 +228,7 @@ export default function OrderDetailDrawer({ order, open, onClose, onRefresh }) {
   const [statusNote, setStatusNote] = useState('')
   const [statusLoading, setStatusLoading] = useState(false)
   const [statusError, setStatusError] = useState('')
+  const [luluCancelling, setLuluCancelling] = useState(false)
   const [luluReviewOpen, setLuluReviewOpen] = useState(false)
   const [productCoverPreviewFailed, setProductCoverPreviewFailed] = useState(false)
   const [podPackageDraft, setPodPackageDraft] = useState('')
@@ -371,8 +375,26 @@ export default function OrderDetailDrawer({ order, open, onClose, onRefresh }) {
     localOrder?.coverImageUrl &&
     localOrder?.interiorPdfUrl &&
     localOrder?.podPackageId
+  const canCancelLulu = isLuluCancelable(localOrder)
   const isOverdue = localOrder?.shipByDate && new Date(localOrder.shipByDate) < new Date()
   const productHasTemplate = Boolean(resolveEffectiveTemplateFields(product, localOrder).length)
+
+  const handleCancelLulu = async () => {
+    if (!localOrder?._id || !canCancelLulu) return
+    if (!window.confirm(`Cancel Lulu print job for order #${localOrder.etsyOrderId}?`)) return
+
+    setLuluCancelling(true)
+    setStatusError('')
+    try {
+      const { data } = await api.post(`/lulu/cancel/${localOrder._id}`)
+      setLocalOrder(data)
+      onRefresh?.()
+    } catch (err) {
+      setStatusError(err.response?.data?.message || err.response?.data?.error || 'Failed to cancel Lulu order')
+    } finally {
+      setLuluCancelling(false)
+    }
+  }
 
   const shippingLines = localOrder
     ? [
@@ -838,6 +860,24 @@ export default function OrderDetailDrawer({ order, open, onClose, onRefresh }) {
                     <Typography variant="caption" sx={{ display: 'block', mt: 1, fontFamily: 'monospace', color: 'success.main', fontWeight: 600 }}>
                       Tracking: {localOrder.trackingNumber}
                     </Typography>
+                  )}
+                  {localOrder.luluRawStatusName && (
+                    <Typography variant="caption" sx={{ display: 'block', mt: 1, fontFamily: 'monospace', color: 'text.secondary' }}>
+                      Raw status: {localOrder.luluRawStatusName}
+                    </Typography>
+                  )}
+                  {canCancelLulu && (
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      color="error"
+                      startIcon={luluCancelling ? <CircularProgress size={14} /> : <CancelOutlinedIcon />}
+                      onClick={handleCancelLulu}
+                      disabled={luluCancelling}
+                      sx={{ mt: 1.25, fontWeight: 700, borderRadius: 1.5 }}
+                    >
+                      {luluCancelling ? 'Cancelling Lulu...' : 'Cancel Lulu'}
+                    </Button>
                   )}
                 </InfoCard>
               </Box>

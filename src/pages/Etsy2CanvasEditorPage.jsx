@@ -62,6 +62,7 @@ const CANVAS_STATE_KEY = '_canvasEditorState'
 const CANVAS_PDF_KEY = '_canvasPdfDataUrl'
 const canvasStateKeyFor = (kind) => `_canvasEditorState:${kind === 'interior' ? 'interior' : 'cover'}`
 const DEFAULT_PAGE = { width: 612, height: 792 }
+const DEFAULT_TEXT_MIN_FONT_SIZE = 8
 const COVER_VALUE_KEYS = ['front_cover_name', 'spine_text', 'back_cover_text']
 const INSIDE_VALUE_KEYS = ['first_page_message']
 const FIRST_PAGE_MESSAGE_ALIASES = [
@@ -86,6 +87,11 @@ const inches = (value) => Number((Number(value || 0) / 72).toFixed(2))
 const points = (value) => Number(value || 0) * 72
 const valueForUnit = (value, unit) => unit === 'pt' ? Number((Number(value || 0)).toFixed(2)) : inches(value)
 const pointsFromUnit = (value, unit) => unit === 'pt' ? Number(value || 0) : points(value)
+const roundedPt = (value) => Number((Number(value || 0)).toFixed(2))
+const formatCoordinateValue = (value, unit = 'in') => {
+  const pt = roundedPt(value)
+  return unit === 'pt' ? `${pt} pt` : `${valueForUnit(value, unit)} ${unit} (${pt} pt)`
+}
 const defaultReplacementFill = () => 'transparent'
 const isSolidReplacementFill = (layer) => {
   const value = String(layer?.replacementFill || '').trim().toLowerCase()
@@ -162,6 +168,7 @@ function defaultLayers(orderItem, order, page = DEFAULT_PAGE, decomposedPage = n
       opacity: 1,
       fontFamily: text.rawFontFamily || text.fontFamily || 'Arial',
       fontSize: text.fontSize || 24,
+      minFontSize: DEFAULT_TEXT_MIN_FONT_SIZE,
       fill: text.fill || '#2F2F2F',
       align: text.align || 'left',
       fontStyle: normalizeFontStyle(text.fontStyle),
@@ -232,6 +239,22 @@ const dummyTextWarningsFor = (layers) => layers
   .map((layer) => String(layer.text || '').trim())
   .filter((text) => DUMMY_TEXT_VALUES.has(text.toLowerCase()))
 
+const textFitIssuesFor = (layers) => layers
+  .filter((layer) => layer.type === 'text' && layer.visible !== false)
+  .map((layer) => {
+    const fit = getFittedTextProps(layer, layer.text)
+    if (fit.fits) return null
+    return {
+      id: layer.id,
+      label: layer.name || layer.fixedFieldKey || layer.text || 'Text layer',
+      minFontSize: fit.minFontSize,
+      maxLines: fit.maxLines,
+      lineCount: fit.lineCount,
+      brokeLongWord: fit.brokeLongWord,
+    }
+  })
+  .filter(Boolean)
+
 const waitForCanvasPaint = () => new Promise((resolve) => {
   window.requestAnimationFrame(() => window.requestAnimationFrame(resolve))
 })
@@ -257,7 +280,9 @@ function MeasurementStatusStrip({ page, geometry, zoom, unit = 'in', mismatch = 
   )
 }
 
-function RealDataStatus({ statuses, dummyWarnings }) {
+function RealDataStatus({ statuses, dummyWarnings, textFitIssues = [] }) {
+  if (!statuses.length && !dummyWarnings.length && !textFitIssues.length) return null
+
   return (
     <Box sx={{ px: 1.25, py: 0.85, borderBottom: '1px solid #E5E7EB', bgcolor: '#F8FAFC', display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
       {statuses.map((field) => (
@@ -272,6 +297,15 @@ function RealDataStatus({ statuses, dummyWarnings }) {
       ))}
       {dummyWarnings.map((text) => (
         <Chip key={text} size="small" color="error" label={`Dummy text visible: ${text}`} />
+      ))}
+      {textFitIssues.map((issue) => (
+        <Chip
+          key={issue.id}
+          size="small"
+          color="error"
+          label={`${issue.label}: text overflows at ${issue.minFontSize} pt min`}
+          sx={{ maxWidth: 360, '& .MuiChip-label': { overflow: 'hidden', textOverflow: 'ellipsis' } }}
+        />
       ))}
     </Box>
   )
@@ -462,7 +496,56 @@ function LayerRow({ layer, active, onSelect, onToggleVisibility, onDelete }) {
   )
 }
 
-function ImageCanvasNode({ layer, setSelectedId, updateLayer }) {
+const geometryFromNode = (node) => ({
+  id: node.id(),
+  x: node.x(),
+  y: node.y(),
+  width: Math.max(0, node.width() * node.scaleX()),
+  height: Math.max(0, node.height() * node.scaleY()),
+  rotation: node.rotation(),
+})
+
+function CoordinateHud({ box, pointer, unit = 'in' }) {
+  if (!box && !pointer) return null
+
+  return (
+    <Paper
+      sx={{
+        position: 'absolute',
+        top: 12,
+        right: 12,
+        zIndex: 6,
+        px: 1.25,
+        py: 1,
+        borderRadius: '6px',
+        border: '1px solid #CBD5E1',
+        bgcolor: 'rgba(255,255,255,0.95)',
+        boxShadow: '0 14px 34px rgba(15,23,42,0.14)',
+        minWidth: 230,
+      }}
+    >
+      <Typography variant="caption" sx={{ display: 'block', color: '#475569', fontWeight: 900, textTransform: 'uppercase', letterSpacing: 0 }}>
+        PDF points
+      </Typography>
+      {box && (
+        <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0.5, mt: 0.5 }}>
+          <Typography variant="caption" sx={{ fontFamily: 'monospace', color: '#0F172A' }}>X {formatCoordinateValue(box.x, unit)}</Typography>
+          <Typography variant="caption" sx={{ fontFamily: 'monospace', color: '#0F172A' }}>Y {formatCoordinateValue(box.y, unit)}</Typography>
+          <Typography variant="caption" sx={{ fontFamily: 'monospace', color: '#0F172A' }}>W {formatCoordinateValue(box.width, unit)}</Typography>
+          <Typography variant="caption" sx={{ fontFamily: 'monospace', color: '#0F172A' }}>H {formatCoordinateValue(box.height, unit)}</Typography>
+          <Typography variant="caption" sx={{ fontFamily: 'monospace', color: '#0F172A' }}>R {roundedPt(box.rotation)} deg</Typography>
+        </Box>
+      )}
+      {pointer && (
+        <Typography variant="caption" sx={{ display: 'block', mt: 0.65, fontFamily: 'monospace', color: '#475569' }}>
+          Pointer X {formatCoordinateValue(pointer.x, unit)} / Y {formatCoordinateValue(pointer.y, unit)}
+        </Typography>
+      )}
+    </Paper>
+  )
+}
+
+function ImageCanvasNode({ layer, setSelectedId, updateLayer, setLiveBox }) {
   const image = useLoadedImage(layer.url)
 
   if (!image) {
@@ -487,11 +570,17 @@ function ImageCanvasNode({ layer, setSelectedId, updateLayer }) {
           event.cancelBubble = true
           setSelectedId(layer.id)
         }}
-        onDragEnd={(event) => updateLayer(layer.id, { x: event.target.x(), y: event.target.y() })}
+        onDragMove={(event) => setLiveBox(geometryFromNode(event.target))}
+        onTransform={(event) => setLiveBox(geometryFromNode(event.target))}
+        onDragEnd={(event) => {
+          setLiveBox(geometryFromNode(event.target))
+          updateLayer(layer.id, { x: event.target.x(), y: event.target.y() })
+        }}
         onTransformEnd={(event) => {
           const node = event.target
           const scaleX = node.scaleX()
           const scaleY = node.scaleY()
+          setLiveBox(geometryFromNode(node))
           node.scaleX(1)
           node.scaleY(1)
           updateLayer(layer.id, {
@@ -525,11 +614,17 @@ function ImageCanvasNode({ layer, setSelectedId, updateLayer }) {
         event.cancelBubble = true
         setSelectedId(layer.id)
       }}
-      onDragEnd={(event) => updateLayer(layer.id, { x: event.target.x(), y: event.target.y() })}
+      onDragMove={(event) => setLiveBox(geometryFromNode(event.target))}
+      onTransform={(event) => setLiveBox(geometryFromNode(event.target))}
+      onDragEnd={(event) => {
+        setLiveBox(geometryFromNode(event.target))
+        updateLayer(layer.id, { x: event.target.x(), y: event.target.y() })
+      }}
       onTransformEnd={(event) => {
         const node = event.target
         const scaleX = node.scaleX()
         const scaleY = node.scaleY()
+        setLiveBox(geometryFromNode(node))
         node.scaleX(1)
         node.scaleY(1)
         updateLayer(layer.id, {
@@ -567,6 +662,18 @@ function CanvasStage({
   const alignmentImage = useLoadedImage(alignmentImageUrl)
   const selectedLayer = layers.find((layer) => layer.id === selectedId) || null
   const transformerRef = useRef(null)
+  const [liveBox, setLiveBox] = useState(null)
+  const [pointer, setPointer] = useState(null)
+
+  const updatePointer = useCallback((event) => {
+    const stage = event.target.getStage()
+    const position = stage?.getPointerPosition()
+    if (!position) return
+    setPointer({
+      x: position.x / zoom,
+      y: position.y / zoom,
+    })
+  }, [zoom])
 
   useEffect(() => {
     const stage = stageRef.current
@@ -579,7 +686,8 @@ function CanvasStage({
   }, [layers, selectedId, stageRef])
 
   return (
-    <Box sx={{ flex: 1, minWidth: 0, bgcolor: '#F8FAFC', overflow: 'auto' }}>
+    <Box sx={{ flex: 1, minWidth: 0, bgcolor: '#F8FAFC', overflow: 'auto', position: 'relative' }}>
+      <CoordinateHud box={(liveBox?.id === selectedId ? liveBox : null) || selectedLayer} pointer={pointer} unit={measurementUnit} />
       <Box sx={{ width: page.width * zoom, height: page.height * zoom, flexShrink: 0 }}>
         <Paper sx={{ width: page.width * zoom, height: page.height * zoom, borderRadius: 0, overflow: 'hidden', boxShadow: 'none' }}>
           <Stage
@@ -588,6 +696,9 @@ function CanvasStage({
             height={page.height * zoom}
             scaleX={zoom}
             scaleY={zoom}
+            onMouseMove={updatePointer}
+            onMouseLeave={() => setPointer(null)}
+            onTouchMove={updatePointer}
             onMouseDown={(event) => {
               if (event.target === event.target.getStage()) setSelectedId(null)
             }}
@@ -620,7 +731,7 @@ function CanvasStage({
 
               {layers.filter((layer) => layer.type !== 'background' && (layer.visible || (layer.maskOriginal && layer.dirty))).map((layer) => (
                 layer.type === 'image' ? (
-                  <ImageCanvasNode key={layer.id} layer={layer} setSelectedId={setSelectedId} updateLayer={updateLayer} />
+                  <ImageCanvasNode key={layer.id} layer={layer} setSelectedId={setSelectedId} updateLayer={updateLayer} setLiveBox={setLiveBox} />
                 ) : (
                   <Group key={layer.id}>
                     {layer.maskOriginal && layer.dirty && isSolidReplacementFill(layer) && (
@@ -645,7 +756,7 @@ function CanvasStage({
                           y={layer.y}
                           width={layer.width}
                           height={fittedText.height}
-                          text={layer.text}
+                          text={fittedText.renderText}
                           fontSize={fittedText.fontSize}
                           fontFamily={layer.fontFamily}
                           fontStyle={normalizeFontStyle(layer.fontStyle)}
@@ -664,11 +775,17 @@ function CanvasStage({
                             event.cancelBubble = true
                             setSelectedId(layer.id)
                           }}
-                          onDragEnd={(event) => updateLayer(layer.id, { x: event.target.x(), y: event.target.y() })}
+                          onDragMove={(event) => setLiveBox(geometryFromNode(event.target))}
+                          onTransform={(event) => setLiveBox(geometryFromNode(event.target))}
+                          onDragEnd={(event) => {
+                            setLiveBox(geometryFromNode(event.target))
+                            updateLayer(layer.id, { x: event.target.x(), y: event.target.y() })
+                          }}
                           onTransformEnd={(event) => {
                             const node = event.target
                             const scaleX = node.scaleX()
                             const scaleY = node.scaleY()
+                            setLiveBox(geometryFromNode(node))
                             node.scaleX(1)
                             node.scaleY(1)
                             updateLayer(layer.id, {
@@ -703,11 +820,17 @@ function CanvasStage({
                           event.cancelBubble = true
                           setSelectedId(layer.id)
                         }}
-                        onDragEnd={(event) => updateLayer(layer.id, { x: event.target.x(), y: event.target.y() })}
+                        onDragMove={(event) => setLiveBox(geometryFromNode(event.target))}
+                        onTransform={(event) => setLiveBox(geometryFromNode(event.target))}
+                        onDragEnd={(event) => {
+                          setLiveBox(geometryFromNode(event.target))
+                          updateLayer(layer.id, { x: event.target.x(), y: event.target.y() })
+                        }}
                         onTransformEnd={(event) => {
                           const node = event.target
                           const scaleX = node.scaleX()
                           const scaleY = node.scaleY()
+                          setLiveBox(geometryFromNode(node))
                           node.scaleX(1)
                           node.scaleY(1)
                           updateLayer(layer.id, {
@@ -778,7 +901,7 @@ function PropertiesPanel({ selected, updateLayer, measurementUnit = 'in' }) {
           />
 
           <Typography variant="subtitle2" sx={{ fontWeight: 800, color: '#0F172A', mb: 1 }}>Typography</Typography>
-          <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 86px', gap: 1, mb: 1.25 }}>
+          <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 86px 86px', gap: 1, mb: 1.25 }}>
             <TextField
               select
               label="Font"
@@ -796,6 +919,13 @@ function PropertiesPanel({ selected, updateLayer, measurementUnit = 'in' }) {
               value={Math.round(selected.fontSize)}
               disabled={disabled}
               onChange={(event) => updateLayer(selected.id, { fontSize: clamp(event.target.value, 6, 220) })}
+            />
+            <TextField
+              label="Min"
+              type="number"
+              value={selected.minFontSize ?? DEFAULT_TEXT_MIN_FONT_SIZE}
+              disabled={disabled}
+              onChange={(event) => updateLayer(selected.id, { minFontSize: clamp(event.target.value, 4, Math.max(4, selected.fontSize || 220)) })}
             />
           </Box>
           <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1, mb: 2 }}>
@@ -907,6 +1037,7 @@ export default function Etsy2CanvasEditorPage() {
   const normalizedGeometry = pageGeometry?.geometry || pageGeometry
   const realValueStatuses = useMemo(() => valueStatusesFor(orderItem, editKind), [orderItem, editKind])
   const dummyTextWarnings = useMemo(() => dummyTextWarningsFor(layers), [layers])
+  const textFitIssues = useMemo(() => textFitIssuesFor(layers), [layers])
   const geometryMismatch = normalizedGeometry ? getGeometryMismatch(normalizedGeometry, pageSize) : null
   const editorTitle = editKind === 'interior' ? 'Inside First Page PDF Editor' : 'Cover PDF Editor'
   const editorSubtitle = editKind === 'interior'
@@ -1014,6 +1145,7 @@ export default function Etsy2CanvasEditorPage() {
         opacity: 1,
         fontFamily: 'Canela Regular',
         fontSize: 34,
+        minFontSize: DEFAULT_TEXT_MIN_FONT_SIZE,
         fill: '#2F2F2F',
         align: 'center',
         fontStyle: 'normal',
@@ -1099,8 +1231,13 @@ export default function Etsy2CanvasEditorPage() {
   }
 
   const realDataIssueMessage = () => {
-    if (!dummyTextWarnings.length) return ''
-    return `Dummy text visible: ${dummyTextWarnings.join(', ')}.`
+    const issues = []
+    if (dummyTextWarnings.length) issues.push(`Dummy text visible: ${dummyTextWarnings.join(', ')}.`)
+    if (textFitIssues.length) {
+      const issue = textFitIssues[0]
+      issues.push(`${issue.label} cannot fit inside its text region at the ${issue.minFontSize} pt minimum. Enlarge the box or lower its minimum font size.`)
+    }
+    return issues.join(' ')
   }
 
   const validateRealDataForExport = ({ block = true } = {}) => {
@@ -1108,7 +1245,7 @@ export default function Etsy2CanvasEditorPage() {
     if (!issue) return true
     setSnack({
       open: true,
-      message: block ? `${issue} Fix the order values before saving the final canvas PDF.` : `${issue} Downloading anyway for review.`,
+      message: block ? `${issue} Fix it before saving or downloading the final print PDF.` : `${issue} Downloading proof anyway for review.`,
       severity: block ? 'error' : 'warning',
     })
     return !block
@@ -1196,7 +1333,7 @@ export default function Etsy2CanvasEditorPage() {
   }
 
   const downloadPdf = async ({ proof = false } = {}) => {
-    if (!validateRealDataForExport({ block: false })) return
+    if (!validateRealDataForExport({ block: !proof })) return
     setExportingPdf(proof ? 'proof' : 'print')
     try {
       if (!proof && isGeneratedEdit) {
@@ -1339,6 +1476,7 @@ export default function Etsy2CanvasEditorPage() {
                 {fontOptionsFor(selected.fontFamily).map((font) => <MenuItem key={font.value} value={font.value}>{font.label}</MenuItem>)}
               </TextField>
               <TextField size="small" label="Size" type="number" value={Math.round(selected.fontSize)} onChange={(event) => updateLayer(selected.id, { fontSize: clamp(event.target.value, 6, 220) })} sx={{ width: 92 }} />
+              <TextField size="small" label="Min" type="number" value={selected.minFontSize ?? DEFAULT_TEXT_MIN_FONT_SIZE} onChange={(event) => updateLayer(selected.id, { minFontSize: clamp(event.target.value, 4, Math.max(4, selected.fontSize || 220)) })} sx={{ width: 88 }} />
               <Box component="input" type="color" value={selected.fill} onChange={(event) => updateLayer(selected.id, { fill: event.target.value })} sx={{ width: 48, height: 40, border: '1px solid #E5E7EB', borderRadius: '6px', bgcolor: '#FFFFFF' }} />
               <ToggleButtonGroup exclusive size="small" value={selected.align} onChange={(_, value) => value && updateLayer(selected.id, { align: value })}>
                 <ToggleButton value="left"><AlignHorizontalLeftIcon /></ToggleButton>
@@ -1362,9 +1500,7 @@ export default function Etsy2CanvasEditorPage() {
             saving={saving}
             onSave={saveCanvas}
           />
-          {normalizedGeometry && (
-            <RealDataStatus statuses={realValueStatuses} dummyWarnings={dummyTextWarnings} />
-          )}
+          <RealDataStatus statuses={realValueStatuses} dummyWarnings={dummyTextWarnings} textFitIssues={textFitIssues} />
 
           <CanvasStage
             layers={layers}

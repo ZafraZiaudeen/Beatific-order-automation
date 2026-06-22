@@ -128,6 +128,7 @@ export const getItemStatus = (item) => {
 
   if (item.luluStatus === 'failed' && hasGeneratedTemplate) return ITEM_STATUSES.FAILED
   if (item.luluStatus === 'shipped') return ITEM_STATUSES.SHIPPED
+  if (item.luluStatus === 'cancelled') return ITEM_STATUSES.CANCELLED
   if (hasGeneratedTemplate) return ITEM_STATUSES.GENERATED
   if (reviewFlagsFor(item).length > 0) return ITEM_STATUSES.AI_FLAGGED
   if (!item.isProductMapped) return ITEM_STATUSES.UNMAPPED

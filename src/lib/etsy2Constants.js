@@ -11,6 +11,7 @@ export const ITEM_STATUSES = {
   IN_PROGRESS: 'in_progress',
   GENERATED: 'generated',
   SHIPPED: 'shipped',
+  CANCELLED: 'cancelled',
 }
 
 // Status configurations with visual cues
@@ -71,6 +72,13 @@ export const ITEM_STATUS_CONFIG = {
     description: 'Order fulfilled and shipped',
     icon: 'check_circle',
   },
+  [ITEM_STATUSES.CANCELLED]: {
+    label: 'Cancelled',
+    color: '#64748B',
+    bgColor: '#F1F5F9',
+    description: 'Lulu print job was cancelled',
+    icon: 'help',
+  },
 }
 
 // Batch status hierarchy (from most critical to least critical)
@@ -83,6 +91,7 @@ export const BATCH_STATUS_HIERARCHY = [
   ITEM_STATUSES.IN_PROGRESS,
   ITEM_STATUSES.GENERATED,
   ITEM_STATUSES.SHIPPED,
+  ITEM_STATUSES.CANCELLED,
 ]
 
 // Filter chips for the orders list
@@ -95,6 +104,7 @@ export const ORDER_FILTERS = [
   { value: ITEM_STATUSES.IN_PROGRESS, label: 'In Progress', count: 0 },
   { value: ITEM_STATUSES.GENERATED, label: 'Generated', count: 0 },
   { value: ITEM_STATUSES.SHIPPED, label: 'Shipped', count: 0 },
+  { value: ITEM_STATUSES.CANCELLED, label: 'Cancelled', count: 0 },
   { value: ITEM_STATUSES.AI_FLAGGED, label: 'AI Flagged', count: 0 },
 ]
 
