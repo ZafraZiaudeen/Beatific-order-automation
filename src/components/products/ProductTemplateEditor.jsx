@@ -74,11 +74,6 @@ const normalizeHexColor = (value) => {
 
 const defaultReplacementFill = () => 'transparent'
 
-const isSolidReplacementFill = (field) => {
-  const mode = field?.replacementFillMode || 'transparent'
-  return (mode === 'solid' || field?.forceReplacementFill) && Boolean(normalizeHexColor(field?.replacementFill))
-}
-
 const getReplacementFill = (field) => normalizeHexColor(field?.replacementFill) || '#FFFFFF'
 
 const pageFromLibraryItem = (item) => {

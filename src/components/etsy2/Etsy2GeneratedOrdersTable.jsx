@@ -23,7 +23,7 @@ import CancelOutlinedIcon from '@mui/icons-material/CancelOutlined'
 import ArticleOutlinedIcon from '@mui/icons-material/ArticleOutlined'
 import Etsy2StatusBadge from './Etsy2StatusBadge'
 import { buildAssetThumbnailUrl } from '../../lib/assets'
-import { getGeneratedOrderItem } from '../../lib/generatedOrders'
+import { buildGeneratedPreviewAssets, getGeneratedOrderItems } from '../../lib/generatedOrders'
 import { formatDate, optionText } from '../../lib/etsy2Orders'
 import { getCancelableLuluSourceIds } from '../../lib/luluOrders'
 
@@ -107,16 +107,31 @@ export default function Etsy2GeneratedOrdersTable({
         </TableHead>
         <TableBody>
           {orders.map((order) => {
-            const item = getGeneratedOrderItem(order)
+            const generatedItems = getGeneratedOrderItems(order)
+            const previewAssets = buildGeneratedPreviewAssets(order)
+            const item = generatedItems[0] || null
             const source = item?.sourceOrder || {}
-            const generatedAt = source.templateFinalizedAt || source.updatedAt || order.sourceGroup?.updatedAt || order.date
-            const templateName = source.matchedVariantName || source.projectName || 'Print Template'
+            const generatedAt = generatedItems.reduce((latest, generatedItem) => {
+              const generatedSource = generatedItem?.sourceOrder || {}
+              const value = generatedSource.templateFinalizedAt || generatedSource.updatedAt
+              const time = new Date(value || 0).getTime()
+              return time > latest.time ? { time, value } : latest
+            }, { time: 0, value: order.sourceGroup?.updatedAt || order.date }).value
+            const templateNames = [...new Set(generatedItems.map((generatedItem) => {
+              const generatedSource = generatedItem?.sourceOrder || {}
+              return generatedSource.matchedVariantName || generatedSource.projectName
+            }).filter(Boolean))]
+            const templateName = templateNames.length > 1
+              ? `${templateNames.length} templates`
+              : templateNames[0] || 'Print Template'
             const generating = Boolean(generatingOrderIds[order.orderId])
             const sending = Boolean(sendingOrderIds[order.orderId])
             const cancelling = Boolean(cancellingOrderIds[order.orderId])
             const orderStatus = item?.status || order?.status
-            const canGenerate = Boolean(item?.sourceOrder?.isProductMapped)
+            const canGenerate = generatedItems.some((generatedItem) => generatedItem?.sourceOrder?.isProductMapped)
             const canCancelLulu = getCancelableLuluSourceIds(order).length > 0
+            const itemCount = generatedItems.length
+            const pdfCount = previewAssets.length
 
             return (
               <TableRow key={order.orderId} hover sx={{ '& td': { borderColor: '#EEF2F7', py: 2 } }}>
@@ -145,10 +160,14 @@ export default function Etsy2GeneratedOrdersTable({
                     <ProductThumb item={item} />
                     <Box sx={{ minWidth: 0 }}>
                       <Typography variant="body2" sx={{ color: '#111827', fontWeight: 800 }}>
-                        {item?.name || source.productTitle || 'Generated product'}
+                        {itemCount > 1
+                          ? `${itemCount} generated items`
+                          : item?.name || source.productTitle || 'Generated product'}
                       </Typography>
                       <Typography variant="caption" sx={{ color: '#64748B' }}>
-                        {optionText(source) || source.matchedVariantName || 'Print-ready PDF'}
+                        {itemCount > 1
+                          ? `${pdfCount} PDF preview${pdfCount === 1 ? '' : 's'} ready`
+                          : optionText(source) || source.matchedVariantName || 'Print-ready PDF'}
                       </Typography>
                     </Box>
                   </Box>

@@ -74,10 +74,15 @@ const orderWithOnlyStatusItems = (order, status) => {
 }
 
 const canGenerateItemPdf = (item) =>
-  [ITEM_STATUSES.MAPPED, ITEM_STATUSES.FAILED, ITEM_STATUSES.GENERATED].includes(item.status)
+  item?.status === ITEM_STATUSES.MAPPED && Boolean(item?.sourceOrder?.isProductMapped)
 
-const shouldForceGenerateOrder = (order) =>
-  order.items?.some((item) => [ITEM_STATUSES.FAILED, ITEM_STATUSES.GENERATED].includes(item.status))
+const generationItemId = (item) => item?.sourceOrder?._id || item?.id || ''
+
+const normalGenerateItemIds = (order) =>
+  (order?.items || [])
+    .filter(canGenerateItemPdf)
+    .map(generationItemId)
+    .filter(Boolean)
 
 const wait = (ms) => new Promise((resolve) => window.setTimeout(resolve, ms))
 
@@ -309,14 +314,15 @@ export default function Etsy2OrdersPage() {
 
   const handleGenerate = async (order) => {
     const etsyOrderId = order?.orderId || order?.etsyOrderId
+    const orderIds = normalGenerateItemIds(order)
     if (!etsyOrderId) return
-    if (!order.items?.some(canGenerateItemPdf)) {
-      setSnack({ open: true, message: 'Only mapped or failed generated order items can generate PDFs.', severity: 'warning' })
+    if (orderIds.length === 0) {
+      setSnack({ open: true, message: 'No missing mapped order items are ready for PDF generation.', severity: 'warning' })
       return
     }
 
     try {
-      const job = await startPdfGenerationJob(etsyOrderId, { force: shouldForceGenerateOrder(order) })
+      const job = await startPdfGenerationJob(etsyOrderId, { force: false, orderIds })
       setGenerationJobs((current) => ({ ...current, [etsyOrderId]: job }))
       setSnack({
         open: true,
@@ -336,7 +342,7 @@ export default function Etsy2OrdersPage() {
     () => filteredOrders
       .filter((order) =>
         selectedOrderIds.includes(order.orderId) &&
-        order.items?.some(canGenerateItemPdf)
+        normalGenerateItemIds(order).length > 0
       )
       .map((order) => order.orderId),
     [filteredOrders, selectedOrderIds]
@@ -352,7 +358,7 @@ export default function Etsy2OrdersPage() {
     try {
       const jobs = await Promise.all(selectedMappedOrderIds.map((etsyOrderId) => {
         const order = filteredOrders.find((item) => item.orderId === etsyOrderId)
-        return startPdfGenerationJob(etsyOrderId, { force: shouldForceGenerateOrder(order || {}) })
+        return startPdfGenerationJob(etsyOrderId, { force: false, orderIds: normalGenerateItemIds(order || {}) })
       }))
       setGenerationJobs((current) => {
         const next = { ...current }

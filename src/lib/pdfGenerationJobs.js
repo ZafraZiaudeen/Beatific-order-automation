@@ -9,7 +9,10 @@ export const isPdfGenerationJobActive = (job) =>
 export const startPdfGenerationJob = async (etsyOrderId, options = {}) => {
   const { data } = await api.post(
     `/orders/group/${encodeURIComponent(etsyOrderId)}/generate-pdf-job`,
-    { force: options.force === true }
+    {
+      force: options.force === true,
+      orderIds: Array.isArray(options.orderIds) ? options.orderIds : undefined,
+    }
   )
   return data.job
 }
