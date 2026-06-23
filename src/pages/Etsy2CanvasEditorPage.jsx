@@ -47,7 +47,7 @@ import { v4 as uuidv4 } from 'uuid'
 import api from '../lib/api'
 import { buildAssetThumbnailUrl } from '../lib/assets'
 import { toEtsy2GroupOrder } from '../lib/etsy2Orders'
-import { isGeneratedPdfUrl } from '../lib/generatedOrders'
+import { generatedPdfUrlFor, isGeneratedPdfUrl } from '../lib/generatedOrders'
 import { FONT_OPTIONS, ensureFontFaces, normalizeFontStyle } from '../lib/fonts'
 import { getFittedTextProps } from '../lib/textFitting'
 import { FIXED_PERSONALIZATION_FIELDS } from '../lib/fixedPersonalizationFields'
@@ -1039,7 +1039,7 @@ export default function Etsy2CanvasEditorPage() {
     if (!group?.items?.length) return null
     const itemId = searchParams.get('itemId')
     const isGenerated = searchParams.get('source') === 'generated'
-    const generatedItem = (item) => isGeneratedPdfUrl(item.coverImageUrl) || isGeneratedPdfUrl(item.interiorPdfUrl)
+    const generatedItem = (item) => generatedPdfUrlFor(item, 'cover') || generatedPdfUrlFor(item, 'interior')
     if (itemId) {
       const exact = group.items.find((item) => String(item._id) === itemId)
       if (exact) return exact
@@ -1050,12 +1050,12 @@ export default function Etsy2CanvasEditorPage() {
   const isGeneratedEdit = searchParams.get('source') === 'generated'
   const editKind = searchParams.get('kind') === 'interior' ||
     (isGeneratedEdit
-      ? !isGeneratedPdfUrl(orderItem?.coverImageUrl) && isGeneratedPdfUrl(orderItem?.interiorPdfUrl)
+      ? !generatedPdfUrlFor(orderItem, 'cover') && generatedPdfUrlFor(orderItem, 'interior')
       : !orderItem?.coverImageUrl && orderItem?.interiorPdfUrl)
     ? 'interior'
     : 'cover'
   const generatedEditPdfUrl = isGeneratedEdit
-    ? (editKind === 'interior' ? orderItem?.interiorPdfUrl : orderItem?.coverImageUrl)
+    ? generatedPdfUrlFor(orderItem, editKind)
     : ''
   const generatedEditReady = !isGeneratedEdit || isGeneratedPdfUrl(generatedEditPdfUrl)
   const selected = layers.find((layer) => layer.id === selectedId) || null

@@ -4,6 +4,7 @@ import {
   Alert,
   Box,
   Button,
+  Checkbox,
   Chip,
   CircularProgress,
   Dialog,
@@ -22,6 +23,7 @@ import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
 import LocalShippingOutlinedIcon from '@mui/icons-material/LocalShippingOutlined'
 import OpenInNewOutlinedIcon from '@mui/icons-material/OpenInNewOutlined'
 import PersonOutlineOutlinedIcon from '@mui/icons-material/PersonOutlineOutlined'
+import PrintIcon from '@mui/icons-material/Print'
 import ReceiptLongOutlinedIcon from '@mui/icons-material/ReceiptLongOutlined'
 import SyncIcon from '@mui/icons-material/Sync'
 import WarningAmberOutlinedIcon from '@mui/icons-material/WarningAmberOutlined'
@@ -29,11 +31,11 @@ import CancelOutlinedIcon from '@mui/icons-material/CancelOutlined'
 import api from '../lib/api'
 import OrderFormDialog from '../components/orders/OrderFormDialog'
 import Etsy2StatusBadge from '../components/etsy2/Etsy2StatusBadge'
+import { ITEM_STATUSES } from '../lib/etsy2Constants'
 import { buildAssetThumbnailUrl } from '../lib/assets'
 import {
+  buildGeneratedPreviewAssets,
   getGeneratedOrderItems,
-  getGeneratedOrderSourceIds,
-  isGeneratedPdfUrl,
 } from '../lib/generatedOrders'
 import { getCancelableLuluSourceIds, isLuluCancelable } from '../lib/luluOrders'
 import {
@@ -43,7 +45,6 @@ import {
 } from '../lib/pdfGenerationJobs'
 import {
   addressLines,
-  buildOrderFileUrl,
   formatDate,
   formatMoney,
   optionText,
@@ -55,37 +56,15 @@ import { canManageWorkspace } from '../lib/permissions'
 
 const isImageUrl = (value = '') => /\.(png|jpe?g|webp|gif|svg)(\?.*)?$/i.test(value)
 const valueOrDash = (value) => value || '-'
-
-const buildGeneratedPreviewAssets = (order) =>
-  getGeneratedOrderItems(order).flatMap((item) => {
-    const source = item.sourceOrder || {}
-    return [
-      isGeneratedPdfUrl(source.coverImageUrl) ? {
-        id: `${item.id}-cover`,
-        itemId: source._id,
-        item,
-        kind: 'cover',
-        label: `${item.name} Cover`,
-        url: buildOrderFileUrl(source.coverImageUrl),
-        fileName: `${item.name || 'Cover'}.pdf`,
-      } : null,
-      isGeneratedPdfUrl(source.interiorPdfUrl) ? {
-        id: `${item.id}-interior`,
-        itemId: source._id,
-        item,
-        kind: 'interior',
-        label: `${item.name} Inside`,
-        url: buildOrderFileUrl(source.interiorPdfUrl),
-        fileName: `${item.name || 'Inside Pages'} inside.pdf`,
-      } : null,
-    ].filter(Boolean)
-  })
+const itemSourceId = (item) => item?.sourceOrder?._id || item?.id || ''
+const isMissingMappedItem = (item) =>
+  item?.status === ITEM_STATUSES.MAPPED && Boolean(item?.sourceOrder?.isProductMapped)
 
 function GeneratedPdfPreview({ asset }) {
   if (!asset?.url) {
     return (
       <Box sx={{ height: { xs: 420, lg: 620 }, bgcolor: '#1F2933', borderRadius: '8px', display: 'grid', placeItems: 'center', color: '#CBD5E1' }}>
-        <Typography variant="body2" sx={{ fontWeight: 700 }}>No generated PDF available</Typography>
+        <Typography variant="body2" sx={{ fontWeight: 700 }}>No generated PDF available for the selected item</Typography>
       </Box>
     )
   }
@@ -101,7 +80,7 @@ function GeneratedPdfPreview({ asset }) {
   )
 }
 
-function GeneratedThumb({ asset, active, index, onClick }) {
+function GeneratedThumb({ asset, active, checked, index, onClick, onToggle }) {
   return (
     <Box onClick={onClick} sx={{ width: 112, cursor: 'pointer', textAlign: 'center' }}>
       <Box
@@ -118,8 +97,25 @@ function GeneratedThumb({ asset, active, index, onClick }) {
           justifyContent: 'center',
           boxShadow: active ? '0 8px 20px rgba(91, 33, 214, 0.14)' : 'none',
           px: 1,
+          position: 'relative',
         }}
       >
+        <Checkbox
+          size="small"
+          checked={checked}
+          onClick={(event) => event.stopPropagation()}
+          onChange={(event) => onToggle?.(asset.id, event.target.checked)}
+          sx={{
+            position: 'absolute',
+            top: 2,
+            left: 2,
+            bgcolor: 'rgba(255,255,255,0.88)',
+            borderRadius: '4px',
+            p: 0.25,
+            color: '#5B21D6',
+            '&.Mui-checked': { color: '#5B21D6' },
+          }}
+        />
         <Typography variant="caption" sx={{ color: '#334155', fontWeight: 800, textAlign: 'center' }}>
           {asset.label}
         </Typography>
@@ -145,20 +141,45 @@ function GeneratedThumb({ asset, active, index, onClick }) {
   )
 }
 
-function ItemSummary({ item, index }) {
+function ItemSummary({ item, index, active, generationSelected, onSelect, onToggleGeneration }) {
   const source = item.sourceOrder || {}
   const flags = reviewFlagsFor(source)
+  const itemId = itemSourceId(item)
+  const canGenerate = isMissingMappedItem(item)
 
   return (
-    <Box>
+    <Box
+      onClick={onSelect}
+      sx={{
+        p: 1.5,
+        mx: -1.5,
+        borderRadius: '8px',
+        border: '1px solid',
+        borderColor: active ? '#5B21D6' : 'transparent',
+        bgcolor: active ? '#F5F3FF' : 'transparent',
+        cursor: 'pointer',
+      }}
+    >
       {index > 0 && <Divider sx={{ my: 2 }} />}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-        <Box sx={{ minWidth: 0 }}>
+        <Box sx={{ minWidth: 0, flex: '1 1 320px' }}>
           <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap', mb: 0.75 }}>
-            <Typography variant="subtitle1" sx={{ fontWeight: 800, color: '#111827' }}>
-              {item.name}
-            </Typography>
+            {canGenerate && (
+              <Checkbox
+                size="small"
+                checked={generationSelected}
+                onClick={(event) => event.stopPropagation()}
+                onChange={(event) => onToggleGeneration?.(itemId, event.target.checked)}
+                sx={{ color: '#5B21D6', '&.Mui-checked': { color: '#5B21D6' }, p: 0.25 }}
+              />
+            )}
+            <Box sx={{ minWidth: 0 }}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 800, color: '#111827' }}>
+                {item.name}
+              </Typography>
+            </Box>
             <Etsy2StatusBadge status={item.status} showIcon={false} />
+            {canGenerate && <Chip size="small" color="info" label="Ready to generate" />}
           </Box>
           <Typography variant="body2" sx={{ color: '#64748B' }}>
             {optionText(source) || source.matchedVariantName || 'Print-ready PDF'}
@@ -210,7 +231,10 @@ export default function GeneratedOrderDetailPage() {
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
   const [cancelling, setCancelling] = useState(false)
+  const [activeItemId, setActiveItemId] = useState('')
   const [activeAssetId, setActiveAssetId] = useState('')
+  const [selectedAssetIds, setSelectedAssetIds] = useState([])
+  const [selectedGenerateItemIds, setSelectedGenerateItemIds] = useState([])
   const [editOpen, setEditOpen] = useState(false)
   const [regenerateConfirmOpen, setRegenerateConfirmOpen] = useState(false)
   const [generationJob, setGenerationJob] = useState(null)
@@ -276,9 +300,9 @@ export default function GeneratedOrderDetailPage() {
   }, [fetchGroup, generationJob?.id, orderId])
 
   const order = useMemo(() => (group ? toEtsy2GroupOrder(group) : null), [group])
+  const allItems = useMemo(() => order?.items || [], [order])
   const generatedItems = useMemo(() => getGeneratedOrderItems(order), [order])
   const regenerating = isPdfGenerationJobActive(generationJob)
-  const canRegenerate = canManage && generatedItems.some((item) => item.sourceOrder?.isProductMapped)
   const cancelableLuluSourceIds = useMemo(() => getCancelableLuluSourceIds(order), [order])
 
   useEffect(() => {
@@ -292,39 +316,116 @@ export default function GeneratedOrderDetailPage() {
   }, [regenerating, refreshGenerationJob])
 
   const previewAssets = useMemo(() => buildGeneratedPreviewAssets(order), [order])
+  const selectedAssets = useMemo(
+    () => previewAssets.filter((asset) => selectedAssetIds.includes(asset.id)),
+    [previewAssets, selectedAssetIds]
+  )
+  const selectedAssetItemIds = useMemo(
+    () => [...new Set(selectedAssets.map((asset) => asset.itemId).filter(Boolean))],
+    [selectedAssets]
+  )
+  const selectedRegenerateOrderIds = useMemo(
+    () => [...new Set(selectedAssets
+      .filter((asset) => asset?.item?.sourceOrder?.isProductMapped)
+      .map((asset) => asset.itemId)
+      .filter(Boolean))],
+    [selectedAssets]
+  )
+  const missingMappedItems = useMemo(() => allItems.filter(isMissingMappedItem), [allItems])
+  const selectedGenerateOrderIds = useMemo(
+    () => selectedGenerateItemIds.filter((itemId) => missingMappedItems.some((item) => itemSourceId(item) === itemId)),
+    [missingMappedItems, selectedGenerateItemIds]
+  )
+  const canRegenerate = canManage && selectedRegenerateOrderIds.length > 0
+  const activeItemAssets = useMemo(
+    () => previewAssets.filter((asset) => asset.itemId === activeItemId),
+    [activeItemId, previewAssets]
+  )
 
   useEffect(() => {
-    if (!previewAssets.length) {
+    const validItemIds = allItems.map(itemSourceId).filter(Boolean)
+    const firstGeneratedItemId = previewAssets[0]?.itemId
+    const firstItemId = firstGeneratedItemId || validItemIds[0] || ''
+    if (!firstItemId) {
+      setActiveItemId('')
+      return
+    }
+    if (!activeItemId || !validItemIds.includes(activeItemId)) {
+      setActiveItemId(firstItemId)
+    }
+  }, [activeItemId, allItems, previewAssets])
+
+  useEffect(() => {
+    if (!activeItemAssets.length) {
       setActiveAssetId('')
       return
     }
-    if (!previewAssets.some((asset) => asset.id === activeAssetId)) {
-      setActiveAssetId(previewAssets[0].id)
+    if (!activeItemAssets.some((asset) => asset.id === activeAssetId)) {
+      setActiveAssetId(activeItemAssets[0].id)
     }
-  }, [activeAssetId, previewAssets])
+  }, [activeAssetId, activeItemAssets])
 
-  const activeAsset = previewAssets.find((asset) => asset.id === activeAssetId) || previewAssets[0] || null
-  const activeItem = activeAsset?.item || generatedItems[0] || null
+  useEffect(() => {
+    setSelectedAssetIds((current) => {
+      const validIds = previewAssets.map((asset) => asset.id)
+      const next = current.filter((id) => validIds.includes(id))
+      return next.length ? next : validIds.slice(0, 1)
+    })
+  }, [previewAssets])
+
+  useEffect(() => {
+    setSelectedGenerateItemIds((current) => {
+      const validIds = missingMappedItems.map(itemSourceId)
+      return current.filter((id) => validIds.includes(id))
+    })
+  }, [missingMappedItems])
+
+  const activeAsset = activeItemAssets.find((asset) => asset.id === activeAssetId) || activeItemAssets[0] || null
+  const activeItem = allItems.find((item) => itemSourceId(item) === activeItemId) || activeAsset?.item || generatedItems[0] || null
   const activeSource = activeItem?.sourceOrder || {}
   const shippingLines = addressLines(group?.shippingAddress)
   const subtotal = group?.items?.reduce((sum, item) => sum + Number(item.price || 0) * Number(item.quantity || 1), 0) || 0
   const shipping = Number(group?.pricing?.shipping || group?.items?.[0]?.shippingCost || 0)
   const tax = Number(group?.pricing?.tax || 0)
 
+  const toggleAssetSelection = (assetId, checked) => {
+    setSelectedAssetIds((current) => {
+      const next = checked
+        ? [...new Set([...current, assetId])]
+        : current.filter((id) => id !== assetId)
+      if (checked) setActiveAssetId(assetId)
+      return next
+    })
+  }
+
+  const toggleGenerateSelection = (itemId, checked) => {
+    setSelectedGenerateItemIds((current) => (
+      checked ? [...new Set([...current, itemId])] : current.filter((id) => id !== itemId)
+    ))
+  }
+
+  const handleSelectItem = (item) => {
+    const nextItemId = itemSourceId(item)
+    setActiveItemId(nextItemId)
+    const firstAsset = previewAssets.find((asset) => asset.itemId === nextItemId)
+    setActiveAssetId(firstAsset?.id || '')
+  }
+
   const handleEditPdf = () => {
-    const itemId = activeSource?._id || activeItem?.sourceOrder?._id || activeItem?.id
+    const editableAsset = activeAsset
+    const itemId = editableAsset?.itemId || activeSource?._id || activeItem?.sourceOrder?._id || activeItem?.id
     if (!itemId) {
       setSnack({ open: true, message: 'This generated item could not be opened for editing.', severity: 'warning' })
       return
     }
-    const kind = activeAsset?.kind === 'interior' ? 'interior' : 'cover'
+    const kind = editableAsset?.kind === 'interior' ? 'interior' : 'cover'
     navigate(`/orders/etsy2/${encodeURIComponent(order.orderId)}/canvas?source=generated&itemId=${encodeURIComponent(itemId)}&kind=${kind}`)
   }
 
   const handleSendToLulu = async () => {
-    const sourceIds = getGeneratedOrderSourceIds(order)
+    const sourceIds = selectedAssetItemIds
     if (sourceIds.length === 0) {
-      setSnack({ open: true, message: 'No generated PDFs are available to send.', severity: 'warning' })
+      setSnack({ open: true, message: 'Select one or more generated PDFs before sending to Lulu.', severity: 'warning' })
       return
     }
 
@@ -379,13 +480,14 @@ export default function GeneratedOrderDetailPage() {
     const freshGroup = await fetchGroup({ silent: true })
     const freshOrder = freshGroup ? toEtsy2GroupOrder(freshGroup) : order
     const freshAssets = buildGeneratedPreviewAssets(freshOrder)
+    const assetsToDownload = freshAssets.filter((asset) => selectedAssetIds.includes(asset.id))
 
-    if (freshAssets.length === 0) {
-      setSnack({ open: true, message: 'No generated PDFs are available to download.', severity: 'warning' })
+    if (assetsToDownload.length === 0) {
+      setSnack({ open: true, message: 'Select one or more generated PDFs before downloading.', severity: 'warning' })
       return
     }
 
-    freshAssets.forEach((asset) => {
+    assetsToDownload.forEach((asset) => {
       const link = document.createElement('a')
       link.href = asset.url
       link.target = '_blank'
@@ -400,12 +502,12 @@ export default function GeneratedOrderDetailPage() {
   const handleRegeneratePdfs = async () => {
     if (!order?.orderId) return
     if (!canRegenerate) {
-      setSnack({ open: true, message: 'This generated order must be mapped to a product before regenerating PDFs.', severity: 'warning' })
+      setSnack({ open: true, message: 'Select one or more generated PDFs before regenerating.', severity: 'warning' })
       return
     }
 
     try {
-      const job = await startPdfGenerationJob(order.orderId, { force: true })
+      const job = await startPdfGenerationJob(order.orderId, { force: true, orderIds: selectedRegenerateOrderIds })
       setGenerationJob(job)
       setRegenerateConfirmOpen(false)
       setSnack({
@@ -417,6 +519,30 @@ export default function GeneratedOrderDetailPage() {
       setSnack({
         open: true,
         message: err.response?.data?.error || err.response?.data?.message || err.message || 'Failed to regenerate PDFs',
+        severity: 'error',
+      })
+    }
+  }
+
+  const handleGenerateSelectedItems = async () => {
+    if (!order?.orderId) return
+    if (selectedGenerateOrderIds.length === 0) {
+      setSnack({ open: true, message: 'Select one or more missing mapped items before generating.', severity: 'warning' })
+      return
+    }
+
+    try {
+      const job = await startPdfGenerationJob(order.orderId, { force: false, orderIds: selectedGenerateOrderIds })
+      setGenerationJob(job)
+      setSnack({
+        open: true,
+        message: `PDF generation started for ${selectedGenerateOrderIds.length} selected item${selectedGenerateOrderIds.length === 1 ? '' : 's'}.`,
+        severity: 'success',
+      })
+    } catch (err) {
+      setSnack({
+        open: true,
+        message: err.response?.data?.error || err.response?.data?.message || err.message || 'Failed to generate PDFs',
         severity: 'error',
       })
     }
@@ -460,7 +586,7 @@ export default function GeneratedOrderDetailPage() {
               <Etsy2StatusBadge status={activeItem?.status} showIcon={false} />
             </Box>
             <Typography variant="body2" sx={{ color: '#64748B', mt: 0.75 }}>
-              Generated files for {generatedItems.length} item{generatedItems.length === 1 ? '' : 's'} with {previewAssets.length} PDF preview{previewAssets.length === 1 ? '' : 's'}.
+              {allItems.length} item{allItems.length === 1 ? '' : 's'} in this order. {generatedItems.length} generated item{generatedItems.length === 1 ? '' : 's'} with {previewAssets.length} previewable PDF{previewAssets.length === 1 ? '' : 's'}.
             </Typography>
           </Box>
 
@@ -472,23 +598,38 @@ export default function GeneratedOrderDetailPage() {
 
           <GeneratedPdfPreview asset={activeAsset} />
 
-          <Box sx={{ display: 'flex', gap: 2, mt: 2.5, flexWrap: 'wrap' }}>
-            {previewAssets.map((asset, index) => (
-              <GeneratedThumb
-                key={asset.id}
-                asset={asset}
-                index={index}
-                active={asset.id === activeAsset?.id}
-                onClick={() => setActiveAssetId(asset.id)}
-              />
-            ))}
-          </Box>
+          <Typography variant="body2" sx={{ color: '#64748B', fontWeight: 700, mt: 2 }}>
+            Showing generated PDFs for {activeItem?.name || activeSource.productTitle || 'selected item'}.
+          </Typography>
+
+          {activeItemAssets.length > 0 ? (
+            <Box sx={{ display: 'flex', gap: 2, mt: 2.5, flexWrap: 'wrap' }}>
+              {activeItemAssets.map((asset, index) => (
+                <GeneratedThumb
+                  key={asset.id}
+                  asset={asset}
+                  index={index}
+                  active={asset.id === activeAsset?.id}
+                  checked={selectedAssetIds.includes(asset.id)}
+                  onClick={() => setActiveAssetId(asset.id)}
+                  onToggle={toggleAssetSelection}
+                />
+              ))}
+            </Box>
+          ) : (
+            <Alert severity="warning" sx={{ mt: 2.5, borderRadius: '8px' }}>
+              This item does not have a generated PDF URL. Product library PDFs are intentionally hidden here.
+            </Alert>
+          )}
         </Box>
 
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
           <Paper sx={{ p: 2.5, borderRadius: '10px', border: '1px solid #E5E7EB', boxShadow: 'none' }}>
             <Typography variant="h6" sx={{ fontWeight: 800, color: '#0F172A', mb: 2 }}>
               Active PDF Details
+            </Typography>
+            <Typography variant="body2" sx={{ color: '#64748B', mb: 2 }}>
+              {selectedAssets.length} generated PDF{selectedAssets.length === 1 ? '' : 's'} checked. Editing opens the active PDF only.
             </Typography>
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.4 }}>
               {[
@@ -507,8 +648,19 @@ export default function GeneratedOrderDetailPage() {
 
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.25, mt: 3 }}>
               {canManage && (
-                <Button variant="contained" startIcon={<EditOutlinedIcon />} onClick={handleEditPdf} sx={{ bgcolor: '#5B21D6', borderRadius: '6px', fontWeight: 800, '&:hover': { bgcolor: '#4C1D95' } }}>
-                  Edit PDF
+                <Button variant="contained" startIcon={<EditOutlinedIcon />} onClick={handleEditPdf} disabled={!activeAsset} sx={{ bgcolor: '#5B21D6', borderRadius: '6px', fontWeight: 800, '&:hover': { bgcolor: '#4C1D95' } }}>
+                  Edit Active PDF
+                </Button>
+              )}
+              {canManage && missingMappedItems.length > 0 && (
+                <Button
+                  variant="outlined"
+                  startIcon={regenerating ? <CircularProgress size={16} /> : <PrintIcon />}
+                  onClick={handleGenerateSelectedItems}
+                  disabled={regenerating || selectedGenerateOrderIds.length === 0}
+                  sx={{ borderColor: '#E5E7EB', color: '#111827', borderRadius: '6px', fontWeight: 800 }}
+                >
+                  {regenerating ? 'Generating...' : `Generate Selected Items${selectedGenerateOrderIds.length ? ` (${selectedGenerateOrderIds.length})` : ''}`}
                 </Button>
               )}
               {canManage && (
@@ -519,7 +671,7 @@ export default function GeneratedOrderDetailPage() {
                   disabled={regenerating || !canRegenerate}
                   sx={{ borderColor: '#E5E7EB', color: '#111827', borderRadius: '6px', fontWeight: 800 }}
                 >
-                  {regenerating ? 'Regenerating...' : 'Regenerate PDFs'}
+                  {regenerating ? 'Regenerating...' : `Regenerate Checked PDFs${selectedRegenerateOrderIds.length ? ` (${selectedRegenerateOrderIds.length})` : ''}`}
                 </Button>
               )}
               {canManage && (
@@ -535,7 +687,7 @@ export default function GeneratedOrderDetailPage() {
                   disabled={sending}
                   sx={{ bgcolor: activeItem?.status === 'failed' ? '#DC2626' : '#16A34A', borderRadius: '6px', fontWeight: 800, '&:hover': { bgcolor: activeItem?.status === 'failed' ? '#B91C1C' : '#15803D' } }}
                 >
-                  {sending ? 'Sending...' : activeItem?.status === 'failed' ? 'Resend to Lulu' : 'Send to Lulu'}
+                  {sending ? 'Sending...' : activeItem?.status === 'failed' ? 'Resend Checked to Lulu' : 'Send Checked to Lulu'}
                 </Button>
               )}
               {canManage && cancelableLuluSourceIds.length > 0 && (
@@ -554,7 +706,7 @@ export default function GeneratedOrderDetailPage() {
                 Preview PDF
               </Button>
               <Button variant="outlined" startIcon={<DownloadOutlinedIcon />} onClick={handleDownloadPdfs} sx={{ borderColor: '#E5E7EB', color: '#111827', borderRadius: '6px', fontWeight: 800 }}>
-                Download PDFs
+                Download Checked PDFs
               </Button>
             </Box>
           </Paper>
@@ -589,10 +741,23 @@ export default function GeneratedOrderDetailPage() {
 
       <Paper sx={{ mt: 3, p: 3, borderRadius: '12px', border: '1px solid #E5E7EB', boxShadow: 'none' }}>
         <Typography variant="h6" sx={{ fontWeight: 800, color: '#0F172A', mb: 2 }}>
-          Generated Items
+          Order Items
         </Typography>
-        {generatedItems.map((item, index) => (
-          <ItemSummary key={item.id} item={item} index={index} />
+        {missingMappedItems.length > 0 && (
+          <Alert severity="info" sx={{ mb: 2, borderRadius: '8px' }}>
+            Select mapped items here, then use Generate Selected Items to create only the missing PDFs.
+          </Alert>
+        )}
+        {allItems.map((item, index) => (
+          <ItemSummary
+            key={item.id}
+            item={item}
+            index={index}
+            active={itemSourceId(item) === activeItemId}
+            generationSelected={selectedGenerateItemIds.includes(itemSourceId(item))}
+            onSelect={() => handleSelectItem(item)}
+            onToggleGeneration={toggleGenerateSelection}
+          />
         ))}
       </Paper>
 
@@ -612,10 +777,10 @@ export default function GeneratedOrderDetailPage() {
       )}
 
       <Dialog open={regenerateConfirmOpen} onClose={() => setRegenerateConfirmOpen(false)}>
-        <DialogTitle>Regenerate PDFs</DialogTitle>
+        <DialogTitle>Regenerate Checked PDFs</DialogTitle>
         <DialogContent>
           <Typography>
-            Existing generated PDFs for this order will be replaced with new files from the currently mapped product.
+            Existing generated PDFs for {selectedRegenerateOrderIds.length} checked item{selectedRegenerateOrderIds.length === 1 ? '' : 's'} will be replaced with new files from the currently mapped product.
           </Typography>
         </DialogContent>
         <DialogActions>

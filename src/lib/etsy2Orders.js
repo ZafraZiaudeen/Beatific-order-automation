@@ -1,5 +1,6 @@
 import { ITEM_STATUSES } from './etsy2Constants'
 import api from './api'
+import { isGeneratedPdfUrl } from './generatedPdfUrls'
 
 export const STATUS_PRIORITY = [
   'waiting',
@@ -114,10 +115,6 @@ export const buildOrderGroups = (orders) => {
 }
 
 export const reviewFlagsFor = (item) => (item.aiFlags || []).filter((flag) => !NON_REVIEW_AI_FLAGS.has(flag))
-
-const isGeneratedPdfUrl = (value = '') =>
-  /(?:^|[/\\])generated-pdfs(?:[/\\]|$)/i.test(String(value || '')) ||
-  /(?:^|\/)(?:api\/)?orders\/download\/[^/?#]+\.pdf(?:[?#].*)?$/i.test(String(value || ''))
 
 export const getItemStatus = (item) => {
   const hasAnyGeneratedPdf = Boolean(item.coverImageUrl || item.interiorPdfUrl)
