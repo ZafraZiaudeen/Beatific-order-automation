@@ -102,6 +102,15 @@ const uniqueAssets = (assets = []) => {
 const poolAssetsFromProduct = (product, poolKey) =>
   uniqueAssets((product?.[poolKey] || []).map((entry) => entry.asset).filter(Boolean))
 
+const geometryBatchesFromProduct = (product) =>
+  (product?.assetBatches || []).filter((batch) =>
+    batch &&
+    batch.enabled !== false &&
+    !batch.virtual &&
+    batch.coverAssetId &&
+    batch.insidePageAssetId
+  )
+
 const productFromLibraryItem = (item) => {
   const isCover = item?.category === 'cover'
   return {
@@ -1264,7 +1273,7 @@ function FieldPanel({
   )
 }
 
-export default function ProductTemplateEditor({ product, onBack, onSaved, libraryItem = null }) {
+export default function ProductTemplateEditor({ product, onBack, onSaved, libraryItem = null, productBatchId = '' }) {
   const libraryMode = Boolean(libraryItem)
   const libraryTarget = libraryItem?.category === 'cover' ? 'cover' : 'interiorFirstPage'
   const initialProduct = libraryMode ? productFromLibraryItem(libraryItem) : product
@@ -1294,6 +1303,7 @@ export default function ProductTemplateEditor({ product, onBack, onSaved, librar
   const [geometryInsideAssetId, setGeometryInsideAssetId] = useState(
     libraryMode && libraryItem?.category === 'inside-page' ? libraryItem._id : product?.insidePageAssetId || product?.insidePageAsset?._id || ''
   )
+  const [geometryBatchId, setGeometryBatchId] = useState('')
   const fileInputRef = useRef(null)
   const viewportRef = useRef(null)
   const stageRef = useRef(null)
@@ -1301,7 +1311,9 @@ export default function ProductTemplateEditor({ product, onBack, onSaved, librar
   const variants = libraryMode ? [] : localProduct?.variants || []
   const geometryCoverAssets = useMemo(() => poolAssetsFromProduct(product, 'coverAssetPool'), [product])
   const geometryInsideAssets = useMemo(() => poolAssetsFromProduct(product, 'insideAssetPool'), [product])
-  const usesGeometryAssetPools = geometryCoverAssets.length > 0 || geometryInsideAssets.length > 0
+  const geometryBatches = useMemo(() => geometryBatchesFromProduct(product), [product])
+  const usesGeometryAssetBatches = geometryBatches.length > 0
+  const usesGeometryAssetPools = !usesGeometryAssetBatches && (geometryCoverAssets.length > 0 || geometryInsideAssets.length > 0)
   const selectedVariant = getVariant(localProduct, templateKey)
   const selectedVariantId = selectedVariant ? variantId(selectedVariant) : null
   const selectedPolicy = normalizePolicy(selectedVariant?.templatePolicy)
@@ -1360,6 +1372,24 @@ export default function ProductTemplateEditor({ product, onBack, onSaved, librar
   }, [libraryItem, libraryMode, libraryTarget, product])
 
   useEffect(() => {
+    const batches = geometryBatchesFromProduct(product)
+    if (batches.length) {
+      const contextBatchId = String(productBatchId || '')
+      const contextBatch = contextBatchId
+        ? batches.find((batch) => String(batch._id || batch.id || batch.name || '') === contextBatchId)
+        : null
+      const batchId = contextBatch
+        ? String(contextBatch._id || contextBatch.id || contextBatch.name || '')
+        : batches.length === 1
+          ? String(batches[0]._id || batches[0].id || batches[0].name || '')
+          : ''
+      setGeometryBatchId(batchId)
+      setGeometryCoverAssetId('')
+      setGeometryInsideAssetId('')
+      return
+    }
+
+    setGeometryBatchId('')
     const coverAssets = poolAssetsFromProduct(product, 'coverAssetPool')
     const insideAssets = poolAssetsFromProduct(product, 'insideAssetPool')
     const coverId = libraryMode && libraryItem?.category === 'cover'
@@ -1374,7 +1404,7 @@ export default function ProductTemplateEditor({ product, onBack, onSaved, librar
         : product?.insidePageAssetId || product?.insidePageAsset?._id || ''
     setGeometryCoverAssetId(coverId || '')
     setGeometryInsideAssetId(insideId || '')
-  }, [libraryItem, libraryMode, product])
+  }, [libraryItem, libraryMode, product, productBatchId])
 
   useEffect(() => {
     const next = resolveEffectiveTemplate(localProduct, templateKey).template.fields || []
@@ -1402,11 +1432,15 @@ export default function ProductTemplateEditor({ product, onBack, onSaved, librar
 
     let cancelled = false
     setGeometryState((current) => ({ ...current, loading: true }))
-    const params = {
-      ...(selectedVariantId ? { variantId: selectedVariantId } : {}),
-      ...(geometryCoverAssetId ? { coverAssetId: geometryCoverAssetId } : {}),
-      ...(geometryInsideAssetId ? { insidePageAssetId: geometryInsideAssetId } : {}),
-    }
+    const params = usesGeometryAssetBatches
+      ? {
+        ...(geometryBatchId ? { batchId: geometryBatchId } : {}),
+      }
+      : {
+        ...(selectedVariantId ? { variantId: selectedVariantId } : {}),
+        ...(geometryCoverAssetId ? { coverAssetId: geometryCoverAssetId } : {}),
+        ...(geometryInsideAssetId ? { insidePageAssetId: geometryInsideAssetId } : {}),
+      }
     api.get(`/products/${productId}/template/cover-alignment`, { params })
       .then(({ data }) => {
         if (cancelled) return
@@ -1437,7 +1471,7 @@ export default function ProductTemplateEditor({ product, onBack, onSaved, librar
     return () => {
       cancelled = true
     }
-  }, [geometryCoverAssetId, geometryInsideAssetId, libraryMode, localProduct?._id, product?._id, selectedVariantId, target])
+  }, [geometryBatchId, geometryCoverAssetId, geometryInsideAssetId, libraryMode, localProduct?._id, product?._id, selectedVariantId, target, usesGeometryAssetBatches])
 
   const stats = useMemo(() => ({
     cover: fields.filter((field) => field.target === 'cover').length,
