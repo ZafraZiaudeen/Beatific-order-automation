@@ -48,7 +48,7 @@ import api from '../lib/api'
 import { buildAssetThumbnailUrl } from '../lib/assets'
 import { toEtsy2GroupOrder } from '../lib/etsy2Orders'
 import { generatedPdfUrlFor, isGeneratedPdfUrl } from '../lib/generatedOrders'
-import { FONT_OPTIONS, ensureFontFaces, normalizeFontStyle } from '../lib/fonts'
+import { FONT_OPTIONS, ensureFontFaces, fontFamilyWithEmojiFallback, normalizeFontStyle } from '../lib/fonts'
 import { getFittedTextProps } from '../lib/textFitting'
 import { FIXED_PERSONALIZATION_FIELDS } from '../lib/fixedPersonalizationFields'
 import LuluGeometryOverlay from '../components/products/LuluGeometryOverlay'
@@ -61,7 +61,7 @@ import {
 
 const CANVAS_STATE_KEY = '_canvasEditorState'
 const CANVAS_PDF_KEY = '_canvasPdfDataUrl'
-const CANVAS_STATE_VERSION = 4
+const CANVAS_STATE_VERSION = 5
 const canvasStateKeyFor = (kind) => `_canvasEditorState:${kind === 'interior' ? 'interior' : 'cover'}`
 const DEFAULT_PAGE = { width: 612, height: 792 }
 const DEFAULT_TEXT_MIN_FONT_SIZE = 8
@@ -106,6 +106,37 @@ const fontOptionsFor = (value) => (
     ? [{ label: value, value, weight: 400, style: 'normal' }, ...FONT_OPTIONS]
     : FONT_OPTIONS
 )
+const boxFor = (item = {}) => ({
+  x: Number(item.x || 0),
+  y: Number(item.y || 0),
+  width: Math.max(0, Number(item.width || 0)),
+  height: Math.max(0, Number(item.height || 0)),
+})
+const overlapRatio = (a, b) => {
+  const ax1 = a.x + a.width
+  const ay1 = a.y + a.height
+  const bx1 = b.x + b.width
+  const by1 = b.y + b.height
+  const width = Math.max(0, Math.min(ax1, bx1) - Math.max(a.x, b.x))
+  const height = Math.max(0, Math.min(ay1, by1) - Math.max(a.y, b.y))
+  const smallest = Math.max(1, Math.min(a.width * a.height, b.width * b.height))
+  return (width * height) / smallest
+}
+const textForMatching = (value = '') => String(value || '')
+  .replace(/[\uFFFD?]/g, '')
+  .replace(/\s+/g, ' ')
+  .trim()
+  .toLowerCase()
+const textLooksLikeValue = (text = '', value = '') => {
+  const current = textForMatching(text)
+  const expected = textForMatching(value)
+  if (!current || !expected) return false
+  return current === expected || current.includes(expected) || expected.includes(current)
+}
+const approximateTextWidth = (text = '', fontSize = 12) => {
+  const plain = String(text || '')
+  return Math.max(1, plain.length * Number(fontSize || 12) * 0.52)
+}
 
 function useLoadedImage(src) {
   const [image, setImage] = useState(null)
@@ -154,7 +185,7 @@ function defaultLayers(orderItem, order, page = DEFAULT_PAGE, decomposedPage = n
       ? buildAssetThumbnailUrl(orderItem.coverImageUrl, 1400)
       : '')
 
-  const textLayers = (decomposedPage?.extractedText || [])
+  const extractedTextLayers = (decomposedPage?.extractedText || [])
     .filter((text) => String(text.text || '').trim())
     .map((text, index) => ({
       id: text.id || uuidv4(),
@@ -199,6 +230,106 @@ function defaultLayers(orderItem, order, page = DEFAULT_PAGE, decomposedPage = n
       confidence: text.confidence,
       dirty: false,
     }))
+  const templateFields = (decomposedPage?.templateFields || [])
+    .filter((field) => String(field?.key || '').trim())
+  const mergedTextLayers = [...extractedTextLayers]
+
+  for (const field of templateFields) {
+    const value = resolveFieldValue(orderItem, field.key)
+    if (!value) continue
+    const fieldBox = boxFor(field.replacementBox || field)
+    const overlapIndex = mergedTextLayers.findIndex((layer) => overlapRatio(boxFor(layer.originalBox || layer), fieldBox) >= 0.45)
+    const shared = {
+      name: field.label || field.key || 'Template field',
+      text: value,
+      fixedFieldKey: field.key,
+      fontFamily: field.fontFamily || 'Arial',
+      rawFontFamily: field.fontFamily || '',
+      fontSize: field.fontSize || 24,
+      minFontSize: field.minFontSize || DEFAULT_TEXT_MIN_FONT_SIZE,
+      fill: field.fill || '#2F2F2F',
+      align: field.align || 'left',
+      fontStyle: normalizeFontStyle(field.fontStyle),
+      lineHeight: field.lineHeight || 1.15,
+      maxLines: field.maxLines,
+      preserveFontSizeOnWrap: Boolean(field.preserveFontSizeOnWrap),
+      fontFile: field.fontFile || null,
+      rotation: field.rotation || 0,
+      replacementBox: field.replacementBox || {
+        x: field.x,
+        y: field.y,
+        width: Math.max(4, field.width || 180),
+        height: Math.max(4, field.height || field.fontSize || 24),
+      },
+      replacementFill: field.replacementFill || defaultReplacementFill(field.fill),
+      replacementFillMode: field.replacementFillMode || 'transparent',
+      forceReplacementFill: Boolean(field.forceReplacementFill),
+      originalText: value,
+      originalBox: {
+        x: fieldBox.x,
+        y: fieldBox.y,
+        width: Math.max(4, fieldBox.width),
+        height: Math.max(4, fieldBox.height),
+      },
+      source: 'template-field',
+      sourceTextLayer: true,
+      dirty: false,
+    }
+    if (overlapIndex >= 0) {
+      mergedTextLayers[overlapIndex] = {
+        ...mergedTextLayers[overlapIndex],
+        ...shared,
+        id: mergedTextLayers[overlapIndex].id,
+      }
+    } else {
+      mergedTextLayers.push({
+        id: field.id || uuidv4(),
+        type: 'text',
+        visible: true,
+        locked: false,
+        x: field.x,
+        y: field.y,
+        width: Math.max(40, field.width || 180),
+        height: Math.max(18, field.height || field.fontSize || 24),
+        opacity: 1,
+        maskOriginal: true,
+        ...shared,
+      })
+    }
+  }
+
+  const valueFields = (decomposedPage?.templateFields?.length
+    ? decomposedPage.templateFields
+    : (decomposedPage?.kind === 'interior' ? fixedInsideFields : fixedCoverFields))
+    .filter((field) => String(field?.key || '').trim())
+  for (const field of valueFields) {
+    const value = resolveFieldValue(orderItem, field.key)
+    if (!value) continue
+    const matchIndex = mergedTextLayers.findIndex((layer) => (
+      layer.fixedFieldKey === field.key ||
+      textLooksLikeValue(layer.text, value)
+    ))
+    if (matchIndex < 0) continue
+    const layer = mergedTextLayers[matchIndex]
+    const neededWidth = approximateTextWidth(value, layer.fontSize || field.fontSize || 12)
+    const replacementBox = layer.replacementBox || layer.originalBox || layer
+    const nextReplacementBox = {
+      ...replacementBox,
+      width: Math.max(replacementBox.width || 0, layer.width || 0, neededWidth + 12),
+      height: Math.max(replacementBox.height || 0, layer.height || 0),
+    }
+    mergedTextLayers[matchIndex] = {
+      ...layer,
+      name: field.label || layer.name,
+      text: value,
+      originalText: value,
+      fixedFieldKey: field.key,
+      replacementBox: nextReplacementBox,
+      originalBox: nextReplacementBox,
+      width: Math.max(layer.width || 0, nextReplacementBox.width),
+      source: layer.source === 'template-field' ? layer.source : 'order-personalization',
+    }
+  }
 
   return [
     {
@@ -216,7 +347,7 @@ function defaultLayers(orderItem, order, page = DEFAULT_PAGE, decomposedPage = n
       url: backgroundUrl,
       textlessPreview: Boolean(decomposedPage?.textlessPreviewImageUrl),
     },
-    ...textLayers,
+    ...mergedTextLayers,
   ]
 }
 
@@ -769,7 +900,7 @@ function CanvasStage({
                           height={fittedText.height}
                           text={fittedText.renderText}
                           fontSize={fittedText.fontSize}
-                          fontFamily={layer.fontFamily}
+                          fontFamily={fontFamilyWithEmojiFallback(layer.fontFamily)}
                           fontStyle={normalizeFontStyle(layer.fontStyle)}
                           fill={layer.fill}
                           align={layer.align}
@@ -908,7 +1039,7 @@ function PropertiesPanel({ selected, updateLayer, measurementUnit = 'in' }) {
             value={selected.text}
             disabled={disabled}
             onChange={(event) => updateLayer(selected.id, { text: event.target.value })}
-            sx={{ mb: 2 }}
+            sx={{ mb: 2, '& textarea': { fontFamily: fontFamilyWithEmojiFallback(selected.fontFamily) } }}
           />
 
           <Typography variant="subtitle2" sx={{ fontWeight: 800, color: '#0F172A', mb: 1 }}>Typography</Typography>
@@ -1120,7 +1251,7 @@ export default function Etsy2CanvasEditorPage() {
           : DEFAULT_PAGE
         setPageSize(nextPage)
         setPageGeometry(editKind === 'cover' ? data.alignment || data.geometry || null : null)
-        const nextLayers = defaultLayers(orderItem, order, nextPage, page)
+        const nextLayers = defaultLayers(orderItem, order, nextPage, page ? { ...page, kind: editKind } : page)
         setLayers(nextLayers)
         setSelectedId(nextLayers.find((layer) => layer.type === 'text')?.id || '')
         if (page?.extractionWarning) {

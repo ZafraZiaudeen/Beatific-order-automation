@@ -1,3 +1,5 @@
+import { fontFamilyWithEmojiFallback } from './fonts'
+
 export const DEFAULT_MIN_FONT_SIZE = 8
 const MAX_CONFIGURED_LINES = 12
 
@@ -23,8 +25,7 @@ const fontParts = (fontStyle = 'normal', fontWeight = 400) => {
 
 const setCanvasFont = (ctx, size, family, fontStyle, fontWeight) => {
   const { style, weight } = fontParts(fontStyle, fontWeight)
-  const safeFamily = String(family || 'Arial').replace(/"/g, '')
-  ctx.font = `${style} ${weight} ${size}px "${safeFamily}", Arial, sans-serif`
+  ctx.font = `${style} ${weight} ${size}px ${fontFamilyWithEmojiFallback(family)}`
 }
 
 const measure = (ctx, value) => ctx.measureText(String(value || '')).width

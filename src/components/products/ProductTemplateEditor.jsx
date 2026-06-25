@@ -39,7 +39,7 @@ import OpacityIcon from '@mui/icons-material/OpacityOutlined'
 import { Stage, Layer, Image as KonvaImage, Rect, Text, Transformer } from 'react-konva'
 import { v4 as uuidv4 } from 'uuid'
 import api from '../../lib/api'
-import { FONT_OPTIONS, getFontOption, normalizeFontStyle } from '../../lib/fonts'
+import { FONT_OPTIONS, fontFamilyWithEmojiFallback, getFontOption, normalizeFontStyle } from '../../lib/fonts'
 import { FIXED_PERSONALIZATION_FIELDS, getFixedPersonalizationField } from '../../lib/fixedPersonalizationFields'
 import { getFieldMaxLines, getFittedTextProps } from '../../lib/textFitting'
 import LuluGeometryOverlay from './LuluGeometryOverlay'
@@ -768,7 +768,7 @@ function TemplateStage({
                         listening={false}
                         text={sampleText}
                         fontSize={fittedSample.fontSize}
-                        fontFamily={field.fontFamily}
+                        fontFamily={fontFamilyWithEmojiFallback(field.fontFamily)}
                         fontStyle={normalizeFontStyle(field.fontStyle)}
                         fill={field.fill}
                         align={field.align}
