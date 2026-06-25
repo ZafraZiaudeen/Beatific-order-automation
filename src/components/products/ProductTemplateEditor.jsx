@@ -76,6 +76,8 @@ const defaultReplacementFill = () => 'transparent'
 
 const getReplacementFill = (field) => normalizeHexColor(field?.replacementFill) || '#FFFFFF'
 
+const isFixedPersonalizationKey = (key) => Boolean(getFixedPersonalizationField(key))
+
 const pageFromLibraryItem = (item) => {
   if (!item?.pageWidth || !item?.pageHeight) return null
   return {
@@ -259,6 +261,7 @@ const cloneFields = (fields = []) =>
     replacementFill: field.replacementFill || (field.replacementBox ? defaultReplacementFill() : null),
     replacementFillMode: field.replacementFillMode || (field.replacementBox ? 'transparent' : undefined),
     forceReplacementFill: Boolean(field.forceReplacementFill),
+    redactWhenEmpty: Boolean(field.redactWhenEmpty || (field.replacementBox && isFixedPersonalizationKey(field.key))),
   }))
 
 const getVariant = (product, templateKey) => {
@@ -1091,6 +1094,7 @@ function FieldPanel({
                 target: fixedField.target,
                 sampleValue: selected.sampleValue || fixedField.sampleValue,
                 rotation: shouldDefaultRotation ? fixedField.defaultRotation : selected.rotation,
+                ...(selected.replacementBox ? { redactWhenEmpty: true } : {}),
               })
               setTarget(fixedField.target)
             }}
@@ -1234,6 +1238,12 @@ function FieldPanel({
                 replacementFill: replacementFillMode === 'solid' ? selectedReplacementFill : 'transparent',
                 forceReplacementFill: false,
               })}
+            />
+          )}
+          {selected.replacementBox && (
+            <FormControlLabel
+              control={<Switch disabled={!fieldsEditable} checked={Boolean(selected.redactWhenEmpty)} onChange={(e) => updateField(selected.id, { redactWhenEmpty: e.target.checked })} />}
+              label="Clear original when order value is empty"
             />
           )}
           <FormControlLabel
@@ -1578,6 +1588,7 @@ export default function ProductTemplateEditor({ product, onBack, onSaved, librar
         replacementFill: draft.replacementFill || (draft.replacementBox ? defaultReplacementFill() : null),
         replacementFillMode: draft.replacementFillMode || (draft.replacementBox ? 'transparent' : undefined),
         forceReplacementFill: Boolean(draft.forceReplacementFill),
+        redactWhenEmpty: Boolean(draft.redactWhenEmpty || (draft.replacementBox && isFixedPersonalizationKey(key))),
       }
       return [...current, next]
     })
