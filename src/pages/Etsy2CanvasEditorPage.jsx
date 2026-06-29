@@ -48,7 +48,7 @@ import api from '../lib/api'
 import { buildAssetThumbnailUrl } from '../lib/assets'
 import { toEtsy2GroupOrder } from '../lib/etsy2Orders'
 import { generatedPdfUrlFor, isGeneratedPdfUrl } from '../lib/generatedOrders'
-import { FONT_OPTIONS, ensureFontFaces, normalizeFontStyle } from '../lib/fonts'
+import { FONT_OPTIONS, ensureFontFaces, fontFamilyWithEmojiFallback, normalizeFontStyle, resolveFontOption, rawFontFamilyToFontOption } from '../lib/fonts'
 import { getFittedTextProps } from '../lib/textFitting'
 import { FIXED_PERSONALIZATION_FIELDS } from '../lib/fixedPersonalizationFields'
 import LuluGeometryOverlay from '../components/products/LuluGeometryOverlay'
@@ -61,7 +61,7 @@ import {
 
 const CANVAS_STATE_KEY = '_canvasEditorState'
 const CANVAS_PDF_KEY = '_canvasPdfDataUrl'
-const CANVAS_STATE_VERSION = 4
+const CANVAS_STATE_VERSION = 5
 const canvasStateKeyFor = (kind) => `_canvasEditorState:${kind === 'interior' ? 'interior' : 'cover'}`
 const DEFAULT_PAGE = { width: 612, height: 792 }
 const DEFAULT_TEXT_MIN_FONT_SIZE = 8
@@ -101,11 +101,147 @@ const isSolidReplacementFill = (layer) => {
     Boolean(value) &&
     !['transparent', 'none', 'null'].includes(value)
 }
-const fontOptionsFor = (value) => (
-  value && !FONT_OPTIONS.some((font) => font.value === value)
-    ? [{ label: value, value, weight: 400, style: 'normal' }, ...FONT_OPTIONS]
+const fontSelectionValue = (layer = {}) =>
+  resolveFontOption(layer.fontFamily, layer.fontStyle, layer.fontFile)?.value || layer.fontFamily || 'Arial'
+const fontOptionsFor = (value, style, file) => {
+  const resolved = resolveFontOption(value, style, file)
+  const displayValue = resolved?.value || value
+  return displayValue && !FONT_OPTIONS.some((font) => font.value === displayValue)
+    ? [{ label: displayValue, value: displayValue, weight: 400, style: normalizeFontStyle(style) }, ...FONT_OPTIONS]
     : FONT_OPTIONS
+}
+const fontLayerChanges = (value, current = {}) => {
+  const font = resolveFontOption(value, current.fontStyle, '')
+  return {
+    fontFamily: font?.value || value || 'Arial',
+    fontFile: font?.file || null,
+    fontWeight: font?.weight || current.fontWeight || 400,
+    fontStyle: font?.style || normalizeFontStyle(current.fontStyle),
+  }
+}
+const boxFor = (item = {}) => ({
+  x: Number(item.x || 0),
+  y: Number(item.y || 0),
+  width: Math.max(0, Number(item.width || 0)),
+  height: Math.max(0, Number(item.height || 0)),
+})
+const overlapRatio = (a, b) => {
+  const ax1 = a.x + a.width
+  const ay1 = a.y + a.height
+  const bx1 = b.x + b.width
+  const by1 = b.y + b.height
+  const width = Math.max(0, Math.min(ax1, bx1) - Math.max(a.x, b.x))
+  const height = Math.max(0, Math.min(ay1, by1) - Math.max(a.y, b.y))
+  const smallest = Math.max(1, Math.min(a.width * a.height, b.width * b.height))
+  return (width * height) / smallest
+}
+const textForMatching = (value = '') => String(value || '')
+  .replace(/[\uFFFD?]/g, '')
+  .replace(/\s+/g, ' ')
+  .trim()
+  .toLowerCase()
+const textLooksLikeValue = (text = '', value = '') => {
+  const current = textForMatching(text)
+  const expected = textForMatching(value)
+  if (!current || !expected) return false
+  return current === expected || current.includes(expected) || expected.includes(current)
+}
+const textLooksLikeValueFragment = (text = '', value = '') => {
+  const current = textForMatching(text)
+  const expected = textForMatching(value)
+  if (!current || !expected) return false
+  return current === expected || expected.includes(current)
+}
+const approximateTextWidth = (text = '', fontSize = 12) => {
+  const plain = String(text || '')
+  return Math.max(1, plain.length * Number(fontSize || 12) * 0.52)
+}
+
+const templateFieldBox = (field = {}) => boxFor(field)
+const templateMaskBox = (field = {}) => boxFor(field.replacementBox || field)
+const templateMatchBoxes = (field = {}) => {
+  const boxes = [templateFieldBox(field)]
+  if (field.replacementBox) boxes.push(templateMaskBox(field))
+  return boxes
+}
+
+const overlapsTemplateField = (layer, field) => {
+  const layerBox = boxFor(layer.originalBox || layer.replacementBox || layer)
+  return templateMatchBoxes(field).some((matchBox) => overlapRatio(layerBox, matchBox) >= 0.2)
+}
+
+const isTemplateTextArtifact = (layer, field, value) => (
+  layer?.type === 'text' &&
+  layer.sourceTextLayer &&
+  layer.fixedFieldKey !== field.key &&
+  overlapsTemplateField(layer, field) &&
+  textLooksLikeValueFragment(layer.text, value)
 )
+
+const displayTextForTemplateLayer = (matchedLayer, value, preserveMatchedText) => {
+  const existing = String(matchedLayer?.text || '').trim()
+  const resolvedValue = String(value || '')
+  if (!preserveMatchedText || !existing) return resolvedValue
+  if (textLooksLikeValueFragment(existing, resolvedValue) && textForMatching(existing) !== textForMatching(resolvedValue)) {
+    return resolvedValue
+  }
+  return existing
+}
+
+const canonicalTemplateTextLayer = ({
+  field,
+  value,
+  matchedLayer = {},
+  preserveMatchedText = true,
+}) => {
+  const fieldBox = templateFieldBox(field)
+  const maskBox = templateMaskBox(field)
+  const resolved = resolveFontOption(
+    field.fontFamily || matchedLayer.fontFamily || '',
+    field.fontStyle || matchedLayer.fontStyle || '',
+    field.fontFile || matchedLayer.fontFile || ''
+  )
+  const text = displayTextForTemplateLayer(matchedLayer, value, preserveMatchedText)
+
+  return {
+    ...matchedLayer,
+    id: matchedLayer.id || field.id || uuidv4(),
+    type: 'text',
+    name: field.label || field.key || matchedLayer.name || 'Template field',
+    visible: matchedLayer.visible === false ? false : true,
+    locked: Boolean(field.locked ?? matchedLayer.locked),
+    text,
+    x: fieldBox.x,
+    y: fieldBox.y,
+    width: Math.max(40, fieldBox.width || 180),
+    height: Math.max(18, fieldBox.height || field.fontSize || 24),
+    rotation: field.rotation || 0,
+    opacity: matchedLayer.opacity ?? 1,
+    fixedFieldKey: field.key,
+    fontFamily: resolved?.value || field.fontFamily || matchedLayer.fontFamily || 'Arial',
+    rawFontFamily: '',
+    fontFile: resolved?.file || field.fontFile || matchedLayer.fontFile || null,
+    fontWeight: resolved?.weight || field.fontWeight || matchedLayer.fontWeight || 400,
+    fontSize: field.fontSize || matchedLayer.fontSize || 24,
+    minFontSize: field.minFontSize || matchedLayer.minFontSize || DEFAULT_TEXT_MIN_FONT_SIZE,
+    fill: field.fill || matchedLayer.fill || '#2F2F2F',
+    align: field.align || 'left',
+    fontStyle: resolved?.style || normalizeFontStyle(field.fontStyle || matchedLayer.fontStyle),
+    lineHeight: field.lineHeight || matchedLayer.lineHeight || 1.15,
+    maxLines: field.maxLines,
+    preserveFontSizeOnWrap: Boolean(field.preserveFontSizeOnWrap),
+    maskOriginal: true,
+    replacementBox: field.replacementBox || maskBox,
+    replacementFill: field.replacementFill || defaultReplacementFill(field.fill),
+    replacementFillMode: field.replacementFillMode || 'transparent',
+    forceReplacementFill: Boolean(field.forceReplacementFill),
+    originalText: text,
+    originalBox: maskBox,
+    source: 'template-field',
+    sourceTextLayer: true,
+    dirty: Boolean(matchedLayer.dirty),
+  }
+}
 
 function useLoadedImage(src) {
   const [image, setImage] = useState(null)
@@ -154,51 +290,132 @@ function defaultLayers(orderItem, order, page = DEFAULT_PAGE, decomposedPage = n
       ? buildAssetThumbnailUrl(orderItem.coverImageUrl, 1400)
       : '')
 
-  const textLayers = (decomposedPage?.extractedText || [])
+  const extractedTextLayers = (decomposedPage?.extractedText || [])
     .filter((text) => String(text.text || '').trim())
-    .map((text, index) => ({
-      id: text.id || uuidv4(),
-      type: 'text',
-      name: index === 0 ? 'Text Layer' : `Text Layer ${index + 1}`,
-      visible: true,
-      locked: false,
-      text: text.text,
-      x: text.x,
-      y: text.y,
-      width: Math.max(40, text.width || 180),
-      height: Math.max(18, text.height || text.fontSize || 24),
-      rotation: text.rotation || 0,
-      opacity: 1,
-      fontFamily: text.rawFontFamily || text.fontFamily || 'Arial',
-      fontSize: text.fontSize || 24,
-      minFontSize: DEFAULT_TEXT_MIN_FONT_SIZE,
-      fill: text.fill || '#2F2F2F',
-      align: text.align || 'left',
-      fontStyle: normalizeFontStyle(text.fontStyle),
-      lineHeight: 1.15,
-      maskOriginal: true,
-      replacementBox: {
+    .map((text, index) => {
+      const resolvedTextFont = rawFontFamilyToFontOption(text.rawFontFamily || text.fontFamily, text.fontStyle)
+      return {
+        id: text.id || uuidv4(),
+        type: 'text',
+        name: index === 0 ? 'Text Layer' : `Text Layer ${index + 1}`,
+        visible: true,
+        locked: false,
+        text: text.text,
         x: text.x,
         y: text.y,
-        width: Math.max(4, text.width || 180),
-        height: Math.max(4, text.height || text.fontSize || 24),
-      },
-      replacementFill: defaultReplacementFill(text.fill),
-      replacementFillMode: 'transparent',
-      writingMode: text.writingMode || 'horizontal',
-      rawFontFamily: text.rawFontFamily || text.fontFamily || '',
-      source: text.source || 'pdf',
-      sourceTextLayer: true,
-      originalText: text.text,
-      originalBox: {
-        x: text.x,
-        y: text.y,
-        width: Math.max(4, text.width || 180),
-        height: Math.max(4, text.height || text.fontSize || 24),
-      },
-      confidence: text.confidence,
-      dirty: false,
-    }))
+        width: Math.max(40, text.width || 180),
+        height: Math.max(18, text.height || text.fontSize || 24),
+        rotation: text.rotation || 0,
+        opacity: 1,
+        fontFamily: resolvedTextFont?.value || text.fontFamily || text.rawFontFamily || 'Arial',
+        fontFile: resolvedTextFont?.file || null,
+        fontWeight: resolvedTextFont?.weight || 400,
+        fontSize: text.fontSize || 24,
+        minFontSize: DEFAULT_TEXT_MIN_FONT_SIZE,
+        fill: text.fill || '#2F2F2F',
+        align: text.align || 'left',
+        fontStyle: resolvedTextFont?.style || normalizeFontStyle(text.fontStyle),
+        lineHeight: 1.15,
+        maskOriginal: true,
+        replacementBox: {
+          x: text.x,
+          y: text.y,
+          width: Math.max(4, text.width || 180),
+          height: Math.max(4, text.height || text.fontSize || 24),
+        },
+        replacementFill: defaultReplacementFill(text.fill),
+        replacementFillMode: 'transparent',
+        writingMode: text.writingMode || 'horizontal',
+        rawFontFamily: text.rawFontFamily || '',
+        source: text.source || 'pdf',
+        sourceTextLayer: true,
+        originalText: text.text,
+        originalBox: {
+          x: text.x,
+          y: text.y,
+          width: Math.max(4, text.width || 180),
+          height: Math.max(4, text.height || text.fontSize || 24),
+        },
+        confidence: text.confidence,
+        dirty: false,
+      }
+    })
+  const templateFields = (decomposedPage?.templateFields || [])
+    .filter((field) => String(field?.key || '').trim())
+  const templateValueFields = templateFields
+    .map((field) => ({ field, value: resolveFieldValue(orderItem, field.key) }))
+    .filter(({ value }) => String(value || '').trim())
+  const templateArtifactIds = new Set()
+
+  for (const { field, value } of templateValueFields) {
+    for (const layer of extractedTextLayers) {
+      if (isTemplateTextArtifact(layer, field, value)) templateArtifactIds.add(layer.id)
+    }
+  }
+
+  const mergedTextLayers = extractedTextLayers.filter((layer) => !templateArtifactIds.has(layer.id))
+
+  for (const { field, value } of templateValueFields) {
+    const matchIndex = mergedTextLayers.findIndex((layer) => (
+      layer.fixedFieldKey === field.key ||
+      (textLooksLikeValue(layer.text, value) && overlapsTemplateField(layer, field))
+    ))
+    const matchedLayer = mergedTextLayers[matchIndex] || {}
+    const canonicalLayer = canonicalTemplateTextLayer({
+      field,
+      value,
+      matchedLayer,
+      preserveMatchedText: false,
+    })
+    if (matchIndex >= 0) {
+      mergedTextLayers[matchIndex] = canonicalLayer
+    } else {
+      mergedTextLayers.push(canonicalLayer)
+    }
+  }
+
+  const valueFields = (decomposedPage?.templateFields?.length
+    ? decomposedPage.templateFields
+    : (decomposedPage?.kind === 'interior' ? fixedInsideFields : fixedCoverFields))
+    .filter((field) => String(field?.key || '').trim())
+  for (const field of valueFields) {
+    const value = resolveFieldValue(orderItem, field.key)
+    if (!value) continue
+    const matchIndex = mergedTextLayers.findIndex((layer) => (
+      layer.fixedFieldKey === field.key ||
+      textLooksLikeValue(layer.text, value)
+    ))
+    if (matchIndex < 0) continue
+    const layer = mergedTextLayers[matchIndex]
+    if (layer.source === 'template-field') {
+      mergedTextLayers[matchIndex] = {
+        ...layer,
+        name: field.label || layer.name,
+        text: value,
+        originalText: value,
+        fixedFieldKey: field.key,
+      }
+      continue
+    }
+    const neededWidth = approximateTextWidth(value, layer.fontSize || field.fontSize || 12)
+    const replacementBox = layer.replacementBox || layer.originalBox || layer
+    const nextReplacementBox = {
+      ...replacementBox,
+      width: Math.max(replacementBox.width || 0, layer.width || 0, neededWidth + 12),
+      height: Math.max(replacementBox.height || 0, layer.height || 0),
+    }
+    mergedTextLayers[matchIndex] = {
+      ...layer,
+      name: field.label || layer.name,
+      text: value,
+      originalText: value,
+      fixedFieldKey: field.key,
+      replacementBox: nextReplacementBox,
+      originalBox: nextReplacementBox,
+      width: Math.max(layer.width || 0, nextReplacementBox.width),
+      source: layer.source === 'template-field' ? layer.source : 'order-personalization',
+    }
+  }
 
   return [
     {
@@ -216,8 +433,43 @@ function defaultLayers(orderItem, order, page = DEFAULT_PAGE, decomposedPage = n
       url: backgroundUrl,
       textlessPreview: Boolean(decomposedPage?.textlessPreviewImageUrl),
     },
-    ...textLayers,
+    ...mergedTextLayers,
   ]
+}
+
+function applyTemplateFieldMetadata(layers, orderItem, templateFields, options = {}) {
+  const preserveMatchedText = options.preserveMatchedText ?? true
+  const allowCreate = options.allowCreate ?? false
+  const templateValueFields = (templateFields || [])
+    .filter((item) => String(item?.key || '').trim())
+    .map((field) => ({ field, value: resolveFieldValue(orderItem, field.key) }))
+    .filter(({ value }) => String(value || '').trim())
+  const nextLayers = (layers || []).filter((layer) => (
+    !templateValueFields.some(({ field, value }) => isTemplateTextArtifact(layer, field, value))
+  ))
+
+  for (const { field, value } of templateValueFields) {
+    const matchIndex = nextLayers.findIndex((layer) => layer.type === 'text' && (
+      layer.fixedFieldKey === field.key ||
+      (value && textLooksLikeValue(layer.text, value)) ||
+      overlapsTemplateField(layer, field)
+    ))
+    const matchedLayer = nextLayers[matchIndex] || {}
+    const canonicalLayer = canonicalTemplateTextLayer({
+      field,
+      value,
+      matchedLayer,
+      preserveMatchedText,
+    })
+
+    if (matchIndex >= 0) {
+      nextLayers[matchIndex] = canonicalLayer
+    } else if (allowCreate && value) {
+      nextLayers.push(canonicalLayer)
+    }
+  }
+
+  return nextLayers
 }
 
 const fixedCoverFields = FIXED_PERSONALIZATION_FIELDS.filter((field) => COVER_VALUE_KEYS.includes(field.key))
@@ -253,7 +505,7 @@ const dummyTextWarningsFor = (layers) => layers
 const textFitIssuesFor = (layers) => layers
   .filter((layer) => layer.type === 'text' && layer.visible !== false)
   .map((layer) => {
-    const fit = getFittedTextProps(layer, layer.text)
+    const fit = getFittedTextProps({ ...layer, shrinkToFit: false }, layer.text)
     if (fit.fits) return null
     return {
       id: layer.id,
@@ -759,7 +1011,7 @@ function CanvasStage({
                       />
                     )}
                     {layer.visible ? (() => {
-                      const fittedText = getFittedTextProps(layer, layer.text)
+                      const fittedText = getFittedTextProps({ ...layer, shrinkToFit: false }, layer.text)
                       return (
                         <Text
                           id={layer.id}
@@ -769,7 +1021,7 @@ function CanvasStage({
                           height={fittedText.height}
                           text={fittedText.renderText}
                           fontSize={fittedText.fontSize}
-                          fontFamily={layer.fontFamily}
+                          fontFamily={fontFamilyWithEmojiFallback(layer.fontFamily)}
                           fontStyle={normalizeFontStyle(layer.fontStyle)}
                           fill={layer.fill}
                           align={layer.align}
@@ -908,7 +1160,7 @@ function PropertiesPanel({ selected, updateLayer, measurementUnit = 'in' }) {
             value={selected.text}
             disabled={disabled}
             onChange={(event) => updateLayer(selected.id, { text: event.target.value })}
-            sx={{ mb: 2 }}
+            sx={{ mb: 2, '& textarea': { fontFamily: fontFamilyWithEmojiFallback(selected.fontFamily) } }}
           />
 
           <Typography variant="subtitle2" sx={{ fontWeight: 800, color: '#0F172A', mb: 1 }}>Typography</Typography>
@@ -916,11 +1168,11 @@ function PropertiesPanel({ selected, updateLayer, measurementUnit = 'in' }) {
             <TextField
               select
               label="Font"
-              value={selected.fontFamily}
+              value={fontSelectionValue(selected)}
               disabled={disabled}
-              onChange={(event) => updateLayer(selected.id, { fontFamily: event.target.value })}
+              onChange={(event) => updateLayer(selected.id, fontLayerChanges(event.target.value, selected))}
             >
-              {fontOptionsFor(selected.fontFamily).map((font) => (
+              {fontOptionsFor(selected.fontFamily, selected.fontStyle, selected.fontFile).map((font) => (
                 <MenuItem key={font.value} value={font.value}>{font.label}</MenuItem>
               ))}
             </TextField>
@@ -1001,6 +1253,7 @@ export default function Etsy2CanvasEditorPage() {
   const [decomposing, setDecomposing] = useState(false)
   const [saving, setSaving] = useState(false)
   const [layers, setLayers] = useState([])
+  const [templateFields, setTemplateFields] = useState([])
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE)
   const [selectedId, setSelectedId] = useState(null)
   const [history, setHistory] = useState([])
@@ -1077,6 +1330,7 @@ export default function Etsy2CanvasEditorPage() {
     if (!generatedEditReady) {
       setPageSize(DEFAULT_PAGE)
       setLayers([])
+      setTemplateFields([])
       setPageGeometry(null)
       setSelectedId('')
       setDecomposing(false)
@@ -1094,7 +1348,14 @@ export default function Etsy2CanvasEditorPage() {
     if (saved && savedHasBackground) {
       if (savedIsCurrent) {
         setPageSize(saved.page || DEFAULT_PAGE)
-        setLayers(saved.layers)
+        // Re-apply template field font metadata on every load so stale font
+        // values (e.g. "CanelaTextTrial" baked into old saves) are upgraded.
+        const savedTemplateFields = (saved.templateFields || []).filter((f) => String(f?.key || '').trim())
+        setTemplateFields(savedTemplateFields)
+        const migratedLayers = savedTemplateFields.length
+          ? applyTemplateFieldMetadata(saved.layers, orderItem, savedTemplateFields, { preserveMatchedText: true, allowCreate: true })
+          : saved.layers
+        setLayers(migratedLayers)
         setPageGeometry(saved.geometry || null)
         setShowAlignment(saved.settings?.showAlignment ?? true)
         setShowGuides(saved.settings?.showGuides ?? true)
@@ -1102,9 +1363,24 @@ export default function Etsy2CanvasEditorPage() {
         setMeasurementUnit(saved.settings?.measurementUnit || 'in')
         setAlignmentOpacity(saved.settings?.alignmentOpacity ?? 0.62)
         setBackgroundOpacity(saved.settings?.backgroundOpacity ?? 1)
-        setSelectedId((saved.layers || []).find((layer) => layer.type === 'text' && !layer.redactionOnly)?.id || '')
+        setSelectedId((migratedLayers || []).find((layer) => layer.type === 'text' && !layer.redactionOnly)?.id || '')
         setHistory([])
         setFuture([])
+        if (isGeneratedEdit) {
+          let freshCancelled = false
+          api.get(`/orders/${orderItem._id}/generated-pdf-page`, { params: { kind: editKind } })
+            .then(({ data }) => {
+              if (freshCancelled) return
+              const freshTemplateFields = (data.page?.templateFields || []).filter((f) => String(f?.key || '').trim())
+              if (!freshTemplateFields.length) return
+              setTemplateFields(freshTemplateFields)
+              setLayers((current) => applyTemplateFieldMetadata(current, orderItem, freshTemplateFields, { preserveMatchedText: true, allowCreate: true }))
+            })
+            .catch(() => {})
+          return () => {
+            freshCancelled = true
+          }
+        }
         return
       }
     }
@@ -1120,7 +1396,9 @@ export default function Etsy2CanvasEditorPage() {
           : DEFAULT_PAGE
         setPageSize(nextPage)
         setPageGeometry(editKind === 'cover' ? data.alignment || data.geometry || null : null)
-        const nextLayers = defaultLayers(orderItem, order, nextPage, page)
+        const freshTemplateFields = (page?.templateFields || []).filter((f) => String(f?.key || '').trim())
+        setTemplateFields(freshTemplateFields)
+        const nextLayers = defaultLayers(orderItem, order, nextPage, page ? { ...page, kind: editKind } : page)
         setLayers(nextLayers)
         setSelectedId(nextLayers.find((layer) => layer.type === 'text')?.id || '')
         if (page?.extractionWarning) {
@@ -1133,6 +1411,7 @@ export default function Etsy2CanvasEditorPage() {
         if (cancelled) return
         setPageSize(DEFAULT_PAGE)
         setPageGeometry(null)
+        setTemplateFields([])
         const nextLayers = defaultLayers(orderItem, order, DEFAULT_PAGE)
         setLayers(nextLayers)
         setSelectedId(nextLayers.find((layer) => layer.type === 'text')?.id || '')
@@ -1186,6 +1465,8 @@ export default function Etsy2CanvasEditorPage() {
         rotation: 0,
         opacity: 1,
         fontFamily: 'Canela Regular',
+        fontFile: 'Canela-Regular-Trial.otf',
+        fontWeight: 400,
         fontSize: 34,
         minFontSize: DEFAULT_TEXT_MIN_FONT_SIZE,
         fill: '#2F2F2F',
@@ -1326,6 +1607,7 @@ export default function Etsy2CanvasEditorPage() {
     orderId,
     itemId: String(orderItem?._id || ''),
     layers,
+    templateFields,
     geometry: pageGeometry,
     settings: { showAlignment, showGuides, showRulers, measurementUnit, alignmentOpacity, backgroundOpacity },
   })
@@ -1564,8 +1846,8 @@ export default function Etsy2CanvasEditorPage() {
                 boxShadow: '0 18px 40px rgba(15, 23, 42, 0.14)',
               }}
             >
-              <TextField select size="small" label="Font" value={selected.fontFamily} onChange={(event) => updateLayer(selected.id, { fontFamily: event.target.value })} sx={{ width: 190 }}>
-                {fontOptionsFor(selected.fontFamily).map((font) => <MenuItem key={font.value} value={font.value}>{font.label}</MenuItem>)}
+              <TextField select size="small" label="Font" value={fontSelectionValue(selected)} onChange={(event) => updateLayer(selected.id, fontLayerChanges(event.target.value, selected))} sx={{ width: 190 }}>
+                {fontOptionsFor(selected.fontFamily, selected.fontStyle, selected.fontFile).map((font) => <MenuItem key={font.value} value={font.value}>{font.label}</MenuItem>)}
               </TextField>
               <TextField size="small" label="Size" type="number" value={Math.round(selected.fontSize)} onChange={(event) => updateLayer(selected.id, { fontSize: clamp(event.target.value, 6, 220) })} sx={{ width: 92 }} />
               <TextField size="small" label="Min" type="number" value={selected.minFontSize ?? DEFAULT_TEXT_MIN_FONT_SIZE} onChange={(event) => updateLayer(selected.id, { minFontSize: clamp(event.target.value, 4, Math.max(4, selected.fontSize || 220)) })} sx={{ width: 88 }} />

@@ -5,6 +5,7 @@ import {
   Avatar,
   Box,
   Button,
+  Checkbox,
   Chip,
   CircularProgress,
   Divider,
@@ -59,6 +60,21 @@ import {
 
 const valueOrDash = (value) => value || '-'
 const isImageUrl = (value = '') => /\.(png|jpe?g|webp|gif|svg)(\?.*)?$/i.test(value)
+const itemSourceId = (item) => item?.sourceOrder?._id || item?.id || ''
+const PDF_GENERATABLE_STATUSES = new Set([
+  ITEM_STATUSES.MAPPED,
+  ITEM_STATUSES.FAILED,
+  ITEM_STATUSES.GENERATED,
+])
+const FORCE_GENERATION_STATUSES = new Set([
+  ITEM_STATUSES.FAILED,
+  ITEM_STATUSES.GENERATED,
+])
+const canSelectItemForPdfGeneration = (item) =>
+  PDF_GENERATABLE_STATUSES.has(item?.status) && Boolean(item?.sourceOrder?.isProductMapped)
+const shouldForceItemGeneration = (item) =>
+  FORCE_GENERATION_STATUSES.has(item?.status)
+
 function InfoStat({ icon, label, value }) {
   return (
     <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start', minWidth: 0 }}>
@@ -215,16 +231,31 @@ function GeneratedThumb({ asset, active, index, onClick }) {
   )
 }
 
-function ItemBlock({ item, index }) {
+function ItemBlock({ item, index, generationSelectable = false, generationSelected = false, onToggleGeneration }) {
   const source = item.sourceOrder || {}
   const flags = reviewFlagsFor(source)
   const personalization = Object.entries(source.personalization || {})
   const status = getItemStatus(source)
+  const sourceId = itemSourceId(item)
 
   return (
     <Box>
       {index > 0 && <Divider sx={{ my: 2 }} />}
-      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '88px minmax(0, 1fr) 160px' }, gap: 2 }}>
+      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'auto 88px minmax(0, 1fr) 160px' }, gap: 2, alignItems: 'flex-start' }}>
+        <Box sx={{ pt: { xs: 0, md: 0.25 }, minHeight: 32 }}>
+          {generationSelectable && (
+            <Checkbox
+              size="small"
+              checked={generationSelected}
+              onChange={(event) => onToggleGeneration?.(sourceId, event.target.checked)}
+              sx={{
+                color: '#5B21D6',
+                '&.Mui-checked': { color: '#5B21D6' },
+                p: 0.25,
+              }}
+            />
+          )}
+        </Box>
         <Box
           sx={{
             width: 88,
@@ -268,6 +299,14 @@ function ItemBlock({ item, index }) {
             {source.matchedVariantName && <Chip label={`Variant: ${source.matchedVariantName}`} size="small" variant="outlined" />}
             {!source.isProductMapped && <Chip label="Product not mapped" size="small" color="warning" variant="outlined" />}
             {source.requiresTemplateFinalization && <Chip label="Template needed" size="small" color="info" variant="outlined" />}
+            {generationSelectable && (
+              <Chip
+                label={shouldForceItemGeneration(item) ? 'Ready to regenerate' : 'Ready to generate'}
+                size="small"
+                color="info"
+                variant="outlined"
+              />
+            )}
           </Box>
 
           {flags.length > 0 && (
@@ -327,6 +366,7 @@ export default function Etsy2OrderDetailPage() {
   const completedGenerationJobIdsRef = useRef(new Set())
   const [sendingToLulu, setSendingToLulu] = useState(false)
   const [activePreviewAssetId, setActivePreviewAssetId] = useState('')
+  const [selectedPdfItemIds, setSelectedPdfItemIds] = useState([])
   const [editOpen, setEditOpen] = useState(false)
   const [snack, setSnack] = useState({ open: false, message: '', severity: 'success' })
 
@@ -386,12 +426,19 @@ export default function Etsy2OrderDetailPage() {
   const generating = isPdfGenerationJobActive(generationJob)
   const batchStatus = order ? deriveBatchStatus(order.items) : null
   const hasAIFlag = order?.items?.some((item) => item.status === 'ai_flagged')
-  const canGeneratePdfs = order?.items?.some((item) =>
-    [ITEM_STATUSES.MAPPED, ITEM_STATUSES.FAILED, ITEM_STATUSES.GENERATED].includes(item.status)
+  const pdfGenerationItems = useMemo(
+    () => (order?.items || []).filter(canSelectItemForPdfGeneration),
+    [order]
   )
-  const shouldForceGenerate = order?.items?.some((item) =>
-    [ITEM_STATUSES.FAILED, ITEM_STATUSES.GENERATED].includes(item.status)
+  const pdfGenerationItemIds = useMemo(
+    () => pdfGenerationItems.map(itemSourceId).filter(Boolean),
+    [pdfGenerationItems]
   )
+  const selectedPdfItems = useMemo(
+    () => pdfGenerationItems.filter((item) => selectedPdfItemIds.includes(itemSourceId(item))),
+    [pdfGenerationItems, selectedPdfItemIds]
+  )
+  const canGeneratePdfs = pdfGenerationItems.length > 0
   const shippingLines = addressLines(group?.shippingAddress)
   const subtotal = group?.items?.reduce((sum, item) => sum + Number(item.price || 0) * Number(item.quantity || 1), 0) || 0
   const shipping = Number(group?.pricing?.shipping || group?.items?.[0]?.shippingCost || 0)
@@ -402,6 +449,12 @@ export default function Etsy2OrderDetailPage() {
   const previewItem = activeAsset?.item || generatedItems[0] || order?.items?.[0] || null
   const previewSource = previewItem?.sourceOrder || {}
   const showGeneratedPreview = false
+
+  useEffect(() => {
+    setSelectedPdfItemIds((current) =>
+      current.filter((itemId) => pdfGenerationItemIds.includes(itemId))
+    )
+  }, [pdfGenerationItemIds])
 
   useEffect(() => {
     if (!previewAssets.length) {
@@ -441,19 +494,34 @@ export default function Etsy2OrderDetailPage() {
     }
   }
 
-  const handleGenerate = async () => {
+  const handleTogglePdfItem = (itemId, checked) => {
+    if (!itemId) return
+    setSelectedPdfItemIds((current) => (
+      checked ? [...new Set([...current, itemId])] : current.filter((id) => id !== itemId)
+    ))
+  }
+
+  const handleSelectAllPdfItems = () => {
+    setSelectedPdfItemIds(pdfGenerationItemIds)
+  }
+
+  const handleGenerate = async (targetItems, selectedOnly = false) => {
     if (!order?.orderId) return
-    if (!canGeneratePdfs) {
+    const itemsToGenerate = (targetItems || []).filter(canSelectItemForPdfGeneration)
+    const orderIds = itemsToGenerate.map(itemSourceId).filter(Boolean)
+    if (orderIds.length === 0) {
       setSnack({ open: true, message: 'Only mapped or failed generated order items can generate PDFs.', severity: 'warning' })
       return
     }
 
     try {
-      const job = await startPdfGenerationJob(order.orderId, { force: shouldForceGenerate })
+      const force = itemsToGenerate.some(shouldForceItemGeneration)
+      const job = await startPdfGenerationJob(order.orderId, { force, orderIds })
       setGenerationJob(job)
+      if (selectedOnly) setSelectedPdfItemIds([])
       setSnack({
         open: true,
-        message: 'PDF generation started. You can leave this page and it will keep running.',
+        message: `PDF generation started for ${orderIds.length} item${orderIds.length === 1 ? '' : 's'}. You can leave this page and it will keep running.`,
         severity: 'success',
       })
     } catch (err) {
@@ -811,7 +879,7 @@ export default function Etsy2OrderDetailPage() {
             <Button
               variant="outlined"
               startIcon={generating ? <CircularProgress size={16} /> : <PrintIcon />}
-              onClick={handleGenerate}
+              onClick={() => handleGenerate(pdfGenerationItems)}
               disabled={generating || !canGeneratePdfs}
               size="small"
               sx={{
@@ -822,7 +890,7 @@ export default function Etsy2OrderDetailPage() {
                 fontSize: '0.8125rem',
               }}
             >
-              {generating ? 'Generating...' : shouldForceGenerate ? 'Regenerate PDFs' : 'Generate PDFs'}
+              {generating ? 'Generating...' : 'Generate All Eligible'}
             </Button>
             {generating && (
               <Button
@@ -876,9 +944,61 @@ export default function Etsy2OrderDetailPage() {
 
       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: '2fr 1fr' }, gap: 3 }}>
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-          <DetailPanel title="Order Items" icon={<Inventory2OutlinedIcon sx={{ color: '#71717A' }} />}>
+          <DetailPanel
+            title="Order Items"
+            icon={<Inventory2OutlinedIcon sx={{ color: '#71717A' }} />}
+            action={canManage && canGeneratePdfs ? (
+              <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                <Button
+                  size="small"
+                  variant="text"
+                  onClick={handleSelectAllPdfItems}
+                  disabled={generating || selectedPdfItemIds.length === pdfGenerationItemIds.length}
+                  sx={{ color: '#5B21D6', fontWeight: 700, textTransform: 'none' }}
+                >
+                  Select All
+                </Button>
+                <Button
+                  size="small"
+                  variant="text"
+                  onClick={() => setSelectedPdfItemIds([])}
+                  disabled={generating || selectedPdfItemIds.length === 0}
+                  sx={{ color: '#71717A', fontWeight: 700, textTransform: 'none' }}
+                >
+                  Clear
+                </Button>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  startIcon={generating ? <CircularProgress size={14} /> : <PrintIcon />}
+                  onClick={() => handleGenerate(selectedPdfItems, true)}
+                  disabled={generating || selectedPdfItems.length === 0}
+                  sx={{ borderColor: '#E3E3E7', color: '#27272A', fontWeight: 700 }}
+                >
+                  {generating ? 'Generating...' : `Generate Selected${selectedPdfItems.length ? ` (${selectedPdfItems.length})` : ''}`}
+                </Button>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  startIcon={generating ? <CircularProgress size={14} /> : <PrintIcon />}
+                  onClick={() => handleGenerate(pdfGenerationItems)}
+                  disabled={generating || pdfGenerationItems.length === 0}
+                  sx={{ borderColor: '#E3E3E7', color: '#27272A', fontWeight: 700 }}
+                >
+                  Generate All Eligible
+                </Button>
+              </Box>
+            ) : null}
+          >
             {order.items.map((item, index) => (
-              <ItemBlock key={item.id} item={item} index={index} />
+              <ItemBlock
+                key={item.id}
+                item={item}
+                index={index}
+                generationSelectable={canManage && canSelectItemForPdfGeneration(item)}
+                generationSelected={selectedPdfItemIds.includes(itemSourceId(item))}
+                onToggleGeneration={handleTogglePdfItem}
+              />
             ))}
           </DetailPanel>
 

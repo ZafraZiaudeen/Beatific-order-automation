@@ -39,7 +39,7 @@ import OpacityIcon from '@mui/icons-material/OpacityOutlined'
 import { Stage, Layer, Image as KonvaImage, Rect, Text, Transformer } from 'react-konva'
 import { v4 as uuidv4 } from 'uuid'
 import api from '../../lib/api'
-import { FONT_OPTIONS, getFontOption, normalizeFontStyle } from '../../lib/fonts'
+import { FONT_OPTIONS, fontFamilyWithEmojiFallback, getFontOption, normalizeFontStyle } from '../../lib/fonts'
 import { FIXED_PERSONALIZATION_FIELDS, getFixedPersonalizationField } from '../../lib/fixedPersonalizationFields'
 import { getFieldMaxLines, getFittedTextProps } from '../../lib/textFitting'
 import LuluGeometryOverlay from './LuluGeometryOverlay'
@@ -75,6 +75,8 @@ const normalizeHexColor = (value) => {
 const defaultReplacementFill = () => 'transparent'
 
 const getReplacementFill = (field) => normalizeHexColor(field?.replacementFill) || '#FFFFFF'
+
+const isFixedPersonalizationKey = (key) => Boolean(getFixedPersonalizationField(key))
 
 const pageFromLibraryItem = (item) => {
   if (!item?.pageWidth || !item?.pageHeight) return null
@@ -259,6 +261,7 @@ const cloneFields = (fields = []) =>
     replacementFill: field.replacementFill || (field.replacementBox ? defaultReplacementFill() : null),
     replacementFillMode: field.replacementFillMode || (field.replacementBox ? 'transparent' : undefined),
     forceReplacementFill: Boolean(field.forceReplacementFill),
+    redactWhenEmpty: Boolean(field.redactWhenEmpty || (field.replacementBox && isFixedPersonalizationKey(field.key))),
   }))
 
 const getVariant = (product, templateKey) => {
@@ -765,7 +768,7 @@ function TemplateStage({
                         listening={false}
                         text={sampleText}
                         fontSize={fittedSample.fontSize}
-                        fontFamily={field.fontFamily}
+                        fontFamily={fontFamilyWithEmojiFallback(field.fontFamily)}
                         fontStyle={normalizeFontStyle(field.fontStyle)}
                         fill={field.fill}
                         align={field.align}
@@ -1091,6 +1094,7 @@ function FieldPanel({
                 target: fixedField.target,
                 sampleValue: selected.sampleValue || fixedField.sampleValue,
                 rotation: shouldDefaultRotation ? fixedField.defaultRotation : selected.rotation,
+                ...(selected.replacementBox ? { redactWhenEmpty: true } : {}),
               })
               setTarget(fixedField.target)
             }}
@@ -1234,6 +1238,12 @@ function FieldPanel({
                 replacementFill: replacementFillMode === 'solid' ? selectedReplacementFill : 'transparent',
                 forceReplacementFill: false,
               })}
+            />
+          )}
+          {selected.replacementBox && (
+            <FormControlLabel
+              control={<Switch disabled={!fieldsEditable} checked={Boolean(selected.redactWhenEmpty)} onChange={(e) => updateField(selected.id, { redactWhenEmpty: e.target.checked })} />}
+              label="Clear original when order value is empty"
             />
           )}
           <FormControlLabel
@@ -1578,6 +1588,7 @@ export default function ProductTemplateEditor({ product, onBack, onSaved, librar
         replacementFill: draft.replacementFill || (draft.replacementBox ? defaultReplacementFill() : null),
         replacementFillMode: draft.replacementFillMode || (draft.replacementBox ? 'transparent' : undefined),
         forceReplacementFill: Boolean(draft.forceReplacementFill),
+        redactWhenEmpty: Boolean(draft.redactWhenEmpty || (draft.replacementBox && isFixedPersonalizationKey(key))),
       }
       return [...current, next]
     })

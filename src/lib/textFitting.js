@@ -1,3 +1,5 @@
+import { fontFamilyWithEmojiFallback } from './fonts'
+
 export const DEFAULT_MIN_FONT_SIZE = 8
 const MAX_CONFIGURED_LINES = 12
 
@@ -23,8 +25,7 @@ const fontParts = (fontStyle = 'normal', fontWeight = 400) => {
 
 const setCanvasFont = (ctx, size, family, fontStyle, fontWeight) => {
   const { style, weight } = fontParts(fontStyle, fontWeight)
-  const safeFamily = String(family || 'Arial').replace(/"/g, '')
-  ctx.font = `${style} ${weight} ${size}px "${safeFamily}", Arial, sans-serif`
+  ctx.font = `${style} ${weight} ${size}px ${fontFamilyWithEmojiFallback(family)}`
 }
 
 const measure = (ctx, value) => ctx.measureText(String(value || '')).width
@@ -131,9 +132,10 @@ const measureFit = ({
   lineHeight,
   maxLines,
   preserveFontSizeOnWrap,
+  wrapLineLimit,
 }) => {
   setCanvasFont(ctx, fontSize, fontFamily, fontStyle, fontWeight)
-  const { lines, brokeLongWord } = wrapText(ctx, text, Math.max(1, width), maxLines)
+  const { lines, brokeLongWord } = wrapText(ctx, text, Math.max(1, width), wrapLineLimit || maxLines)
   const widest = lines.reduce((max, line) => Math.max(max, measure(ctx, line)), 0)
   const lineCount = Math.max(1, lines.length)
   const textHeight = lineCount * fontSize * lineHeight
@@ -165,6 +167,7 @@ export const fitTextToBox = ({
   lineHeight,
   maxLines,
   preserveFontSizeOnWrap = false,
+  shrinkToFit = true,
   minFontSize = DEFAULT_MIN_FONT_SIZE,
 }) => {
   const ctx = getMeasureContext()
@@ -190,7 +193,7 @@ export const fitTextToBox = ({
     }
   }
 
-  if (preserveFontSizeOnWrap) {
+  if (preserveFontSizeOnWrap || !shrinkToFit) {
     const metrics = measureFit({
       ctx,
       text,
@@ -203,14 +206,16 @@ export const fitTextToBox = ({
       lineHeight: resolvedLineHeight,
       maxLines: resolvedMaxLines,
       preserveFontSizeOnWrap,
+      wrapLineLimit: shrinkToFit ? resolvedMaxLines : MAX_CONFIGURED_LINES,
     })
+    const wrapMode = metrics.brokeLongWord ? 'char' : (!shrinkToFit ? 'word' : (resolvedMaxLines <= 1 ? 'none' : 'word'))
     return {
       ...metrics,
       fontSize: startSize,
       minFontSize: resolvedMinSize,
       reduced: false,
       belowMinimum: !metrics.fits,
-      wrap: metrics.brokeLongWord ? 'char' : (resolvedMaxLines <= 1 ? 'none' : 'word'),
+      wrap: wrapMode,
     }
   }
 
@@ -232,6 +237,7 @@ export const fitTextToBox = ({
       lineHeight: resolvedLineHeight,
       maxLines: resolvedMaxLines,
       preserveFontSizeOnWrap,
+      wrapLineLimit: resolvedMaxLines,
     })
 
     if (metrics.fits) {
@@ -256,6 +262,7 @@ export const fitTextToBox = ({
       lineHeight: resolvedLineHeight,
       maxLines: resolvedMaxLines,
       preserveFontSizeOnWrap,
+      wrapLineLimit: resolvedMaxLines,
     })
     return {
       ...finalMetrics,
@@ -279,6 +286,7 @@ export const fitTextToBox = ({
     lineHeight: resolvedLineHeight,
     maxLines: resolvedMaxLines,
     preserveFontSizeOnWrap,
+    wrapLineLimit: resolvedMaxLines,
   })
 
   return {
@@ -292,6 +300,7 @@ export const fitTextToBox = ({
 }
 
 export const getFittedTextProps = (field, text, { paddingX = 0, paddingY = 0 } = {}) => {
+  const shrinkToFit = field?.shrinkToFit !== false
   const maxLines = getFieldMaxLines(field)
   const configuredFontSize = positiveNumber(field?.fontSize, 12)
   const lineHeight = positiveNumber(field?.lineHeight, 1.2)
@@ -310,6 +319,7 @@ export const getFittedTextProps = (field, text, { paddingX = 0, paddingY = 0 } =
     lineHeight,
     maxLines,
     preserveFontSizeOnWrap,
+    shrinkToFit,
     minFontSize,
   })
 
